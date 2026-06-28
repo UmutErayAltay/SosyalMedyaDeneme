@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Mesajlar{% endblock %}
+{% block content %}
+<div class="conversation-layout">
+    <header class="conv-header">
+        <a href="{{ url_for('messaging.inbox') }}">← Geri</a>
+        <h2>{{ other_user.username if other_user else 'Bilinmeyen' }}</h2>
+    </header>
+
+    <div class="message-stream" id="stream">
+        {% for m in messages %}
+        <div class="msg {{ 'mine' if m.sender_id == me.id else 'theirs' }}">
+            <p>{{ m.content }}</p>
+            <span class="time">{{ m.created_at[11:16] }}</span>
+        </div>
+        {% else %}
+        <p class="muted center">Konuşmaya başla — ilk mesajı sen yaz.</p>
+        {% endfor %}
+    </div>
+
+    <form action="{{ url_for('messaging.send_message', conversation_id=conversation_id) }}" method="post"
+          class="composer-msg">
+        <input type="text" name="content" placeholder="Mesaj yaz..." required autocomplete="off">
+        <button type="submit" class="btn btn-primary">Gönder</button>
+    </form>
+</div>
+<script src="{{ url_for('static', filename='js/autoscroll.js') }}"></script>
+{% endblock %}

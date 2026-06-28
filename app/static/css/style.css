@@ -1,0 +1,168 @@
+/* =========================
+   Sosyal Medya — Sade Tasarım
+   ========================= */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+    --bg: #fafafa;
+    --card: #ffffff;
+    --text: #1a1a1a;
+    --muted: #888;
+    --border: #eee;
+    --primary: #2d2d2d;
+    --primary-hover: #000;
+    --danger: #d33;
+    --radius: 12px;
+    --max-width: 640px;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    font-size: 15px;
+}
+
+a { color: inherit; text-decoration: none; }
+
+.muted { color: var(--muted); font-size: 13px; }
+.center { text-align: center; }
+
+/* Navbar */
+.navbar {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky; top: 0; z-index: 10;
+}
+.brand { font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
+.nav-links a {
+    margin-left: 18px; color: var(--muted);
+    transition: color 0.15s;
+}
+.nav-links a:hover { color: var(--text); }
+.nav-links a.logout:hover { color: var(--danger); }
+
+/* Container */
+.container {
+    max-width: var(--max-width);
+    margin: 24px auto;
+    padding: 0 16px;
+}
+
+/* Flash mesajları */
+.flash {
+    padding: 10px 14px; border-radius: var(--radius);
+    margin-bottom: 16px; font-size: 14px;
+}
+.flash-success { background: #e8f5e9; color: #2e7d32; }
+.flash-error   { background: #fdecea; color: #c62828; }
+
+/* Kartlar */
+.card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 12px;
+}
+
+/* Butonlar */
+.btn {
+    border: none; cursor: pointer;
+    padding: 8px 16px; border-radius: 8px;
+    font-size: 14px; font-weight: 500;
+    transition: all 0.15s;
+    display: inline-block;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-ghost { background: transparent; color: var(--muted); }
+.btn-ghost:hover { background: var(--border); color: var(--text); }
+.btn-ghost.danger:hover { background: #fdecea; color: var(--danger); }
+.btn-ghost.liked { color: var(--danger); }
+.btn.small { padding: 4px 10px; font-size: 12px; }
+
+/* Formlar */
+input, textarea {
+    width: 100%; padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px; font-size: 14px;
+    font-family: inherit; background: var(--card); color: var(--text);
+    resize: vertical;
+}
+input:focus, textarea:focus { outline: none; border-color: var(--primary); }
+label { display: block; margin-bottom: 12px; }
+label input { margin-top: 6px; }
+
+/* Auth sayfaları */
+.auth-card {
+    max-width: 360px; margin: 60px auto; padding: 32px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.auth-card h1 { margin-bottom: 20px; font-size: 22px; }
+.auth-card .btn { width: 100%; margin-top: 8px; }
+
+/* Postlar */
+.post-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.username { font-weight: 600; }
+.time { color: var(--muted); font-size: 12px; margin-left: auto; }
+.post-content { margin-bottom: 12px; word-break: break-word; }
+.post-actions { display: flex; gap: 8px; align-items: center; }
+.inline { display: inline; }
+
+/* Avatar */
+.avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
+.avatar-placeholder {
+    background: linear-gradient(135deg, #ccc, #999);
+}
+.avatar.large { width: 72px; height: 72px; }
+
+/* Composer */
+.composer textarea { margin-bottom: 8px; }
+
+/* Profil */
+.profile-header { display: flex; gap: 20px; align-items: center; }
+.profile-info h1 { font-size: 20px; }
+.profile-info .bio { margin: 8px 0; }
+.profile-actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Yorumlar */
+.comment-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.comment-list .card { padding: 12px 16px; }
+
+/* Mesajlaşma */
+.conversation-layout {
+    max-width: var(--max-width);
+    margin: 24px auto; padding: 0 16px;
+    display: flex; flex-direction: column; height: calc(100vh - 130px);
+}
+.conv-header { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.message-stream {
+    flex: 1; overflow-y: auto; padding: 12px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); margin-bottom: 12px;
+}
+.msg { max-width: 70%; margin-bottom: 10px; padding: 8px 12px; border-radius: var(--radius); }
+.msg p { font-size: 14px; }
+.msg .time { display: block; font-size: 11px; margin: 2px 0 0; }
+.msg.mine {
+    margin-left: auto; background: var(--primary); color: #fff;
+    border-bottom-right-radius: 4px;
+}
+.msg.mine .time { color: rgba(255,255,255,0.7); }
+.msg.theirs {
+    background: var(--border); border-bottom-left-radius: 4px;
+}
+.composer-msg { display: flex; gap: 8px; }
+.composer-msg input { flex: 1; }
+
+/* Inbox */
+.inbox-item { display: flex; align-items: center; gap: 12px; }
+.inbox-item .preview { margin-top: 2px; }

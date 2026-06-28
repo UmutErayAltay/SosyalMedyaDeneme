@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Sosyal{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    {% if me %}
+    <nav class="navbar">
+        <a href="{{ url_for('routes.feed') }}" class="brand">sosyal</a>
+        <div class="nav-links">
+            <a href="{{ url_for('routes.feed') }}">Akış</a>
+            <a href="{{ url_for('messaging.inbox') }}">Mesajlar</a>
+            <a href="{{ url_for('routes.profile', username=me.username) if me.username else '#' }}">Profil</a>
+            <a href="{{ url_for('auth.logout') }}" class="logout">Çıkış</a>
+        </div>
+    </nav>
+    {% endif %}
+
+    <main class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, msg in messages %}
+                    <div class="flash flash-{{ category }}">{{ msg }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

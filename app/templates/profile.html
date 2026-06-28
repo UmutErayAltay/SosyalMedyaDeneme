@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.username }}{% endblock %}
+{% block content %}
+<header class="card profile-header">
+    <div class="avatar avatar-placeholder large"></div>
+    <div class="profile-info">
+        <h1>{{ profile.username }}</h1>
+        {% if profile.full_name %}<p class="muted">{{ profile.full_name }}</p>{% endif %}
+        {% if profile.bio %}<p class="bio">{{ profile.bio }}</p>{% endif %}
+
+        <div class="profile-actions">
+            {% if is_self %}
+                <a href="#" class="btn btn-ghost">Profili düzenle</a>
+            {% else %}
+                <a href="{{ url_for('social.toggle_follow', username=profile.username) }}"
+                   class="btn {{ 'btn-ghost' if is_following else 'btn-primary' }}">
+                    {{ 'Takipten çık' if is_following else 'Takip et' }}
+                </a>
+                <a href="{{ url_for('messaging.start_conversation', username=profile.username) }}"
+                   class="btn btn-ghost">Mesaj gönder</a>
+            {% endif %}
+        </div>
+    </div>
+</header>
+
+<section class="profile-posts">
+    <h3>Postlar</h3>
+    {% for p in posts %}
+    <article class="card post">
+        <p class="post-content">{{ p.content }}</p>
+        <span class="time">{{ p.created_at[:16]|replace('T',' ') }}</span>
+    </article>
+    {% else %}
+    <p class="muted">Henüz post yok.</p>
+    {% endfor %}
+</section>
+{% endblock %}

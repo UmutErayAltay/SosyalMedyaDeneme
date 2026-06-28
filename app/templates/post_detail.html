@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Post{% endblock %}
+{% block content %}
+<article class="card post">
+    <header class="post-header">
+        <div class="avatar avatar-placeholder"></div>
+        <a href="{{ url_for('routes.profile', username=post.profiles.username) if post.profiles else '#' }}"
+           class="username">{{ post.profiles.username if post.profiles else 'Bilinmeyen' }}</a>
+        <span class="time">{{ post.created_at[:16]|replace('T',' ') }}</span>
+    </header>
+    <p class="post-content">{{ post.content }}</p>
+</article>
+
+<section class="card comment-form">
+    <h3>Yorum Yap</h3>
+    <form action="{{ url_for('social.add_comment', post_id=post.id) }}" method="post">
+        <textarea name="content" placeholder="Yorumunu yaz..." rows="2" required></textarea>
+        <button type="submit" class="btn btn-primary">Gönder</button>
+    </form>
+</section>
+
+<section class="comment-list">
+    {% for c in comments %}
+    <article class="card comment">
+        <div class="comment-meta">
+            <strong>{{ c.profiles.username if c.profiles else 'Bilinmeyen' }}</strong>
+            <span class="time">{{ c.created_at[:16]|replace('T',' ') }}</span>
+        </div>
+        <p>{{ c.content }}</p>
+        {% if me and c.user_id == me.id %}
+        <form action="{{ url_for('social.delete_comment', comment_id=c.id) }}" method="post"
+              onsubmit="return confirm('Yorumu sil?')">
+            <button type="submit" class="btn btn-ghost danger small">Sil</button>
+        </form>
+        {% endif %}
+    </article>
+    {% else %}
+    <p class="muted">Henüz yorum yok. İlk yorumu sen yap!</p>
+    {% endfor %}
+</section>
+{% endblock %}
