@@ -2,7 +2,11 @@
 {% block title %}{{ profile.username }}{% endblock %}
 {% block content %}
 <header class="card profile-header">
-    <div class="avatar avatar-placeholder large"></div>
+    {% if profile.avatar_url %}
+        <img src="{{ profile.avatar_url }}" class="avatar large" alt="">
+    {% else %}
+        <div class="avatar large avatar-placeholder"></div>
+    {% endif %}
     <div class="profile-info">
         <h1>{{ profile.username }}</h1>
         {% if profile.full_name %}<p class="muted">{{ profile.full_name }}</p>{% endif %}
@@ -10,7 +14,7 @@
 
         <div class="profile-actions">
             {% if is_self %}
-                <a href="#" class="btn btn-ghost">Profili düzenle</a>
+                <a href="{{ url_for('routes.profile_edit') }}" class="btn btn-ghost">Profili düzenle</a>
             {% else %}
                 <a href="{{ url_for('social.toggle_follow', username=profile.username) }}"
                    class="btn {{ 'btn-ghost' if is_following else 'btn-primary' }}">
@@ -27,6 +31,9 @@
     <h3>Postlar</h3>
     {% for p in posts %}
     <article class="card post">
+        {% if p.image_url %}
+            <img src="{{ p.image_url }}" class="post-image" alt="">
+        {% endif %}
         <p class="post-content">{{ p.content }}</p>
         <span class="time">{{ p.created_at[:16]|replace('T',' ') }}</span>
     </article>
@@ -35,3 +42,4 @@
     {% endfor %}
 </section>
 {% endblock %}
+

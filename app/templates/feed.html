@@ -3,9 +3,16 @@
 {% block content %}
 <div class="feed-layout">
     <section class="composer">
-        <form action="{{ url_for('routes.create_post') }}" method="post">
-            <textarea name="content" placeholder="Ne düşünüyorsun?" rows="2" required></textarea>
-            <button type="submit" class="btn btn-primary">Paylaş</button>
+        <form action="{{ url_for('routes.create_post') }}" method="post" enctype="multipart/form-data">
+            <textarea name="content" placeholder="Ne düşünüyorsun?" rows="2"></textarea>
+            <div class="composer-row">
+                <label class="btn btn-ghost image-pick">
+                    📷 Görsel
+                    <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" id="post-image-input">
+                </label>
+                <span id="post-image-name" class="muted"></span>
+                <button type="submit" class="btn btn-primary">Paylaş</button>
+            </div>
         </form>
     </section>
 
@@ -23,6 +30,9 @@
                 <span class="time">{{ p.created_at[:16]|replace('T',' ') }}</span>
             </header>
             <p class="post-content">{{ p.content }}</p>
+            {% if p.image_url %}
+                <img src="{{ p.image_url }}" class="post-image" alt="">
+            {% endif %}
             <footer class="post-actions">
                 <form action="{{ url_for('social.toggle_like', post_id=p.id) }}" method="post" class="inline">
                     <button type="submit" class="btn btn-ghost {{ 'liked' if p.liked_by_me }}">
@@ -43,4 +53,10 @@
         {% endfor %}
     </section>
 </div>
+<script>
+    document.getElementById('post-image-input').addEventListener('change', function(e) {
+        var f = e.target.files[0];
+        document.getElementById('post-image-name').textContent = f ? f.name : '';
+    });
+</script>
 {% endblock %}

@@ -2,6 +2,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 from .decorators import login_required
 from .supabase_client import get_sb
+from .storage_helper import upload_image
 
 bp = Blueprint("routes", __name__)
 
@@ -47,13 +48,25 @@ def feed():
 @login_required
 def create_post():
     content = request.form.get("content", "").strip()
-    if not content:
+    image_file = request.files.get("image")
+
+    # En azından metin veya görsel olmalı
+    if not content and not (image_file and image_file.filename):
         flash("Boş post paylaşılamaz.", "error")
         return redirect(url_for("routes.feed"))
+
+    # Görsel varsa yükle
+    image_url = None
+    if image_file and image_file.filename:
+        image_url = upload_image(image_file, folder="posts")
+        if not image_url:
+            flash("Görsel yüklenemedi (geçersiz format veya 5MB'tan büyük).", "error")
+            return redirect(url_for("routes.feed"))
 
     get_sb().table("posts").insert({
         "user_id": _my_id(),
         "content": content,
+        "image_url": image_url,
     }).execute()
     flash("Post paylaşıldı.", "success")
     return redirect(url_for("routes.feed"))
@@ -112,3 +125,57 @@ def profile(username):
 
     return render_template("profile.html", profile=prof, posts=posts,
                            is_self=is_self, is_following=is_following)
+
+
+@bp.route("/profile/edit", methods=["GET", "POST"])
+@login_required
+def profile_edit():
+    sb = get_sb()
+    me = _my_id()
+
+    if request.method == "POST":
+        full_name = request.form.get("full_name", "").strip()
+        bio = request.form.get("bio", "").strip()
+        username = request.form.get("username", "").strip()
+        avatar_file = request.files.get("avatar")
+
+        if not username or len(username) < 3:
+            flash("Kullanıcı adı en az 3 karakter olmalı.", "error")
+            return redirect(url_for("routes.profile_edit"))
+
+        # Kullanıcı adı başkası tarafından kullanılıyor mu?
+        if username != session["user"].get("username", ""):
+            taken = sb.table("profiles").select("id").eq("username", username).neq(
+                "id", me
+            ).execute()
+            if taken.data:
+                flash("Bu kullanıcı adı zaten alınmış.", "error")
+                return redirect(url_for("routes.profile_edit"))
+
+        # Güncellenecek alanlar
+        update_data = {"full_name": full_name or None, "bio": bio or None, "username": username}
+
+        # Avatar yüklendiyse
+        if avatar_file and avatar_file.filename:
+            avatar_url = upload_image(avatar_file, folder="avatars")
+            if avatar_url:
+                update_data["avatar_url"] = avatar_url
+            else:
+                flash("Avatar yüklenemedi (geçersiz format veya 5MB'tan büyük).", "error")
+                return redirect(url_for("routes.profile_edit"))
+
+        # Profili güncelle
+        sb.table("profiles").update(update_data).eq("id", me).execute()
+
+        # Session'daki username'i de güncelle
+        session["user"]["username"] = username
+        session.modified = True
+
+        flash("Profil güncellendi.", "success")
+        return redirect(url_for("routes.profile", username=username))
+
+    # GET: mevcut profil bilgilerini göster
+    prof = sb.table("profiles").select("*").eq("id", me).execute()
+    if not prof.data:
+        abort(404)
+    return render_template("profile_edit.html", profile=prof.data[0])

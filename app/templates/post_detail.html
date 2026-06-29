@@ -9,6 +9,9 @@
         <span class="time">{{ post.created_at[:16]|replace('T',' ') }}</span>
     </header>
     <p class="post-content">{{ post.content }}</p>
+    {% if post.image_url %}
+        <img src="{{ post.image_url }}" class="post-image" alt="">
+    {% endif %}
 </article>
 
 <section class="card comment-form">
