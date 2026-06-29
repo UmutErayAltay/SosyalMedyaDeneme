@@ -62,7 +62,8 @@ def conversation(conversation_id):
 
     return render_template("messages/conversation.html",
                            messages=messages, other_user=other_user,
-                           conversation_id=conversation_id)
+                           conversation_id=conversation_id,
+                           me=session["user"])
 
 
 @bp.route("/<conversation_id>/send", methods=["POST"])
