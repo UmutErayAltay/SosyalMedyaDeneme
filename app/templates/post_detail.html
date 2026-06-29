@@ -12,6 +12,14 @@
     {% if post.image_url %}
         <img src="{{ post.image_url }}" class="post-image" alt="">
     {% endif %}
+    <footer class="post-actions">
+        <button type="button"
+                class="btn btn-ghost like-btn {{ 'liked' if post.liked_by_me }}"
+                data-liked="{{ '1' if post.liked_by_me else '0' }}"
+                data-like-url="{{ url_for('social.toggle_like', post_id=post.id) }}">
+            ♥ <span class="like-count">{{ post.like_count or 0 }}</span>
+        </button>
+    </footer>
 </article>
 
 <section class="card comment-form">
@@ -41,4 +49,5 @@
     <p class="muted">Henüz yorum yok. İlk yorumu sen yap!</p>
     {% endfor %}
 </section>
+<script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 {% endblock %}

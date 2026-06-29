@@ -83,11 +83,18 @@ def post_detail(post_id):
         abort(404)
     post = res.data[0]
 
+    # beğeni sayısı + ben beğendim mi? (feed() ile aynı mantık)
+    me = _my_id()
+    like_res = sb.table("likes").select("user_id").eq("post_id", post_id).execute()
+    post["like_count"] = len(like_res.data)
+    post["liked_by_me"] = me in [l["user_id"] for l in like_res.data]
+
     comments = sb.table("comments").select(
         "*, profiles!comments_user_id_fkey(username, avatar_url)"
     ).eq("post_id", post_id).order("created_at", desc=False).execute().data
 
-    return render_template("post_detail.html", post=post, comments=comments)
+    return render_template("post_detail.html", post=post, comments=comments,
+                           me=session.get("user"))
 
 
 @bp.route("/post/<post_id>/delete", methods=["POST"])

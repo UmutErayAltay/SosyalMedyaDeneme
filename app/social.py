@@ -1,5 +1,5 @@
 """Sosyal etkileşimler: beğeni, yorum, takip."""
-from flask import Blueprint, request, redirect, url_for, session, flash, abort
+from flask import Blueprint, request, redirect, url_for, session, flash, abort, jsonify
 from .decorators import login_required
 from .supabase_client import get_sb
 
@@ -14,11 +14,19 @@ def toggle_like(post_id):
     sb = get_sb()
     me = session["user"]["id"]
 
-    existing = sb.table("likes").select().eq("post_id", post_id).eq("user_id", me).execute()
+    existing = sb.table("likes").select("post_id").eq("post_id", post_id).eq("user_id", me).execute()
     if existing.data:
         sb.table("likes").delete().eq("post_id", post_id).eq("user_id", me).execute()
+        liked = False
     else:
         sb.table("likes").insert({"post_id": post_id, "user_id": me}).execute()
+        liked = True
+
+    count = len(sb.table("likes").select("post_id").eq("post_id", post_id).execute().data)
+
+    # JS'ten fetch ile gelen istekse JSON dön, normal form submit ise (JS kapalıysa) eskisi gibi redirect
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify(liked=liked, count=count)
     return redirect(request.referrer or url_for("routes.feed"))
 
 

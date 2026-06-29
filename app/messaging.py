@@ -24,16 +24,28 @@ def inbox():
     convos = []
     for p in parts:
         cid = p["conversation_id"]
+
         msgs = sb.table("messages").select("*, profiles!messages_sender_id_fkey(username, avatar_url)").eq(
             "conversation_id", cid
         ).order("created_at", desc=True).limit(1).execute().data
         last_msg = msgs[0] if msgs else None
-        convos.append({"id": cid, "last_message": last_msg})
+
+        # Diğer katılımcı (conversation() route'undaki ile aynı mantık)
+        other = sb.table("conversation_participants").select(
+            "user_id, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
+        ).neq("user_id", me).eq("conversation_id", cid).execute()
+        other_user = other.data[0]["profiles"] if other.data else None
+
+        convos.append({
+            "id": cid,
+            "last_message": last_msg,
+            "other_user": other_user,
+        })
 
     convos.sort(key=lambda c: c["last_message"]["created_at"]
                 if c["last_message"] else "", reverse=True)
 
-    return render_template("messages/inbox.html", convos=convos)
+    return render_template("messages/inbox.html", convos=convos, me=session["user"])
 
 
 @bp.route("/<conversation_id>")

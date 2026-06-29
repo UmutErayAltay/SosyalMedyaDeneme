@@ -8,7 +8,7 @@
         <a href="{{ url_for('messaging.conversation', conversation_id=c.id) }}" class="card inbox-item">
             <div class="avatar avatar-placeholder"></div>
             <div>
-                <strong>Konuşma</strong>
+                <strong>{{ c.other_user.username if c.other_user else 'Bilinmeyen' }}</strong>
                 {% if c.last_message %}
                 <p class="muted preview">{{ c.last_message.content[:40] }}</p>
                 {% else %}
