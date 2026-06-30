@@ -186,3 +186,25 @@ def profile_edit():
     if not prof.data:
         abort(404)
     return render_template("profile_edit.html", profile=prof.data[0])
+
+
+@bp.route("/search")
+@login_required
+def search():
+    q = request.args.get("q", "").strip()
+    if len(q) < 2:
+        return render_template("search.html", q=q, users=[], posts=[])
+
+    sb = get_sb()
+    # Kullanıcı ara (username ILIKE)
+    users = sb.table("profiles").select(
+        "id, username, full_name, avatar_url"
+    ).ilike("username", f"%{q}%").limit(20).execute().data
+
+    # Post ara (content ILIKE)
+    posts = sb.table("posts").select(
+        "id, content, image_url, created_at, user_id, "
+        "profiles!posts_user_id_fkey(username, avatar_url)"
+    ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
+
+    return render_template("search.html", q=q, users=users, posts=posts)

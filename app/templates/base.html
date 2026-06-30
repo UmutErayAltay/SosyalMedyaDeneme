@@ -10,10 +10,20 @@
     {% if me %}
     <nav class="navbar">
         <a href="{{ url_for('routes.feed') }}" class="brand">sosyal</a>
+        <form action="{{ url_for('routes.search') }}" method="get" class="nav-search">
+            <input type="text" name="q" placeholder="Ara..." autocomplete="off">
+        </form>
         <div class="nav-links">
             <a href="{{ url_for('routes.feed') }}">Akış</a>
             <a href="{{ url_for('messaging.inbox') }}">Mesajlar</a>
-            <a href="{{ url_for('routes.profile', username=me.username) if me.username else '#' }}">Profil</a>
+            <a href="{{ url_for('routes.profile', username=me.username) if me.username else '#' }}" class="nav-profile">
+                {% if me.avatar_url %}
+                    <img src="{{ me.avatar_url }}" class="nav-avatar" alt="">
+                {% else %}
+                    <div class="avatar avatar-placeholder nav-avatar"></div>
+                {% endif %}
+                Profil
+            </a>
             <a href="{{ url_for('auth.logout') }}" class="logout">Çıkış</a>
         </div>
     </nav>

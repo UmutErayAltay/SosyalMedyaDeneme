@@ -193,3 +193,35 @@ label input { margin-top: 6px; }
 }
 .avatar-upload-label { cursor: pointer; display: inline-block; }
 .avatar-upload-label input[type="file"] { display: none; }
+
+/* =========================
+   NAVBAR ARAMA + AVATAR
+   ========================= */
+.nav-search { flex: 1; max-width: 320px; margin: 0 24px; }
+.nav-search input {
+    width: 100%; padding: 6px 12px;
+    border-radius: 20px; font-size: 13px;
+    border: 1px solid var(--border); background: var(--bg);
+}
+.nav-search input:focus { border-color: var(--primary); }
+
+.nav-profile {
+    display: flex; align-items: center; gap: 6px;
+}
+.nav-avatar {
+    width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
+}
+
+/* =========================
+   ARAMA SAYFASI
+   ========================= */
+.search-page h2 { margin-bottom: 20px; font-size: 20px; }
+.search-section { margin-bottom: 32px; }
+.search-section h3 {
+    font-size: 14px; color: var(--muted);
+    margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.search-user {
+    display: flex; align-items: center; gap: 12px;
+}
+.search-user:hover { background: var(--bg); }

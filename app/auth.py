@@ -14,7 +14,7 @@ bp = Blueprint("auth", __name__)
 
 
 def _save_session(res) -> bool:
-    """sign_in cevabindan session bilgisini sakla."""
+    """sign_in cevabindan session bilgisini sakla (avatar_url dahil)."""
     user = getattr(res, "user", None)
     s = getattr(res, "session", None)
     if user and s and getattr(s, "access_token", None):
@@ -22,6 +22,18 @@ def _save_session(res) -> bool:
         session["access_token"] = s.access_token
         session["refresh_token"] = getattr(s, "refresh_token", None)
         session.permanent = True
+
+        # Profile'dan avatar_url + username'i de session'a al (navbar için)
+        try:
+            prof = get_sb().table("profiles").select("avatar_url, username").eq(
+                "id", user.id
+            ).execute()
+            if prof.data:
+                session["user"]["avatar_url"] = prof.data[0].get("avatar_url")
+                session["user"]["username"] = prof.data[0].get("username")
+        except Exception:
+            pass
+
         return True
     return False
 

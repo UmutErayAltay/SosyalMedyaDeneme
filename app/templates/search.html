@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Arama{% endblock %}
+{% block content %}
+<div class="search-page">
+    {% if q %}
+    <h2>"{{ q }}" için sonuçlar</h2>
+    {% else %}
+    <h2>Arama</h2>
+    <p class="muted">Aramak için en az 2 karakter yaz.</p>
+    {% endif %}
+
+    {% if q %}
+
+    <section class="search-section">
+        <h3>Kullanıcılar ({{ users|length }})</h3>
+        {% for u in users %}
+        <a href="{{ url_for('routes.profile', username=u.username) }}" class="card search-user">
+            {% if u.avatar_url %}
+                <img src="{{ u.avatar_url }}" class="avatar" alt="">
+            {% else %}
+                <div class="avatar avatar-placeholder"></div>
+            {% endif %}
+            <div>
+                <strong>{{ u.username }}</strong>
+                {% if u.full_name %}<p class="muted">{{ u.full_name }}</p>{% endif %}
+            </div>
+        </a>
+        {% else %}
+        <p class="muted">Kullanıcı bulunamadı.</p>
+        {% endfor %}
+    </section>
+
+    <section class="search-section">
+        <h3>Postlar ({{ posts|length }})</h3>
+        {% for p in posts %}
+        <article class="card post">
+            <header class="post-header">
+                {% if p.profiles and p.profiles.avatar_url %}
+                    <img src="{{ p.profiles.avatar_url }}" class="avatar" alt="">
+                {% else %}
+                    <div class="avatar avatar-placeholder"></div>
+                {% endif %}
+                <a href="{{ url_for('routes.profile', username=p.profiles.username) if p.profiles else '#' }}"
+                   class="username">{{ p.profiles.username if p.profiles else 'Bilinmeyen' }}</a>
+                <span class="time">{{ p.created_at[:16]|replace('T',' ') }}</span>
+            </header>
+            <p class="post-content">{{ p.content }}</p>
+            {% if p.image_url %}
+                <img src="{{ p.image_url }}" class="post-image" alt="">
+            {% endif %}
+        </article>
+        {% else %}
+        <p class="muted">Post bulunamadı.</p>
+        {% endfor %}
+    </section>
+
+    {% endif %}
+</div>
+{% endblock %}
