@@ -174,8 +174,10 @@ def profile_edit():
         # Profili güncelle
         sb.table("profiles").update(update_data).eq("id", me).execute()
 
-        # Session'daki username'i de güncelle
+        # Session'daki kullanıcı bilgilerini senkronize et (navbar avatarı için)
         session["user"]["username"] = username
+        if "avatar_url" in update_data:
+            session["user"]["avatar_url"] = update_data["avatar_url"]
         session.modified = True
 
         flash("Profil güncellendi.", "success")

@@ -1,20 +1,60 @@
 /* =========================
    Sosyal Medya — Sade Tasarım
+   Dark mode: prefers-color-scheme + data-theme attribute
+   WCAG AA kontrast: metin 4.5:1, koyu modda #121212 (saf siyah değil)
    ========================= */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
+    /* Aydınlık tema (varsayılan) */
     --bg: #fafafa;
     --card: #ffffff;
     --text: #1a1a1a;
-    --muted: #888;
-    --border: #eee;
+    --muted: #6b6b6b;          /* 4.5:1 kontrast */
+    --border: #e4e4e4;
     --primary: #2d2d2d;
     --primary-hover: #000;
     --danger: #d33;
+    --danger-bg: #fdecea;
+    --success-bg: #e8f5e9;
+    --success-text: #2e7d32;
     --radius: 12px;
     --max-width: 640px;
+    --focus-ring: 0 0 0 3px rgba(45, 45, 45, 0.3);
+}
+
+/* Koyu tema — saf siyah yerine #121212 (halation önleme) */
+[data-theme="dark"] {
+    --bg: #121212;
+    --card: #1e1e1e;
+    --text: #e8e8e8;
+    --muted: #a0a0a0;
+    --border: #333;
+    --primary: #e0e0e0;
+    --primary-hover: #fff;
+    --danger: #ff6b6b;
+    --danger-bg: #3a1c1c;
+    --success-bg: #1c3a1c;
+    --success-text: #6ee7b7;
+    --focus-ring: 0 0 0 3px rgba(224, 224, 224, 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --bg: #121212;
+        --card: #1e1e1e;
+        --text: #e8e8e8;
+        --muted: #a0a0a0;
+        --border: #333;
+        --primary: #e0e0e0;
+        --primary-hover: #fff;
+        --danger: #ff6b6b;
+        --danger-bg: #3a1c1c;
+        --success-bg: #1c3a1c;
+        --success-text: #6ee7b7;
+        --focus-ring: 0 0 0 3px rgba(224, 224, 224, 0.4);
+    }
 }
 
 body {
@@ -23,6 +63,7 @@ body {
     color: var(--text);
     line-height: 1.5;
     font-size: 15px;
+    transition: background 0.2s, color 0.2s;
 }
 
 a { color: inherit; text-decoration: none; }
@@ -30,7 +71,40 @@ a { color: inherit; text-decoration: none; }
 .muted { color: var(--muted); font-size: 13px; }
 .center { text-align: center; }
 
-/* Navbar */
+/* =========================
+   Erişilebilirlik (WCAG)
+   ========================= */
+/* Sadece ekran okuyucu için görünür */
+.sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* Klavye focus çerçevesi — her interaktif öğede görünür */
+a:focus-visible, button:focus-visible, input:focus-visible,
+textarea:focus-visible, select:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+    border-radius: 4px;
+}
+
+/* "İçeriğe atla" bağlantısı */
+.skip-link {
+    position: absolute; top: -40px; left: 0;
+    background: var(--primary); color: var(--card);
+    padding: 8px 16px; z-index: 100;
+    border-radius: 0 0 8px 0;
+    transition: top 0.2s;
+}
+.skip-link:focus { top: 0; }
+
+/* Tüm interaktif öğeler için temel focus */
+*:focus { outline: none; }
+
+/* =========================
+   Navbar (responsive)
+   ========================= */
 .navbar {
     background: var(--card);
     border-bottom: 1px solid var(--border);
@@ -38,15 +112,78 @@ a { color: inherit; text-decoration: none; }
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 16px;
     position: sticky; top: 0; z-index: 10;
 }
-.brand { font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
-.nav-links a {
-    margin-left: 18px; color: var(--muted);
-    transition: color 0.15s;
+.brand { font-weight: 700; font-size: 18px; letter-spacing: -0.5px; white-space: nowrap; }
+
+.nav-search { flex: 1; max-width: 320px; }
+.nav-search input {
+    width: 100%; padding: 6px 12px;
+    border-radius: 20px; font-size: 13px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
-.nav-links a:hover { color: var(--text); }
-.nav-links a.logout:hover { color: var(--danger); }
+
+.nav-links {
+    display: flex; align-items: center; gap: 4px;
+}
+.nav-links a {
+    margin-left: 14px; color: var(--muted);
+    padding: 6px 8px; border-radius: 6px;
+    transition: color 0.15s, background 0.15s;
+    white-space: nowrap;
+}
+.nav-links a:hover { color: var(--text); background: var(--border); }
+.nav-links a.logout:hover { color: var(--danger); background: var(--danger-bg); }
+
+.nav-profile { display: flex; align-items: center; gap: 6px; }
+.nav-avatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+
+/* Theme toggle butonu */
+.theme-toggle {
+    background: none; border: 1px solid var(--border);
+    border-radius: 50%; width: 32px; height: 32px;
+    cursor: pointer; color: var(--text); font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    margin-left: 8px; transition: background 0.15s;
+}
+.theme-toggle:hover { background: var(--border); }
+.theme-toggle .icon-sun { display: none; }
+
+/* Hamburger menü (mobil) */
+.nav-toggle {
+    display: none; background: none; border: none;
+    cursor: pointer; padding: 8px;
+}
+.nav-toggle .hamburger,
+.nav-toggle .hamburger::before,
+.nav-toggle .hamburger::after {
+    display: block; width: 22px; height: 2px;
+    background: var(--text); border-radius: 2px;
+    transition: transform 0.25s;
+}
+.nav-toggle .hamburger { position: relative; }
+.nav-toggle .hamburger::before { content: ""; position: absolute; top: -7px; }
+.nav-toggle .hamburger::after  { content: ""; position: absolute; top: 7px; }
+.nav-toggle.active .hamburger { background: transparent; }
+.nav-toggle.active .hamburger::before { transform: translateY(7px) rotate(45deg); }
+.nav-toggle.active .hamburger::after  { transform: translateY(-7px) rotate(-45deg); }
+
+/* Mobil breakpoint */
+@media (max-width: 640px) {
+    .nav-search { order: 3; max-width: none; flex-basis: 100%; margin-top: 8px; }
+    .nav-toggle { display: block; order: 2; }
+    .nav-links {
+        order: 4; flex-basis: 100%;
+        flex-direction: column; align-items: stretch;
+        max-height: 0; overflow: hidden;
+        transition: max-height 0.25s ease;
+    }
+    .nav-links.open { max-height: 400px; }
+    .nav-links a { margin-left: 0; padding: 10px 8px; border-radius: 6px; }
+    .nav-profile { justify-content: flex-start; }
+    .theme-toggle { margin-left: 0; align-self: flex-start; }
+}
 
 /* Container */
 .container {
@@ -60,8 +197,8 @@ a { color: inherit; text-decoration: none; }
     padding: 10px 14px; border-radius: var(--radius);
     margin-bottom: 16px; font-size: 14px;
 }
-.flash-success { background: #e8f5e9; color: #2e7d32; }
-.flash-error   { background: #fdecea; color: #c62828; }
+.flash-success { background: var(--success-bg); color: var(--success-text); }
+.flash-error   { background: var(--danger-bg); color: var(--danger); }
 
 /* Kartlar */
 .card {
@@ -80,11 +217,11 @@ a { color: inherit; text-decoration: none; }
     transition: all 0.15s;
     display: inline-block;
 }
-.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary { background: var(--primary); color: var(--bg); }
 .btn-primary:hover { background: var(--primary-hover); }
 .btn-ghost { background: transparent; color: var(--muted); }
 .btn-ghost:hover { background: var(--border); color: var(--text); }
-.btn-ghost.danger:hover { background: #fdecea; color: var(--danger); }
+.btn-ghost.danger:hover { background: var(--danger-bg); color: var(--danger); }
 .btn-ghost.liked { color: var(--danger); }
 .btn.small { padding: 4px 10px; font-size: 12px; }
 
@@ -153,10 +290,10 @@ label input { margin-top: 6px; }
 .msg p { font-size: 14px; }
 .msg .time { display: block; font-size: 11px; margin: 2px 0 0; }
 .msg.mine {
-    margin-left: auto; background: var(--primary); color: #fff;
+    margin-left: auto; background: var(--primary); color: var(--bg);
     border-bottom-right-radius: 4px;
 }
-.msg.mine .time { color: rgba(255,255,255,0.7); }
+.msg.mine .time { color: rgba(128,128,128,0.8); }
 .msg.theirs {
     background: var(--border); border-bottom-left-radius: 4px;
 }
@@ -193,24 +330,6 @@ label input { margin-top: 6px; }
 }
 .avatar-upload-label { cursor: pointer; display: inline-block; }
 .avatar-upload-label input[type="file"] { display: none; }
-
-/* =========================
-   NAVBAR ARAMA + AVATAR
-   ========================= */
-.nav-search { flex: 1; max-width: 320px; margin: 0 24px; }
-.nav-search input {
-    width: 100%; padding: 6px 12px;
-    border-radius: 20px; font-size: 13px;
-    border: 1px solid var(--border); background: var(--bg);
-}
-.nav-search input:focus { border-color: var(--primary); }
-
-.nav-profile {
-    display: flex; align-items: center; gap: 6px;
-}
-.nav-avatar {
-    width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
-}
 
 /* =========================
    ARAMA SAYFASI

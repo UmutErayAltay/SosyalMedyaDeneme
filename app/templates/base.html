@@ -3,41 +3,90 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Sosyal{% endblock %}</title>
+
+    {# --- SEO & Open Graph --- #}
+    <title>{% block title %}Sosyal{% endblock %} — Sosyal Medya</title>
+    <meta name="description" content="Arkadaşlarınla mesajlaş, post paylaş, etkileşim kur.">
+    <meta property="og:title" content="{% block og_title %}Sosyal{% endblock %}">
+    <meta property="og:description" content="Arkadaşlarınla mesajlaş, post paylaş, etkileşim kur.">
+    <meta property="og:type" content="website">
+
+    {# --- Performans: font pre-connect --- #}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+
+    {# --- Dark mode: FOUC önleyici (render öncesi çalışır) --- #}
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('theme');
+                if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                }
+            } catch (e) {}
+        })();
+    </script>
+
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
 </head>
 <body>
+    {# --- Erişilebilirlik: klavye kullanıcıları için "İçeriğe atla" --- #}
+    <a href="#main-content" class="skip-link">İçeriğe atla</a>
+
     {% if me %}
-    <nav class="navbar">
-        <a href="{{ url_for('routes.feed') }}" class="brand">sosyal</a>
-        <form action="{{ url_for('routes.search') }}" method="get" class="nav-search">
-            <input type="text" name="q" placeholder="Ara..." autocomplete="off">
+    <header role="banner">
+    <nav class="navbar" role="navigation" aria-label="Ana menü">
+        <a href="{{ url_for('routes.feed') }}" class="brand" aria-label="Ana sayfa">sosyal</a>
+
+        <form action="{{ url_for('routes.search') }}" method="get" class="nav-search" role="search">
+            <label for="nav-search-input" class="sr-only">Ara</label>
+            <input id="nav-search-input" type="search" name="q" placeholder="Kullanıcı veya post ara..."
+                   autocomplete="off" aria-label="Arama yap">
         </form>
-        <div class="nav-links">
-            <a href="{{ url_for('routes.feed') }}">Akış</a>
-            <a href="{{ url_for('messaging.inbox') }}">Mesajlar</a>
-            <a href="{{ url_for('routes.profile', username=me.username) if me.username else '#' }}" class="nav-profile">
+
+        <button class="nav-toggle" aria-label="Menüyü aç/kapat" aria-expanded="false" aria-controls="nav-links">
+            <span class="hamburger"></span>
+        </button>
+
+        <div class="nav-links" id="nav-links">
+            <a href="{{ url_for('routes.feed') }}" aria-label="Akış">Akış</a>
+            <a href="{{ url_for('messaging.inbox') }}" aria-label="Mesajlar">Mesajlar</a>
+            <a href="{{ url_for('routes.profile', username=me.username) if me.username else '#' }}"
+               class="nav-profile" aria-label="Profilim">
                 {% if me.avatar_url %}
-                    <img src="{{ me.avatar_url }}" class="nav-avatar" alt="">
+                    <img src="{{ me.avatar_url }}" class="nav-avatar" alt="Profil fotoğrafın" width="24" height="24" loading="eager">
                 {% else %}
-                    <div class="avatar avatar-placeholder nav-avatar"></div>
+                    <div class="avatar avatar-placeholder nav-avatar" aria-hidden="true"></div>
                 {% endif %}
                 Profil
             </a>
-            <a href="{{ url_for('auth.logout') }}" class="logout">Çıkış</a>
+            <button class="theme-toggle" id="theme-toggle" aria-label="Karanlık modu aç/kapat" type="button">
+                <span class="icon-sun">☀</span><span class="icon-moon">☾</span>
+            </button>
+            <a href="{{ url_for('auth.logout') }}" class="logout" aria-label="Çıkış yap">Çıkış</a>
         </div>
     </nav>
+    </header>
     {% endif %}
 
-    <main class="container">
+    <main class="container" id="main-content" role="main">
+        {# --- Flash mesajları: aria-live ile ekran okuyucu duyurusu --- #}
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
+                <div aria-live="polite" aria-atomic="true">
                 {% for category, msg in messages %}
-                    <div class="flash flash-{{ category }}">{{ msg }}</div>
+                    <div class="flash flash-{{ category }}" role="status">{{ msg }}</div>
                 {% endfor %}
+                </div>
             {% endif %}
         {% endwith %}
         {% block content %}{% endblock %}
     </main>
+
+    {# --- Dark mode toggle JS (FOUC'suz) --- #}
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    {# --- Mobil menü toggle JS --- #}
+    <script src="{{ url_for('static', filename='js/navbar.js') }}"></script>
+    {% block scripts %}{% endblock %}
 </body>
 </html>
