@@ -117,12 +117,36 @@ def profile(username):
         abort(404)
     prof = prof.data[0]
 
-    posts = sb.table("posts").select("*, created_at").eq(
+    me = _my_id()
+    is_self = me == prof["id"]
+
+    # Postlar + yazar bilgisi
+    posts = sb.table("posts").select("*").eq(
         "user_id", prof["id"]
     ).order("created_at", desc=True).execute().data
 
-    me = _my_id()
-    is_self = me == prof["id"]
+    # Her posta etkileşim metrikleri (beğeni/yorum sayısı + liked_by_me)
+    for p in posts:
+        like_res = sb.table("likes").select("user_id").eq("post_id", p["id"]).execute()
+        p["like_count"] = len(like_res.data)
+        p["liked_by_me"] = me in [l["user_id"] for l in like_res.data]
+        comment_res = sb.table("comments").select("id").eq("post_id", p["id"]).execute()
+        p["comment_count"] = len(comment_res.data)
+
+    # --- Profil istatistikleri ---
+    followers_count = len(sb.table("follows").select("follower_id").eq(
+        "following_id", prof["id"]
+    ).execute().data)
+    following_count = len(sb.table("follows").select("following_id").eq(
+        "follower_id", prof["id"]
+    ).execute().data)
+    # Toplam beğeni (kullanıcının tüm postlarına gelen)
+    post_ids = [p["id"] for p in posts]
+    total_likes = 0
+    if post_ids:
+        for p in posts:
+            total_likes += p["like_count"]
+
     is_following = False
     if not is_self:
         f = sb.table("follows").select().eq("follower_id", me).eq(
@@ -131,7 +155,13 @@ def profile(username):
         is_following = bool(f.data)
 
     return render_template("profile.html", profile=prof, posts=posts,
-                           is_self=is_self, is_following=is_following)
+                           is_self=is_self, is_following=is_following, me=session.get("user"),
+                           stats={
+                               "posts": len(posts),
+                               "followers": followers_count,
+                               "following": following_count,
+                               "likes": total_likes,
+                           })
 
 
 @bp.route("/profile/edit", methods=["GET", "POST"])

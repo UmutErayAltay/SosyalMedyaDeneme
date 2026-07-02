@@ -84,8 +84,18 @@ def toggle_follow(username):
         sb.table("follows").delete().eq("follower_id", me).eq(
             "following_id", target_id
         ).execute()
+        following = False
     else:
         sb.table("follows").insert({
             "follower_id": me, "following_id": target_id
         }).execute()
+        following = True
+
+    # AJAX isteği ise JSON dön, değilse redirect
+    if request.headers.get("X-Requested-With") == "fetch":
+        followers_count = len(sb.table("follows").select("follower_id").eq(
+            "following_id", target_id
+        ).execute().data)
+        return jsonify(following=following, followers_count=followers_count)
+
     return redirect(url_for("routes.profile", username=username))

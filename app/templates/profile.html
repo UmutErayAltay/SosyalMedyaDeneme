@@ -3,23 +3,36 @@
 {% block content %}
 <header class="card profile-header">
     {% if profile.avatar_url %}
-        <img src="{{ profile.avatar_url }}" class="avatar large" alt="">
+        <img src="{{ profile.avatar_url }}" class="avatar large" alt="{{ profile.username }} profil fotoğrafı" loading="lazy">
     {% else %}
-        <div class="avatar large avatar-placeholder"></div>
+        <div class="avatar large avatar-placeholder" aria-hidden="true"></div>
     {% endif %}
     <div class="profile-info">
         <h1>{{ profile.username }}</h1>
         {% if profile.full_name %}<p class="muted">{{ profile.full_name }}</p>{% endif %}
         {% if profile.bio %}<p class="bio">{{ profile.bio }}</p>{% endif %}
+        {% if profile.created_at %}
+        <p class="muted">📅 {{ profile.created_at[:7]|replace('-',' ') }} tarihinde katıldı</p>
+        {% endif %}
+
+        <div class="profile-stats">
+            <span><strong>{{ stats.posts }}</strong> Post</span>
+            <span><strong>{{ stats.followers }}</strong> Takipçi</span>
+            <span><strong>{{ stats.following }}</strong> Takip</span>
+        </div>
 
         <div class="profile-actions">
             {% if is_self %}
                 <a href="{{ url_for('routes.profile_edit') }}" class="btn btn-ghost">Profili düzenle</a>
             {% else %}
-                <a href="{{ url_for('social.toggle_follow', username=profile.username) }}"
-                   class="btn {{ 'btn-ghost' if is_following else 'btn-primary' }}">
+                <button type="button"
+                        class="btn follow-btn {{ 'btn-ghost' if is_following else 'btn-primary' }}"
+                        data-following="{{ '1' if is_following else '0' }}"
+                        data-username="{{ profile.username }}"
+                        data-follow-url="{{ url_for('social.toggle_follow', username=profile.username) }}"
+                        aria-label="{{ 'Takipten çık' if is_following else 'Takip et' }}">
                     {{ 'Takipten çık' if is_following else 'Takip et' }}
-                </a>
+                </button>
                 <a href="{{ url_for('messaging.start_conversation', username=profile.username) }}"
                    class="btn btn-ghost">Mesaj gönder</a>
             {% endif %}
@@ -31,15 +44,45 @@
     <h3>Postlar</h3>
     {% for p in posts %}
     <article class="card post">
+        <header class="post-header">
+            {% if profile.avatar_url %}
+                <img src="{{ profile.avatar_url }}" class="avatar" alt="" loading="lazy">
+            {% else %}
+                <div class="avatar avatar-placeholder" aria-hidden="true"></div>
+            {% endif %}
+            <span class="username">{{ profile.username }}</span>
+            <span class="time">{{ p.created_at[:16]|replace('T',' ') }}</span>
+        </header>
         {% if p.image_url %}
-            <img src="{{ p.image_url }}" class="post-image" alt="">
+            <img src="{{ p.image_url }}" class="post-image" alt="Post görseli" loading="lazy">
         {% endif %}
-        <p class="post-content">{{ p.content }}</p>
-        <span class="time">{{ p.created_at[:16]|replace('T',' ') }}</span>
+        {% if p.content %}
+            <p class="post-content">{{ p.content }}</p>
+        {% endif %}
+        <footer class="post-actions">
+            <button type="button"
+                    class="btn btn-ghost like-btn {{ 'liked' if p.liked_by_me }}"
+                    data-liked="{{ '1' if p.liked_by_me else '0' }}"
+                    data-like-url="{{ url_for('social.toggle_like', post_id=p.id) }}"
+                    aria-label="Beğen">
+                ♥ <span class="like-count">{{ p.like_count or 0 }}</span>
+            </button>
+            <a href="{{ url_for('routes.post_detail', post_id=p.id) }}" class="btn btn-ghost" aria-label="Yorumlar">
+                💬 {{ p.comment_count or 0 }}
+            </a>
+            {% if is_self %}
+                <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
+                      onsubmit="return confirm('Bu postu silmek istiyor musun?')">
+                    <button type="submit" class="btn btn-ghost danger" aria-label="Postu sil">🗑 Sil</button>
+                </form>
+            {% endif %}
+        </footer>
     </article>
     {% else %}
     <p class="muted">Henüz post yok.</p>
     {% endfor %}
 </section>
-{% endblock %}
 
+<script src="{{ url_for('static', filename='js/follow.js') }}"></script>
+<script src="{{ url_for('static', filename='js/likes.js') }}"></script>
+{% endblock %}
