@@ -59,11 +59,65 @@
             <span class="time">{{ c.created_at[:16]|replace('T',' ') }}</span>
         </div>
         <p>{{ c.content }}</p>
-        {% if me and c.user_id == me.id %}
-        <form action="{{ url_for('social.delete_comment', comment_id=c.id) }}" method="post"
-              onsubmit="return confirm('Yorumu sil?')">
-            <button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>
+        <div class="comment-actions">
+            <button type="button"
+                    class="btn btn-ghost small comment-like-btn {{ 'liked' if c.liked_by_me }}"
+                    data-liked="{{ '1' if c.liked_by_me else '0' }}"
+                    data-like-url="{{ url_for('social.toggle_comment_like', comment_id=c.id) }}"
+                    aria-label="Yorumu beğen">
+                ♥ <span class="like-count">{{ c.like_count or 0 }}</span>
+            </button>
+            <button type="button" class="btn btn-ghost small reply-toggle"
+                    data-comment-id="{{ c.id }}" aria-label="Yanıtla">Yanıtla</button>
+            {% if me and c.user_id == me.id %}
+            <form action="{{ url_for('social.delete_comment', comment_id=c.id) }}" method="post"
+                  onsubmit="return confirm('Yorumu sil?')">
+                <button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>
+            </form>
+            {% endif %}
+        </div>
+
+        {# --- Yanıt formu (gizli, tıklayınca açılır) --- #}
+        <form class="reply-form" data-parent-id="{{ c.id }}" data-post-id="{{ post.id }}" hidden>
+            <textarea name="content" placeholder="Yanıtını yaz..." rows="2" aria-label="Yanıt içeriği"></textarea>
+            <button type="submit" class="btn btn-primary small">Gönder</button>
         </form>
+
+        {# --- Yanıtlar --- #}
+        {% if c.replies %}
+        <div class="replies">
+            {% for r in c.replies %}
+            <article class="comment reply" data-comment-id="{{ r.id }}">
+                <div class="comment-meta">
+                    {% if r.profiles and r.profiles.avatar_url %}
+                        <img src="{{ r.profiles.avatar_url }}" class="avatar avatar-sm" alt="" loading="lazy">
+                    {% else %}
+                        <div class="avatar avatar-sm avatar-placeholder" aria-hidden="true"></div>
+                    {% endif %}
+                    <a href="{{ url_for('routes.profile', username=r.profiles.username) if r.profiles else '#' }}" class="username">
+                        {{ r.profiles.username if r.profiles else 'Bilinmeyen' }}
+                    </a>
+                    <span class="time">{{ r.created_at[:16]|replace('T',' ') }}</span>
+                </div>
+                <p>{{ r.content }}</p>
+                <div class="comment-actions">
+                    <button type="button"
+                            class="btn btn-ghost small comment-like-btn {{ 'liked' if r.liked_by_me }}"
+                            data-liked="{{ '1' if r.liked_by_me else '0' }}"
+                            data-like-url="{{ url_for('social.toggle_comment_like', comment_id=r.id) }}"
+                            aria-label="Yorumu beğen">
+                        ♥ <span class="like-count">{{ r.like_count or 0 }}</span>
+                    </button>
+                    {% if me and r.user_id == me.id %}
+                    <form action="{{ url_for('social.delete_comment', comment_id=r.id) }}" method="post"
+                          onsubmit="return confirm('Yorumu sil?')">
+                        <button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </article>
+            {% endfor %}
+        </div>
         {% endif %}
     </article>
     {% else %}

@@ -79,7 +79,73 @@ def delete_comment(comment_id):
     return redirect(request.referrer or url_for("routes.feed"))
 
 
-# ----------------------- TAKİP -----------------------
+# ----------------------- YORUM BEĞENME -----------------------
+
+@bp.route("/comment/like/<comment_id>", methods=["POST"])
+@login_required
+def toggle_comment_like(comment_id):
+    sb = get_sb()
+    me = session["user"]["id"]
+
+    existing = sb.table("comment_likes").select("user_id").eq(
+        "comment_id", comment_id
+    ).eq("user_id", me).execute()
+    if existing.data:
+        sb.table("comment_likes").delete().eq(
+            "comment_id", comment_id
+        ).eq("user_id", me).execute()
+        liked = False
+    else:
+        sb.table("comment_likes").insert({
+            "comment_id": comment_id, "user_id": me
+        }).execute()
+        liked = True
+
+    count = len(sb.table("comment_likes").select("user_id").eq(
+        "comment_id", comment_id
+    ).execute().data)
+
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify(liked=liked, count=count)
+    return redirect(request.referrer or url_for("routes.feed"))
+
+
+# ----------------------- YORUM YANITLAMA -----------------------
+
+@bp.route("/comment/<post_id>/reply/<parent_id>", methods=["POST"])
+@login_required
+def reply_comment(post_id, parent_id):
+    content = request.form.get("content", "").strip()
+    if not content:
+        if request.headers.get("X-Requested-With") == "fetch":
+            return jsonify(error="Boş yorum yapılamaz"), 400
+        flash("Boş yorum yapılamaz.", "error")
+        return redirect(url_for("routes.post_detail", post_id=post_id))
+
+    me = session["user"]
+    sb = get_sb()
+    res = sb.table("comments").insert({
+        "post_id": post_id,
+        "user_id": me["id"],
+        "content": content,
+        "parent_comment_id": parent_id,
+    }).execute()
+    comment_id = res.data[0]["id"] if res.data else None
+
+    prof = sb.table("profiles").select("username, avatar_url").eq("id", me["id"]).execute()
+    prof_data = prof.data[0] if prof.data else {}
+
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify(
+            id=comment_id,
+            content=content,
+            parent_id=parent_id,
+            username=prof_data.get("username", me.get("email", "Sen")),
+            avatar_url=prof_data.get("avatar_url"),
+        )
+
+    flash("Yanıt eklendi.", "success")
+    return redirect(url_for("routes.post_detail", post_id=post_id))
 
 @bp.route("/follow/<username>")
 @login_required

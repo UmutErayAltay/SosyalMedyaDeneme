@@ -99,6 +99,18 @@ def post_detail(post_id):
         "*, profiles!comments_user_id_fkey(username, avatar_url)"
     ).eq("post_id", post_id).order("created_at", desc=False).execute().data
 
+    # Her yoruma beğeni sayısı + liked_by_me + cevaplar (parent_comment_id)
+    for c in comments:
+        cl = sb.table("comment_likes").select("user_id").eq("comment_id", c["id"]).execute()
+        c["like_count"] = len(cl.data)
+        c["liked_by_me"] = me in [l["user_id"] for l in cl.data]
+
+    # Hiyerarşik yapı: ana yorumlar + cevaplar
+    top_comments = [c for c in comments if not c.get("parent_comment_id")]
+    for tc in top_comments:
+        tc["replies"] = [c for c in comments if c.get("parent_comment_id") == tc["id"]]
+    comments = top_comments
+
     return render_template("post_detail.html", post=post, comments=comments,
                            me=session.get("user"))
 
