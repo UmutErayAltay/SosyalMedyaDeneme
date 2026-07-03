@@ -260,6 +260,7 @@ label input { margin-top: 6px; }
     background: linear-gradient(135deg, #ccc, #999);
 }
 .avatar.large { width: 72px; height: 72px; }
+.avatar-sm { width: 28px; height: 28px; }
 
 /* Composer */
 .composer textarea { margin-bottom: 8px; }
@@ -351,3 +352,67 @@ label input { margin-top: 6px; }
     display: flex; align-items: center; gap: 12px;
 }
 .search-user:hover { background: var(--bg); }
+
+/* =========================
+   POST PAYLAŞMA MODALI
+   ========================= */
+.composer-trigger { margin-bottom: 16px; }
+.btn-full { width: 100%; }
+
+.modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; padding: 16px;
+}
+.modal-overlay[hidden] { display: none; }
+
+.modal {
+    background: var(--card);
+    border-radius: var(--radius);
+    width: 100%; max-width: 500px;
+    max-height: 90vh; overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+
+.modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.modal-header h2 { font-size: 18px; }
+.modal-close {
+    background: none; border: none; font-size: 24px;
+    cursor: pointer; color: var(--muted); padding: 4px 8px;
+    line-height: 1; border-radius: 6px;
+}
+.modal-close:hover { background: var(--border); color: var(--text); }
+
+.modal-body { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.modal-body textarea { min-height: 100px; }
+
+/* Çoklu görsel önizleme grid */
+.image-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+.image-preview-item img {
+    width: 100%; aspect-ratio: 1; object-fit: cover;
+    border-radius: 8px;
+}
+
+/* =========================
+   POST GÖRSEL GRID (çoklu)
+   ========================= */
+.post-images { display: grid; gap: 2px; margin: 8px 0 12px; border-radius: 8px; overflow: hidden; }
+.post-images-1 { grid-template-columns: 1fr; }
+.post-images-2 { grid-template-columns: 1fr 1fr; }
+.post-images-3 { grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; }
+.post-images-3 img:first-child { grid-row: span 2; }
+.post-images-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+
+.post-image-tile {
+    width: 100%; aspect-ratio: 1; object-fit: cover;
+    display: block; background: var(--bg);
+}
+.post-images-1 .post-image-tile { aspect-ratio: 16/9; max-height: 500px; }

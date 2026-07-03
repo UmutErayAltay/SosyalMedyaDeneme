@@ -37,14 +37,33 @@ def toggle_like(post_id):
 def add_comment(post_id):
     content = request.form.get("content", "").strip()
     if not content:
+        if request.headers.get("X-Requested-With") == "fetch":
+            return jsonify(error="Boş yorum yapılamaz"), 400
         flash("Boş yorum yapılamaz.", "error")
         return redirect(url_for("routes.post_detail", post_id=post_id))
 
-    get_sb().table("comments").insert({
+    me = session["user"]
+    sb = get_sb()
+    res = sb.table("comments").insert({
         "post_id": post_id,
-        "user_id": session["user"]["id"],
+        "user_id": me["id"],
         "content": content,
     }).execute()
+    comment_id = res.data[0]["id"] if res.data else None
+
+    # Profil bilgisini çek (avatar + username)
+    prof = sb.table("profiles").select("username, avatar_url").eq("id", me["id"]).execute()
+    prof_data = prof.data[0] if prof.data else {}
+
+    # AJAX isteği ise JSON dön
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify(
+            id=comment_id,
+            content=content,
+            username=prof_data.get("username", me.get("email", "Sen")),
+            avatar_url=prof_data.get("avatar_url"),
+        )
+
     flash("Yorum eklendi.", "success")
     return redirect(url_for("routes.post_detail", post_id=post_id))
 

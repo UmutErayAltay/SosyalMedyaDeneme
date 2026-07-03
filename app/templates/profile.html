@@ -53,7 +53,13 @@
             <span class="username">{{ profile.username }}</span>
             <span class="time">{{ p.created_at[:16]|replace('T',' ') }}</span>
         </header>
-        {% if p.image_url %}
+        {% if p.image_urls and p.image_urls|length > 0 %}
+            <div class="post-images post-images-{{ p.image_urls|length }}">
+                {% for img in p.image_urls %}
+                    <img src="{{ img }}" class="post-image-tile" alt="Post görseli {{ loop.index }}" loading="lazy">
+                {% endfor %}
+            </div>
+        {% elif p.image_url %}
             <img src="{{ p.image_url }}" class="post-image" alt="Post görseli" loading="lazy">
         {% endif %}
         {% if p.content %}

@@ -2,18 +2,10 @@
 {% block title %}Akış{% endblock %}
 {% block content %}
 <div class="feed-layout">
-    <section class="composer">
-        <form action="{{ url_for('routes.create_post') }}" method="post" enctype="multipart/form-data">
-            <textarea name="content" placeholder="Ne düşünüyorsun?" rows="2"></textarea>
-            <div class="composer-row">
-                <label class="btn btn-ghost image-pick">
-                    📷 Görsel
-                    <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" id="post-image-input">
-                </label>
-                <span id="post-image-name" class="muted"></span>
-                <button type="submit" class="btn btn-primary">Paylaş</button>
-            </div>
-        </form>
+    <section class="composer-trigger">
+        <button type="button" class="btn btn-primary btn-full" id="open-post-modal" aria-haspopup="dialog">
+            ✏️ Post Paylaş
+        </button>
     </section>
 
     <section class="post-list">
@@ -21,30 +13,40 @@
         <article class="card post">
             <header class="post-header">
                 {% if p.profiles and p.profiles.avatar_url %}
-                    <img src="{{ p.profiles.avatar_url }}" class="avatar" alt="">
+                    <img src="{{ p.profiles.avatar_url }}" class="avatar" alt="" loading="lazy">
                 {% else %}
-                    <div class="avatar avatar-placeholder"></div>
+                    <div class="avatar avatar-placeholder" aria-hidden="true"></div>
                 {% endif %}
                 <a href="{{ url_for('routes.profile', username=p.profiles.username) if p.profiles else '#' }}"
                    class="username">{{ p.profiles.username if p.profiles else 'Bilinmeyen' }}</a>
                 <span class="time">{{ p.created_at[:16]|replace('T',' ') }}</span>
             </header>
             <p class="post-content">{{ p.content }}</p>
-            {% if p.image_url %}
-                <img src="{{ p.image_url }}" class="post-image" alt="">
+
+            {# --- Çoklu görsel grid --- #}
+            {% if p.image_urls and p.image_urls|length > 0 %}
+                <div class="post-images post-images-{{ p.image_urls|length }}">
+                    {% for img in p.image_urls %}
+                        <img src="{{ img }}" class="post-image-tile" alt="Post görseli {{ loop.index }}" loading="lazy">
+                    {% endfor %}
+                </div>
+            {% elif p.image_url %}
+                <img src="{{ p.image_url }}" class="post-image" alt="Post görseli" loading="lazy">
             {% endif %}
+
             <footer class="post-actions">
                 <button type="button"
                         class="btn btn-ghost like-btn {{ 'liked' if p.liked_by_me }}"
                         data-liked="{{ '1' if p.liked_by_me else '0' }}"
-                        data-like-url="{{ url_for('social.toggle_like', post_id=p.id) }}">
+                        data-like-url="{{ url_for('social.toggle_like', post_id=p.id) }}"
+                        aria-label="Beğen">
                     ♥ <span class="like-count">{{ p.like_count or 0 }}</span>
                 </button>
-                <a href="{{ url_for('routes.post_detail', post_id=p.id) }}" class="btn btn-ghost">Yorum</a>
+                <a href="{{ url_for('routes.post_detail', post_id=p.id) }}" class="btn btn-ghost" aria-label="Yorumlar">Yorum</a>
                 {% if me and p.user_id == me.id %}
                     <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
                           onsubmit="return confirm('Bu postu silmek istiyor musun?')">
-                        <button type="submit" class="btn btn-ghost danger">Sil</button>
+                        <button type="submit" class="btn btn-ghost danger" aria-label="Postu sil">Sil</button>
                     </form>
                 {% endif %}
             </footer>
@@ -54,11 +56,29 @@
         {% endfor %}
     </section>
 </div>
-<script>
-    document.getElementById('post-image-input').addEventListener('change', function(e) {
-        var f = e.target.files[0];
-        document.getElementById('post-image-name').textContent = f ? f.name : '';
-    });
-</script>
+
+{# --- Post Paylaşma Modalı --- #}
+<div class="modal-overlay" id="post-modal" role="dialog" aria-modal="true" aria-labelledby="post-modal-title" hidden>
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="post-modal-title">Post Paylaş</h2>
+            <button type="button" class="modal-close" id="close-post-modal" aria-label="Kapat">×</button>
+        </div>
+        <form action="{{ url_for('routes.create_post') }}" method="post" enctype="multipart/form-data" class="modal-body">
+            <textarea name="content" placeholder="Ne düşünüyorsun?" rows="4" aria-label="Post içeriği"></textarea>
+
+            <label class="btn btn-ghost image-pick">
+                📷 Görsel Ekle (maks. 4)
+                <input type="file" name="images" accept="image/png,image/jpeg,image/gif,image/webp"
+                       multiple style="display:none" id="post-image-input">
+            </label>
+            <div id="post-image-preview" class="image-preview-grid" aria-live="polite"></div>
+
+            <button type="submit" class="btn btn-primary btn-full">Paylaş</button>
+        </form>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/postModal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 {% endblock %}

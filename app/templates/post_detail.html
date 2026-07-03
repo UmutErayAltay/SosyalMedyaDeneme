@@ -3,20 +3,33 @@
 {% block content %}
 <article class="card post">
     <header class="post-header">
-        <div class="avatar avatar-placeholder"></div>
+        {% if post.profiles and post.profiles.avatar_url %}
+            <img src="{{ post.profiles.avatar_url }}" class="avatar" alt="" loading="lazy">
+        {% else %}
+            <div class="avatar avatar-placeholder" aria-hidden="true"></div>
+        {% endif %}
         <a href="{{ url_for('routes.profile', username=post.profiles.username) if post.profiles else '#' }}"
            class="username">{{ post.profiles.username if post.profiles else 'Bilinmeyen' }}</a>
         <span class="time">{{ post.created_at[:16]|replace('T',' ') }}</span>
     </header>
     <p class="post-content">{{ post.content }}</p>
-    {% if post.image_url %}
-        <img src="{{ post.image_url }}" class="post-image" alt="">
+
+    {% if post.image_urls and post.image_urls|length > 0 %}
+        <div class="post-images post-images-{{ post.image_urls|length }}">
+            {% for img in post.image_urls %}
+                <img src="{{ img }}" class="post-image-tile" alt="Post görseli {{ loop.index }}" loading="lazy">
+            {% endfor %}
+        </div>
+    {% elif post.image_url %}
+        <img src="{{ post.image_url }}" class="post-image" alt="Post görseli" loading="lazy">
     {% endif %}
+
     <footer class="post-actions">
         <button type="button"
                 class="btn btn-ghost like-btn {{ 'liked' if post.liked_by_me }}"
                 data-liked="{{ '1' if post.liked_by_me else '0' }}"
-                data-like-url="{{ url_for('social.toggle_like', post_id=post.id) }}">
+                data-like-url="{{ url_for('social.toggle_like', post_id=post.id) }}"
+                aria-label="Beğen">
             ♥ <span class="like-count">{{ post.like_count or 0 }}</span>
         </button>
     </footer>
@@ -24,24 +37,32 @@
 
 <section class="card comment-form">
     <h3>Yorum Yap</h3>
-    <form action="{{ url_for('social.add_comment', post_id=post.id) }}" method="post">
-        <textarea name="content" placeholder="Yorumunu yaz..." rows="2" required></textarea>
+    <form id="comment-form" data-post-id="{{ post.id }}">
+        <textarea name="content" id="comment-input" placeholder="Yorumunu yaz..." rows="2" required
+                  aria-label="Yorum içeriği"></textarea>
         <button type="submit" class="btn btn-primary">Gönder</button>
     </form>
 </section>
 
-<section class="comment-list">
+<section class="comment-list" id="comment-list" aria-label="Yorumlar">
     {% for c in comments %}
-    <article class="card comment">
+    <article class="card comment" data-comment-id="{{ c.id }}">
         <div class="comment-meta">
-            <strong>{{ c.profiles.username if c.profiles else 'Bilinmeyen' }}</strong>
+            {% if c.profiles and c.profiles.avatar_url %}
+                <img src="{{ c.profiles.avatar_url }}" class="avatar avatar-sm" alt="" loading="lazy">
+            {% else %}
+                <div class="avatar avatar-sm avatar-placeholder" aria-hidden="true"></div>
+            {% endif %}
+            <a href="{{ url_for('routes.profile', username=c.profiles.username) if c.profiles else '#' }}" class="username">
+                {{ c.profiles.username if c.profiles else 'Bilinmeyen' }}
+            </a>
             <span class="time">{{ c.created_at[:16]|replace('T',' ') }}</span>
         </div>
         <p>{{ c.content }}</p>
         {% if me and c.user_id == me.id %}
         <form action="{{ url_for('social.delete_comment', comment_id=c.id) }}" method="post"
               onsubmit="return confirm('Yorumu sil?')">
-            <button type="submit" class="btn btn-ghost danger small">Sil</button>
+            <button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>
         </form>
         {% endif %}
     </article>
@@ -49,5 +70,12 @@
     <p class="muted">Henüz yorum yok. İlk yorumu sen yap!</p>
     {% endfor %}
 </section>
+
+<script>
+    // AJAX yorum gönderme için post ID ve kullanıcı bilgisi
+    window.POST_ID = "{{ post.id }}";
+    window.ME = {{ me|tojson if me else 'null' }};
+</script>
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
+<script src="{{ url_for('static', filename='js/comments.js') }}"></script>
 {% endblock %}

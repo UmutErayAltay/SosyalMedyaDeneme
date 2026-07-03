@@ -2,7 +2,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 from .decorators import login_required
 from .supabase_client import get_sb
-from .storage_helper import upload_image
+from .storage_helper import upload_image, upload_images
 
 bp = Blueprint("routes", __name__)
 
@@ -48,26 +48,32 @@ def feed():
 @login_required
 def create_post():
     content = request.form.get("content", "").strip()
-    image_file = request.files.get("image")
+    image_files = request.files.getlist("images")
 
     # En azından metin veya görsel olmalı
-    if not content and not (image_file and image_file.filename):
+    valid_files = [f for f in image_files if f and f.filename]
+    if not content and not valid_files:
         flash("Boş post paylaşılamaz.", "error")
         return redirect(url_for("routes.feed"))
 
-    # Görsel varsa yükle
-    image_url = None
-    if image_file and image_file.filename:
-        image_url = upload_image(image_file, folder="posts")
-        if not image_url:
+    # Çoklu görsel yükle (maksimum 4)
+    image_urls = []
+    if valid_files:
+        image_urls = upload_images(valid_files, folder="posts", max_count=4)
+        if not image_urls:
             flash("Görsel yüklenemedi (geçersiz format veya 5MB'tan büyük).", "error")
             return redirect(url_for("routes.feed"))
 
-    get_sb().table("posts").insert({
+    # Geriye dönük uyumluluk: image_url (ilk görsel) + image_urls (array)
+    insert_data = {
         "user_id": _my_id(),
         "content": content,
-        "image_url": image_url,
-    }).execute()
+        "image_urls": image_urls,
+    }
+    if image_urls:
+        insert_data["image_url"] = image_urls[0]
+
+    get_sb().table("posts").insert(insert_data).execute()
     flash("Post paylaşıldı.", "success")
     return redirect(url_for("routes.feed"))
 

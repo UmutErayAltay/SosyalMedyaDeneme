@@ -73,3 +73,26 @@ def upload_image(file_storage, folder: str = "avatars") -> str | None:
 
     # 7) Public URL döndür
     return get_sb().storage.from_(BUCKET_NAME).get_public_url(path)
+
+
+def upload_images(files, folder: str = "posts", max_count: int = 4) -> list[str]:
+    """Birden fazla FileStorage nesnesini yükler.
+
+    Args:
+        files: request.files.getlist('images') gibi FileStorage listesi
+        folder: Storage klasörü
+        max_count: maksimum görsel sayısı
+
+    Returns:
+        Başarıyla yüklenenlerin public URL listesi (boş olabilir).
+    """
+    urls = []
+    count = 0
+    for f in files:
+        if count >= max_count:
+            break
+        url = upload_image(f, folder=folder)
+        if url:
+            urls.append(url)
+            count += 1
+    return urls
