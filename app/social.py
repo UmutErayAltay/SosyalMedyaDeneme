@@ -1,7 +1,7 @@
 """Sosyal etkileşimler: beğeni, yorum, takip."""
 from flask import Blueprint, request, redirect, url_for, session, flash, abort, jsonify
 from .decorators import login_required
-from .supabase_client import get_sb
+from .supabase_client import get_sb, retry_on_connection_error
 
 bp = Blueprint("social", __name__)
 
@@ -10,6 +10,7 @@ bp = Blueprint("social", __name__)
 
 @bp.route("/like/<post_id>", methods=["POST"])
 @login_required
+@retry_on_connection_error
 def toggle_like(post_id):
     sb = get_sb()
     me = session["user"]["id"]
@@ -34,6 +35,7 @@ def toggle_like(post_id):
 
 @bp.route("/comment/<post_id>", methods=["POST"])
 @login_required
+@retry_on_connection_error
 def add_comment(post_id):
     content = request.form.get("content", "").strip()
     if not content:
@@ -70,6 +72,7 @@ def add_comment(post_id):
 
 @bp.route("/comment/<comment_id>/delete", methods=["POST"])
 @login_required
+@retry_on_connection_error
 def delete_comment(comment_id):
     # Uygulama katmanı güvenliği: sadece kendi yorumunu sil
     get_sb().table("comments").delete().eq("id", comment_id).eq(
@@ -83,6 +86,7 @@ def delete_comment(comment_id):
 
 @bp.route("/comment/like/<comment_id>", methods=["POST"])
 @login_required
+@retry_on_connection_error
 def toggle_comment_like(comment_id):
     sb = get_sb()
     me = session["user"]["id"]
@@ -114,6 +118,7 @@ def toggle_comment_like(comment_id):
 
 @bp.route("/comment/<post_id>/reply/<parent_id>", methods=["POST"])
 @login_required
+@retry_on_connection_error
 def reply_comment(post_id, parent_id):
     content = request.form.get("content", "").strip()
     if not content:
@@ -147,8 +152,10 @@ def reply_comment(post_id, parent_id):
     flash("Yanıt eklendi.", "success")
     return redirect(url_for("routes.post_detail", post_id=post_id))
 
+
 @bp.route("/follow/<username>")
 @login_required
+@retry_on_connection_error
 def toggle_follow(username):
     sb = get_sb()
     me = session["user"]["id"]

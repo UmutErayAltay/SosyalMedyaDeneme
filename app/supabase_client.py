@@ -9,25 +9,32 @@ Güvenlik modeli:
   - İkincil güvenlik: RLS politikaları veritabanı katmanında kontrol eder.
   - service role key SUNUCU TARAFINDA kalır, asla tarayıcıya/şablona sızdırılmaz.
 
-Neden böyle yapıyoruz:
-  - supabase-py 2.x'de create_client'a access_token verilemez.
-  - set_session() ile lru_cache birlikte kullanmak race condition üretir.
-  - Admin client (service role) ile tüm işlemler güvenle yapılabilir,
-    yeterki uygulama katmanında user_id doğru filtrelesin.
-
-NOT (SSL INVALID_SESSION_ID düzeltmesi):
-  - lru_cache ile client'ı sonsuza kadar canlı tutmak, altındaki HTTPS
-    bağlantı havuzunun bayatlamasına (sunucu tarafında TLS session'ın
-    kapanmasına) yol açıyordu. Artık modül seviyesinde tek bir instance
-    tutuyoruz ama SSL hatası alındığında client'ı sıfırlayıp bir kez
-    daha deniyoruz.
+NOT (bağlantı kopması düzeltmesi):
+  - Client'ın altındaki HTTP bağlantısı uzun süre boşta kaldığında (Supabase
+    tarafı bağlantıyı sessizce kapattığında) hem SSL hem de
+    httpx.RemoteProtocolError ("Server disconnected") hataları çıkabiliyordu.
+  - reset_clients() + retry_on_connection_error decorator'ı ile, böyle bir
+    hata olduğunda client'lar sıfırlanıp, hatayı alan ROUTE FONKSİYONUNUN
+    TAMAMI bir kez daha çalıştırılıyor (fonksiyon içindeki tüm sorgular dahil).
 """
 from supabase import create_client, Client
 from flask import current_app
 import ssl
+import httpx
+import functools
 
 _admin_client_instance = None
 _anon_client_instance = None
+
+# Bayat/kopmuş bağlantı belirtisi olan hata türleri
+_CONNECTION_ERRORS = (
+    ssl.SSLError,
+    httpx.RemoteProtocolError,
+    httpx.ConnectError,
+    httpx.ReadError,
+    httpx.WriteError,
+    ConnectionError,
+)
 
 
 def _build_admin_client() -> Client:
@@ -63,9 +70,9 @@ def get_auth() -> Client:
 
 
 def reset_clients() -> None:
-    """Bayatlamış SSL bağlantısı şüphesiyle her iki client'ı da sıfırlar.
+    """Bayatlamış bağlantı şüphesiyle her iki client'ı da sıfırlar.
     Bir sonraki get_sb()/get_auth() çağrısı taze bir client (ve taze bir
-    HTTPS bağlantı havuzu) oluşturur.
+    HTTP bağlantı havuzu) oluşturur.
     """
     global _admin_client_instance, _anon_client_instance
     _admin_client_instance = None
@@ -73,7 +80,7 @@ def reset_clients() -> None:
 
 
 def call_with_ssl_retry(fn, *args, **kwargs):
-    """Supabase çağrılarını SSL session hatasına karşı bir kez retry eder.
+    """Tek bir Supabase çağrısını bağlantı hatasına karşı bir kez retry eder.
 
     Kullanım:
         res = call_with_ssl_retry(
@@ -82,15 +89,39 @@ def call_with_ssl_retry(fn, *args, **kwargs):
     """
     try:
         return fn(*args, **kwargs)
-    except ssl.SSLError as e:
-        if "INVALID_SESSION_ID" in str(e) or "SSL" in str(e):
-            reset_clients()
-            return fn(*args, **kwargs)
-        raise
+    except _CONNECTION_ERRORS:
+        reset_clients()
+        return fn(*args, **kwargs)
     except Exception as e:
-        # Bazı ortamlarda SSL hatası bir wrapper exception içine sarılmış
-        # olarak gelebilir (örn. httpx.ConnectError). Mesaj içinde arıyoruz.
-        if "INVALID_SESSION_ID" in str(e):
+        if "INVALID_SESSION_ID" in str(e) or "Server disconnected" in str(e):
             reset_clients()
             return fn(*args, **kwargs)
         raise
+
+
+def retry_on_connection_error(view_func):
+    """Route fonksiyonlarına eklenen decorator.
+
+    Fonksiyon içinde (birden fazla sorgu olsa bile) bir bağlantı hatası
+    oluşursa, client'lar sıfırlanır ve TÜM fonksiyon bir kez daha
+    çalıştırılır. Kullanım:
+
+        @bp.route("/")
+        @login_required
+        @retry_on_connection_error
+        def feed():
+            ...
+    """
+    @functools.wraps(view_func)
+    def wrapper(*args, **kwargs):
+        try:
+            return view_func(*args, **kwargs)
+        except _CONNECTION_ERRORS:
+            reset_clients()
+            return view_func(*args, **kwargs)
+        except Exception as e:
+            if "INVALID_SESSION_ID" in str(e) or "Server disconnected" in str(e):
+                reset_clients()
+                return view_func(*args, **kwargs)
+            raise
+    return wrapper

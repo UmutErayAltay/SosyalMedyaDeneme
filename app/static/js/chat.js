@@ -125,12 +125,18 @@
             { tempId: tempId, uploading: hasImage }
         );
 
+        // Gönderilecek içeriği sakla — input.value az sonra temizlenecek
+        var sentContent = content;
+
         input.value = '';
         input.style.height = 'auto';
         imageName.textContent = '';
 
         try {
             var formData = new FormData(form);
+            // FormData, form'un o anki DOM durumunu okur; input zaten temizlendiği
+            // için content alanını burada elle geri set ediyoruz.
+            formData.set('content', sentContent);
             if (!hasImage) formData.delete('image');
 
             var res = await fetch(window.SEND_URL, {

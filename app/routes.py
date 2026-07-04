@@ -1,7 +1,7 @@
 """Ana rotalar: feed, post paylaşma, profil, post detayı."""
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 from .decorators import login_required
-from .supabase_client import get_sb
+from .supabase_client import get_sb, retry_on_connection_error
 from .storage_helper import upload_image, upload_images
 
 bp = Blueprint("routes", __name__)
@@ -25,6 +25,7 @@ def _my_id() -> str:
 
 @bp.route("/")
 @login_required
+@retry_on_connection_error
 def feed():
     """Ana akış: tüm postları (yeni → eski) yazarı + etkileşim sayılarıyla getir."""
     sb = get_sb()
@@ -46,6 +47,7 @@ def feed():
 
 @bp.route("/post/new", methods=["POST"])
 @login_required
+@retry_on_connection_error
 def create_post():
     content = request.form.get("content", "").strip()
     image_files = request.files.getlist("images")
@@ -80,6 +82,7 @@ def create_post():
 
 @bp.route("/post/<post_id>")
 @login_required
+@retry_on_connection_error
 def post_detail(post_id):
     sb = get_sb()
     res = sb.table("posts").select(
@@ -117,6 +120,7 @@ def post_detail(post_id):
 
 @bp.route("/post/<post_id>/delete", methods=["POST"])
 @login_required
+@retry_on_connection_error
 def delete_post(post_id):
     # Uygulama katmanı güvenliği: sadece kendi postunu sil
     get_sb().table("posts").delete().eq("id", post_id).eq(
@@ -128,6 +132,7 @@ def delete_post(post_id):
 
 @bp.route("/u/<username>")
 @login_required
+@retry_on_connection_error
 def profile(username):
     sb = get_sb()
     prof = sb.table("profiles").select("*").eq("username", username).execute()
@@ -184,6 +189,7 @@ def profile(username):
 
 @bp.route("/profile/edit", methods=["GET", "POST"])
 @login_required
+@retry_on_connection_error
 def profile_edit():
     sb = get_sb()
     me = _my_id()
@@ -240,6 +246,7 @@ def profile_edit():
 
 @bp.route("/search")
 @login_required
+@retry_on_connection_error
 def search():
     q = request.args.get("q", "").strip()
     if len(q) < 2:
