@@ -55,8 +55,55 @@ def _annotate(n: dict) -> dict:
     return n
 
 
+# Aynı hedefe (post) ait art arda gelen bildirimler tek satırda gruplanır —
+# bildirim listesi kalabalıklaşmasın diye (ör. 5 kişi aynı postu beğenince).
+_GROUPABLE_TYPES = {"like", "comment_like"}
+
+
+def _group_notifications(rows: list[dict]) -> list[dict]:
+    """('A, B ve N kişi daha gönderini beğendi' tarzı) gruplu görüntüleme listesi üretir."""
+    groups: list[dict] = []
+    seen: dict[tuple, dict] = {}
+
+    for n in rows:
+        key = (n["type"], n.get("post_id"))
+        if n["type"] in _GROUPABLE_TYPES and key in seen:
+            g = seen[key]
+            if n.get("actor"):
+                g["_actors"].append(n["actor"])
+            g["is_read"] = g["is_read"] and n["is_read"]
+            continue
+
+        g = {
+            "type": n["type"],
+            "_actors": [n["actor"]] if n.get("actor") else [],
+            "target_url": n["target_url"],
+            "text": n["text"],
+            "created_at": n["created_at"],
+            "is_read": n["is_read"],
+        }
+        groups.append(g)
+        if n["type"] in _GROUPABLE_TYPES:
+            seen[key] = g
+
+    for g in groups:
+        actors = g.pop("_actors")
+        names = [a["username"] for a in actors if a and a.get("username")]
+        if not names:
+            g["actor_summary"] = "Biri"
+        elif len(names) == 1:
+            g["actor_summary"] = names[0]
+        elif len(names) == 2:
+            g["actor_summary"] = f"{names[0]} ve {names[1]}"
+        else:
+            g["actor_summary"] = f"{names[0]}, {names[1]} ve {len(names) - 2} kişi daha"
+        g["actor"] = actors[0] if actors else None
+
+    return groups
+
+
 def _fetch_and_mark_read(sb, me: str, limit: int, offset: int = 0) -> tuple[list[dict], bool]:
-    """Bildirimleri çeker, hedef URL/metin ekler ve görüntülenenleri okundu işaretler."""
+    """Bildirimleri çeker, hedef URL/metin ekler, gruplar ve görüntülenenleri okundu işaretler."""
     rows = sb.table("notifications").select(
         "*, actor:profiles!notifications_actor_id_fkey(username, avatar_url)"
     ).eq("recipient_id", me).order(
@@ -72,7 +119,7 @@ def _fetch_and_mark_read(sb, me: str, limit: int, offset: int = 0) -> tuple[list
     if unread_ids:
         sb.table("notifications").update({"is_read": True}).in_("id", unread_ids).execute()
 
-    return rows, has_next
+    return _group_notifications(rows), has_next
 
 
 @bp.route("/")
@@ -104,11 +151,10 @@ def panel():
     rows, _ = _fetch_and_mark_read(sb, me, PANEL_SIZE)
 
     return jsonify(notifications=[{
-        "id": n["id"],
         "type": n["type"],
         "text": n["text"],
         "target_url": n["target_url"],
-        "username": n["actor"]["username"] if n.get("actor") else "Biri",
+        "username": n["actor_summary"],
         "avatar_url": n["actor"]["avatar_url"] if n.get("actor") else None,
         "created_at": n["created_at"],
         "is_read": n["is_read"],

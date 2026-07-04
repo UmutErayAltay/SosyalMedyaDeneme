@@ -6,8 +6,11 @@ from .notifications import notify
 
 bp = Blueprint("social", __name__)
 
+# Emoji reaksiyon türleri (likes.reaction_type) — bkz. sql/migration_reactions.sql
+REACTIONS = {"like": "👍", "love": "❤️", "haha": "😂", "wow": "😮", "sad": "😢"}
 
-# ----------------------- BEĞENİ -----------------------
+
+# ----------------------- BEĞENİ / REAKSİYON -----------------------
 
 @bp.route("/like/<post_id>", methods=["POST"])
 @login_required
@@ -16,12 +19,28 @@ def toggle_like(post_id):
     sb = get_sb()
     me = session["user"]["id"]
 
-    existing = sb.table("likes").select("post_id").eq("post_id", post_id).eq("user_id", me).execute()
+    reaction = request.form.get("reaction") or request.args.get("reaction") or "like"
+    if reaction not in REACTIONS:
+        reaction = "like"
+
+    existing = sb.table("likes").select("reaction_type").eq("post_id", post_id).eq("user_id", me).execute()
     if existing.data:
-        sb.table("likes").delete().eq("post_id", post_id).eq("user_id", me).execute()
-        liked = False
+        current = existing.data[0].get("reaction_type") or "like"
+        if current == reaction:
+            # Aynı reaksiyona tekrar tıklandı → kaldır
+            sb.table("likes").delete().eq("post_id", post_id).eq("user_id", me).execute()
+            liked = False
+            reaction = None
+        else:
+            # Farklı bir reaksiyon seçildi → değiştir
+            sb.table("likes").update({"reaction_type": reaction}).eq(
+                "post_id", post_id
+            ).eq("user_id", me).execute()
+            liked = True
     else:
-        sb.table("likes").insert({"post_id": post_id, "user_id": me}).execute()
+        sb.table("likes").insert({
+            "post_id": post_id, "user_id": me, "reaction_type": reaction
+        }).execute()
         liked = True
         post = sb.table("posts").select("user_id").eq("id", post_id).execute().data
         if post:
@@ -32,7 +51,7 @@ def toggle_like(post_id):
 
     # JS'ten fetch ile gelen istekse JSON dön, normal form submit ise (JS kapalıysa) eskisi gibi redirect
     if request.headers.get("X-Requested-With") == "fetch":
-        return jsonify(liked=liked, count=count)
+        return jsonify(liked=liked, count=count, reaction=reaction)
     return redirect(request.referrer or url_for("routes.feed"))
 
 

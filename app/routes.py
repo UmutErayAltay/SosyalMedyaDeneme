@@ -27,22 +27,24 @@ PAGE_SIZE = 20
 
 
 def _attach_post_metrics(sb, posts: list, me: str) -> None:
-    """Postlara like_count / comment_count / liked_by_me ekler.
+    """Postlara like_count / comment_count / liked_by_me / my_reaction ekler.
 
-    Sayılar embedded count ile tek sorguda gelir; liked_by_me için
+    Sayılar embedded count ile tek sorguda gelir; liked_by_me + my_reaction için
     tüm postlar üzerinden tek bir IN sorgusu yapılır (N+1 önlenir).
     """
     post_ids = [p["id"] for p in posts]
-    my_likes = set()
+    my_reactions: dict = {}
     if post_ids:
-        my_likes = {
-            l["post_id"] for l in sb.table("likes").select("post_id")
+        my_reactions = {
+            l["post_id"]: l.get("reaction_type") or "like"
+            for l in sb.table("likes").select("post_id, reaction_type")
             .eq("user_id", me).in_("post_id", post_ids).execute().data
         }
     for p in posts:
         p["like_count"] = p["likes"][0]["count"] if p.get("likes") else 0
         p["comment_count"] = p["comments"][0]["count"] if p.get("comments") else 0
-        p["liked_by_me"] = p["id"] in my_likes
+        p["liked_by_me"] = p["id"] in my_reactions
+        p["my_reaction"] = my_reactions.get(p["id"])
 
 
 @bp.route("/")
@@ -222,6 +224,57 @@ def profile(username):
                                "following": following_count,
                                "likes": total_likes,
                            })
+
+
+def _follow_list(username: str, kind: str):
+    """Takipçi ('followers') veya takip edilen ('following') listesi ortak render'ı."""
+    sb = get_sb()
+    prof = _profile(username=username)
+    if not prof:
+        abort(404)
+    me = _my_id()
+
+    if kind == "followers":
+        rows = sb.table("follows").select(
+            "profiles!follows_follower_id_fkey(id, username, avatar_url, full_name)"
+        ).eq("following_id", prof["id"]).execute().data
+        title = "Takipçiler"
+    else:
+        rows = sb.table("follows").select(
+            "profiles!follows_following_id_fkey(id, username, avatar_url, full_name)"
+        ).eq("follower_id", prof["id"]).execute().data
+        title = "Takip Edilenler"
+
+    users = [r["profiles"] for r in rows if r.get("profiles")]
+
+    # Ben bu kullanıcıları takip ediyor muyum? (her satırdaki takip butonu için)
+    user_ids = [u["id"] for u in users]
+    following_ids = set()
+    if user_ids:
+        following_ids = {
+            f["following_id"] for f in sb.table("follows").select("following_id")
+            .eq("follower_id", me).in_("following_id", user_ids).execute().data
+        }
+    for u in users:
+        u["is_following"] = u["id"] in following_ids
+        u["is_self"] = u["id"] == me
+
+    return render_template("follow_list.html", profile=prof, users=users,
+                           title=title, kind=kind, me=session.get("user"))
+
+
+@bp.route("/u/<username>/followers")
+@login_required
+@retry_on_connection_error
+def followers_list(username):
+    return _follow_list(username, "followers")
+
+
+@bp.route("/u/<username>/following")
+@login_required
+@retry_on_connection_error
+def following_list(username):
+    return _follow_list(username, "following")
 
 
 @bp.route("/profile/edit", methods=["GET", "POST"])

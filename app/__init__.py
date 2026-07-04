@@ -49,9 +49,12 @@ def create_app() -> Flask:
     # Blueprint kayıtları (döngüsel import'u önlemek için fonksiyon içinde)
     from .auth import bp as auth_bp
     from .routes import bp as routes_bp
-    from .social import bp as social_bp
+    from .social import bp as social_bp, REACTIONS
     from .messaging import bp as messaging_bp
     from .notifications import bp as notifications_bp
+
+    # Emoji reaksiyon ikonları şablonlarda {{ REACTIONS['love'] }} olarak kullanılabilir
+    app.jinja_env.globals["REACTIONS"] = REACTIONS
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(routes_bp)

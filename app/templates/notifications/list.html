@@ -12,7 +12,7 @@
             <div class="avatar avatar-sm avatar-placeholder" aria-hidden="true"></div>
         {% endif %}
         <span class="notif-text">
-            <strong>{{ n.actor.username if n.actor else 'Biri' }}</strong> {{ n.text }}
+            <strong>{{ n.actor_summary }}</strong> {{ n.text }}
         </span>
         <span class="time">{{ n.created_at[:16]|replace('T',' ') }}</span>
     </a>

@@ -253,7 +253,30 @@ textarea:focus-visible, select:focus-visible {
 .btn-ghost { background: transparent; color: var(--muted); }
 .btn-ghost:hover { background: var(--border); color: var(--text); }
 .btn-ghost.danger:hover { background: var(--danger-bg); color: var(--danger); }
-.btn-ghost.liked { color: var(--danger); }
+.btn-ghost.liked { background: var(--border); }
+.reaction-icon { display: inline-block; }
+
+/* Emoji reaksiyon seçici popup (basılı tutunca açılır — likes.js) */
+.reaction-picker {
+    position: absolute; z-index: 250;
+    display: flex; gap: 4px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 24px; padding: 6px 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+.reaction-picker[hidden] { display: none; }
+.reaction-option {
+    background: none; border: none; cursor: pointer;
+    font-size: 20px; padding: 4px; border-radius: 50%;
+    line-height: 1; min-width: 32px; min-height: 32px;
+    transition: transform 0.1s;
+}
+.reaction-option:hover, .reaction-option:focus-visible {
+    transform: scale(1.25); background: var(--border);
+}
+@media (prefers-reduced-motion: reduce) {
+    .reaction-option:hover, .reaction-option:focus-visible { transform: none; }
+}
 /* WCAG 2.5.8: dokunmatik hedefler en az 24x24px */
 .btn.small { padding: 4px 10px; font-size: 12px; min-height: 24px; min-width: 24px; }
 
@@ -316,6 +339,8 @@ label input { margin-top: 6px; }
 }
 .profile-stats span { display: flex; gap: 4px; align-items: baseline; }
 .profile-stats strong { color: var(--text); font-size: 15px; }
+.profile-stats span a { display: flex; gap: 4px; align-items: baseline; }
+.profile-stats span a:hover { text-decoration: underline; }
 
 /* Yorumlar */
 .comment-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
@@ -529,6 +554,15 @@ label input { margin-top: 6px; }
     display: flex; align-items: center; gap: 12px;
 }
 .search-user:hover { background: var(--bg); }
+
+/* Takipçi/Takip listesi (follow_list.html) — search-user'ı satır olarak paylaşır,
+   sağda takip butonu için justify-content ekler */
+.follow-list { display: flex; flex-direction: column; gap: 8px; }
+.follow-list .search-user { justify-content: space-between; }
+.user-link {
+    display: flex; align-items: center; gap: 12px;
+    text-decoration: none; color: inherit; flex: 1; min-width: 0;
+}
 
 /* =========================   POST PAYLAŞMA MODALI   ========================= */
 .composer-trigger { margin-bottom: 16px; }

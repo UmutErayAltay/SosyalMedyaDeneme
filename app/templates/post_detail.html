@@ -50,9 +50,11 @@
     <button type="button"
             class="btn btn-ghost like-btn {{ 'liked' if post.liked_by_me }}"
             data-liked="{{ '1' if post.liked_by_me else '0' }}"
+            data-reaction="{{ post.my_reaction or '' }}"
             data-like-url="{{ url_for('social.toggle_like', post_id=post.id) }}"
-            aria-label="Beğen">
-        ♥ <span class="like-count">{{ post.like_count or 0 }}</span>
+            aria-label="{{ 'Reaksiyonunu kaldır' if post.liked_by_me else 'Reaksiyon ekle (basılı tutarak seç)' }}">
+        <span class="reaction-icon">{{ REACTIONS[post.my_reaction] if post.my_reaction else '👍' }}</span>
+        <span class="like-count">{{ post.like_count or 0 }}</span>
     </button>
     
     {# YENİ: Paylaş Modalı Tetikleyici Buton (Düzeltildi) #}

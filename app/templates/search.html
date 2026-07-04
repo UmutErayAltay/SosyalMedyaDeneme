@@ -60,9 +60,11 @@
                 <button type="button"
                         class="btn btn-ghost like-btn {{ 'liked' if p.liked_by_me }}"
                         data-liked="{{ '1' if p.liked_by_me else '0' }}"
+                        data-reaction="{{ p.my_reaction or '' }}"
                         data-like-url="{{ url_for('social.toggle_like', post_id=p.id) }}"
-                        aria-label="Beğen">
-                    ♥ <span class="like-count">{{ p.like_count or 0 }}</span>
+                        aria-label="{{ 'Reaksiyonunu kaldır' if p.liked_by_me else 'Reaksiyon ekle (basılı tutarak seç)' }}">
+                    <span class="reaction-icon">{{ REACTIONS[p.my_reaction] if p.my_reaction else '👍' }}</span>
+                    <span class="like-count">{{ p.like_count or 0 }}</span>
                 </button>
                 <a href="{{ url_for('routes.post_detail', post_id=p.id) }}" class="btn btn-ghost" aria-label="Yorumlar">
                     💬 {{ p.comment_count or 0 }}

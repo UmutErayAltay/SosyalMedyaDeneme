@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — {{ profile.username }}{% endblock %}
+{% block content %}
+<header class="card profile-header">
+    <div class="profile-info">
+        <h1>{{ title }}</h1>
+        <p class="muted">
+            <a href="{{ url_for('routes.profile', username=profile.username) }}">← {{ profile.username }}</a>
+        </p>
+    </div>
+</header>
+
+<section class="follow-list">
+    {% for u in users %}
+    <div class="card search-user">
+        <a href="{{ url_for('routes.profile', username=u.username) }}" class="user-link">
+            {% if u.avatar_url %}
+                <img src="{{ u.avatar_url }}" class="avatar" alt="" loading="lazy">
+            {% else %}
+                <div class="avatar avatar-placeholder" aria-hidden="true"></div>
+            {% endif %}
+            <div>
+                <strong>{{ u.username }}</strong>
+                {% if u.full_name %}<p class="muted">{{ u.full_name }}</p>{% endif %}
+            </div>
+        </a>
+        {% if not u.is_self %}
+            <button type="button"
+                    class="btn follow-btn {{ 'btn-ghost' if u.is_following else 'btn-primary' }}"
+                    data-following="{{ '1' if u.is_following else '0' }}"
+                    data-username="{{ u.username }}"
+                    data-follow-url="{{ url_for('social.toggle_follow', username=u.username) }}"
+                    aria-label="{{ 'Takipten çık' if u.is_following else 'Takip et' }}">
+                {{ 'Takipten çık' if u.is_following else 'Takip et' }}
+            </button>
+        {% endif %}
+    </div>
+    {% else %}
+    <p class="muted center">
+        {{ 'Henüz takipçisi yok.' if kind == 'followers' else 'Henüz kimseyi takip etmiyor.' }}
+    </p>
+    {% endfor %}
+</section>
+
+<script src="{{ url_for('static', filename='js/follow.js') }}"></script>
+{% endblock %}
