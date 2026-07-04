@@ -178,6 +178,24 @@ def profile(username):
     ).eq("user_id", prof["id"]).order("created_at", desc=True).execute().data
     _attach_post_metrics(sb, posts, me)
 
+    # Medya sekmesi: görsel içeren postlar (ek sorgu yok, mevcut listeden süzülür)
+    media_posts = [p for p in posts if p.get("image_urls") or p.get("image_url")]
+
+    # Beğenilenler sekmesi: bu profilin beğendiği postlar (beğeni sırasına göre yeni→eski)
+    liked_rows = sb.table("likes").select("post_id").eq(
+        "user_id", prof["id"]
+    ).order("created_at", desc=True).execute().data
+    liked_ids = [l["post_id"] for l in liked_rows]
+    liked_posts = []
+    if liked_ids:
+        liked_posts = sb.table("posts").select(
+            "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+        ).in_("id", liked_ids).execute().data
+        _attach_post_metrics(sb, liked_posts, me)
+        # .in_() sırayı garanti etmez; beğeni sırasına (liked_ids) göre yeniden diz
+        order = {pid: i for i, pid in enumerate(liked_ids)}
+        liked_posts.sort(key=lambda p: order.get(p["id"], 0))
+
     # --- Profil istatistikleri (count='exact' ile satır çekmeden say) ---
     followers_count = sb.table("follows").select(
         "follower_id", count="exact", head=True
@@ -196,6 +214,7 @@ def profile(username):
         is_following = bool(f.data)
 
     return render_template("profile.html", profile=prof, posts=posts,
+                           media_posts=media_posts, liked_posts=liked_posts,
                            is_self=is_self, is_following=is_following, me=session.get("user"),
                            stats={
                                "posts": len(posts),

@@ -13,6 +13,7 @@
         </label>
         <button type="submit" class="btn btn-primary">Giriş</button>
     </form>
+    <p class="muted"><a href="{{ url_for('auth.forgot_password') }}">Şifreni mi unuttun?</a></p>
     <p class="muted">Hesabın yok mu? <a href="{{ url_for('auth.register') }}">Kayıt ol</a></p>
 </div>
 {% endblock %}

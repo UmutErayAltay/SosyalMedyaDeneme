@@ -493,10 +493,58 @@ label input { margin-top: 6px; }
     grid-template-columns: repeat(2, 1fr);    
     gap: 8px;
 }
-.image-preview-item img {    
-    width: 100%; aspect-ratio: 1; object-fit: cover;    
+.image-preview-item img {
+    width: 100%; aspect-ratio: 1; object-fit: cover;
     border-radius: 8px;
 }
+
+/* Profil sekmeleri (ARIA tablist) */
+.tablist {
+    display: flex; gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin: 16px 0 12px;
+}
+.tab-btn {
+    background: none; border: none; cursor: pointer;
+    padding: 10px 16px; font-size: 14px; font-weight: 600;
+    color: var(--muted); border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+}
+.tab-btn[aria-selected="true"] { color: var(--text); border-bottom-color: var(--primary); }
+.tab-btn:hover { color: var(--text); }
+
+/* Medya grid — width/height yerine aspect-ratio ile CLS önleme */
+.media-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+}
+.media-thumb {
+    aspect-ratio: 1 / 1; overflow: hidden;
+    border: none; padding: 0; border-radius: 4px;
+    background: var(--border); cursor: pointer;
+}
+.media-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Lightbox (medya büyütme) */
+.lightbox-overlay { background: rgba(0, 0, 0, 0.85); }
+.lightbox-img { max-width: 90vw; max-height: 78vh; object-fit: contain; border-radius: 8px; }
+.lightbox-close, .lightbox-nav {
+    position: absolute; background: rgba(255, 255, 255, 0.15); color: #fff;
+    border: none; cursor: pointer; border-radius: 50%;
+    width: 40px; height: 40px; font-size: 20px;
+    display: flex; align-items: center; justify-content: center;
+}
+.lightbox-close:hover, .lightbox-nav:hover { background: rgba(255, 255, 255, 0.3); }
+.lightbox-close { top: 16px; right: 16px; }
+.lightbox-prev { left: 16px; top: 50%; transform: translateY(-50%); }
+.lightbox-next { right: 16px; top: 50%; transform: translateY(-50%); }
+.lightbox-goto {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: #fff; background: rgba(255, 255, 255, 0.15);
+    padding: 8px 16px; border-radius: 20px; text-decoration: none; font-size: 13px;
+}
+.lightbox-goto:hover { background: rgba(255, 255, 255, 0.3); }
 
 /* === YENİ EKLEME: ÇOKLU POST GÖNDERME (SHARE) MODALI BİLEŞENLERİ === */
 #share-search-input {

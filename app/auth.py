@@ -7,10 +7,27 @@ Supabase Auth kullanır. Kayıt akışı:
 
 Arkadaşlar arası test için email confirmation BYPASS ediliyor.
 """
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash
+import time
+from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app
+from supabase import create_client
 from .supabase_client import get_sb, get_auth, call_with_ssl_retry
 
 bp = Blueprint("auth", __name__)
+
+# Basit bellek-içi rate limit (IP başına) — şifre sıfırlama isteklerinin
+# kötüye kullanımını (spam e-posta, enumeration denemesi) yavaşlatır.
+# NOT: tek process varsayımıyla çalışır; çoklu worker'a geçilirse Redis gerekir.
+_reset_attempts: dict[str, list[float]] = {}
+_RESET_MAX_ATTEMPTS = 3
+_RESET_WINDOW_SECONDS = 600
+
+
+def _reset_rate_limited(ip: str) -> bool:
+    now = time.time()
+    attempts = [t for t in _reset_attempts.get(ip, []) if now - t < _RESET_WINDOW_SECONDS]
+    attempts.append(now)
+    _reset_attempts[ip] = attempts
+    return len(attempts) > _RESET_MAX_ATTEMPTS
 
 
 def _save_session(res) -> bool:
@@ -134,3 +151,68 @@ def logout():
     session.clear()
     flash("Çıkış yapıldı.", "success")
     return redirect(url_for("auth.login"))
+
+
+@bp.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip()
+
+        if _reset_rate_limited(request.remote_addr or "unknown"):
+            flash("Çok fazla deneme yaptın. Lütfen biraz sonra tekrar dene.", "error")
+            return redirect(url_for("auth.login"))
+
+        if email:
+            try:
+                redirect_url = url_for("auth.reset_password", _external=True)
+                call_with_ssl_retry(
+                    lambda: get_auth().auth.reset_password_for_email(
+                        email, {"redirect_to": redirect_url}
+                    )
+                )
+            except Exception:
+                pass  # kullanıcı enumeration'ı önlemek için hata da yutulur
+
+        # E-posta sistemde kayıtlı olsun/olmasın AYNI jenerik mesaj — enumeration önleme
+        flash("Eğer bu e-posta adresi kayıtlıysa, bir şifre sıfırlama linki gönderildi.", "success")
+        return redirect(url_for("auth.login"))
+
+    return render_template("auth/forgot_password.html")
+
+
+@bp.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    """Supabase'in gönderdiği recovery linki buraya redirect eder.
+
+    Token'lar implicit flow ile URL fragment'ında (#access_token=...) gelir;
+    fragment sunucuya hiç gönderilmez, bu yüzden reset_password.html
+    içindeki script window.location.hash'i okuyup token'ları gizli form
+    alanlarına yazar, form normal POST ile sunucuya iletir.
+    """
+    if request.method == "POST":
+        access_token = request.form.get("access_token", "")
+        refresh_token = request.form.get("refresh_token", "")
+        password = request.form.get("password", "").strip()
+
+        if not access_token or len(password) < 6:
+            flash("Geçersiz istek veya şifre çok kısa (en az 6 karakter).", "error")
+            return redirect(url_for("auth.reset_password"))
+
+        try:
+            # Paylaşılan get_auth() singleton'ı yerine tek kullanımlık client:
+            # set_session çağrısı client durumunu mutasyona uğratır, paylaşılan
+            # client'ta bu başka isteklerle yarışa (race condition) girer.
+            tmp = create_client(
+                current_app.config["SUPABASE_URL"],
+                current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+            )
+            tmp.auth.set_session(access_token, refresh_token)
+            tmp.auth.update_user({"password": password})
+        except Exception:
+            flash("Link süresi dolmuş veya geçersiz. Yeniden şifre sıfırlama isteği gönder.", "error")
+            return redirect(url_for("auth.forgot_password"))
+
+        flash("Şifren güncellendi. Şimdi giriş yapabilirsin.", "success")
+        return redirect(url_for("auth.login"))
+
+    return render_template("auth/reset_password.html")
