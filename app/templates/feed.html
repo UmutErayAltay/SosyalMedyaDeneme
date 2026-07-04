@@ -44,14 +44,13 @@
                 ♥ <span class="like-count">{{ p.like_count or 0 }}</span>
             </button>
             
-            {# YENİ: Paylaş Modalı Tetikleyici Buton #}
-            <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ p.id }}" aria-haspopup="dialog">
-                📤 Gönder
-            </button>
-            
             <a href="{{ url_for('routes.post_detail', post_id=p.id) }}" class="btn btn-ghost" aria-label="Yorumlar">
                 💬 {{ p.comment_count or 0 }}
             </a>
+
+            <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ p.id }}" aria-haspopup="dialog">
+                📤 Gönder
+            </button>
             {% if me and p.user_id == me.id %}
                 <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
                     onsubmit="return confirm('Bu postu silmek istiyor musun?')">

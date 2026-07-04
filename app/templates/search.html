@@ -56,6 +56,11 @@
                 <img src="{{ p.image_url }}" class="post-image" alt="Post görseli"
                      data-post-url="{{ url_for('routes.post_detail', post_id=p.id) }}" loading="lazy">
             {% endif %}
+            <footer class="post-actions">
+                <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ p.id }}" aria-haspopup="dialog">
+                    📤 Gönder
+                </button>
+            </footer>
         </article>
         {% else %}
         <p class="muted">Post bulunamadı.</p>
