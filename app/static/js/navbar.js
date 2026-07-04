@@ -32,30 +32,38 @@
     });
 })();
 
-// Scroll-hide navbar: aşağı kaydırınca gizlen, yukarı kaydırınca geri gel.
+// Scroll-hide navbar: aşağı kaydırınca gizlen, yukarı kaydırınca GERİ GELİR.
 // Arama input'u odaktayken veya sayfanın en üstündeyken HİÇBİR ZAMAN gizlenmez
 // (erişilebilirlik: odaktaki öğenin görsel bağlamı kaybolmamalı).
+//
+// ÖNCEKİ SORUN: gizlendikten sonra lastActedY=y güncelleniyordu, yukarı
+// kaydırırken delta hep küçük kalıp TOLERANCE'i geçemiyordu → "yukarı kaydırınca
+// geri gelmiyor" hatası.
+// ÇÖZÜM: lastY her frame'de güncellenir, yön (yukarı/aşağı) basit karşılaştırma
+// ile tespit edilir, eşiğin altında daima görünür.
 (function () {
     var navbar = document.querySelector('.navbar');
     var searchInput = document.getElementById('nav-search-input');
     var navLinks = document.getElementById('nav-links');
     if (!navbar) return;
 
-    var HIDE_THRESHOLD = 80;
+    var HIDE_THRESHOLD = 120;   // bu mesafenin altında navbar hep görünür
     var lastY = window.scrollY;
     var ticking = false;
 
     function update() {
-        var y = window.scrollY;
+        var y = Math.max(window.scrollY, 0);
         var searchFocused = document.activeElement === searchInput;
         var menuOpen = navLinks && navLinks.classList.contains('open');
 
         if (searchFocused || menuOpen || y < HIDE_THRESHOLD) {
             navbar.classList.remove('navbar-hidden');
-        } else if (y > lastY) {
-            navbar.classList.add('navbar-hidden');
-        } else {
+        } else if (y < lastY) {
+            // Yukarı kaydırıyor → göster
             navbar.classList.remove('navbar-hidden');
+        } else if (y > lastY) {
+            // Aşağı kaydırıyor → gizle
+            navbar.classList.add('navbar-hidden');
         }
         lastY = y;
         ticking = false;

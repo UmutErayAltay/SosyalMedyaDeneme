@@ -297,7 +297,7 @@ def search():
 
     # Post ara (content ILIKE)
     posts = sb.table("posts").select(
-        "id, content, image_url, created_at, user_id, "
+        "id, content, image_url, image_urls, created_at, user_id, "
         "profiles!posts_user_id_fkey(username, avatar_url)"
     ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
 

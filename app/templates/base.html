@@ -128,15 +128,26 @@
         <a href="{{ url_for('notifications.list_notifications') }}" class="notif-panel-viewall">Tümünü gör</a>
     </div>
 
+    {# --- Görsel lightbox (feed, post detay, profil medya) — global --- #}
+    <div class="modal-overlay lightbox-overlay" id="lightbox" role="dialog" aria-modal="true" aria-label="Görsel büyütme" hidden>
+        <button type="button" class="lightbox-close" id="lightbox-close" aria-label="Kapat">×</button>
+        <button type="button" class="lightbox-nav lightbox-prev" id="lightbox-prev" aria-label="Önceki görsel">‹</button>
+        <img src="" alt="" class="lightbox-img" id="lightbox-img">
+        <button type="button" class="lightbox-nav lightbox-next" id="lightbox-next" aria-label="Sonraki görsel">›</button>
+        <a href="#" class="lightbox-goto" id="lightbox-goto">Gönderiyi gör</a>
+    </div>
+
     {# --- Sayfa geçişi ilerleme çubuğu JS --- #}
     <script src="{{ url_for('static', filename='js/pageProgress.js') }}"></script>
     {# --- Dark mode toggle JS (FOUC'suz) --- #}
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
     {# --- Mobil menü toggle JS --- #}
     <script src="{{ url_for('static', filename='js/navbar.js') }}"></script>
-    
+
     {# --- YENİ EKLENEN KISIM: Share JS --- #}
     <script src="{{ url_for('static', filename='js/shareModal.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/lightbox.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/postClick.js') }}"></script>
     {% if me %}<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>{% endif %}
 
     {% block scripts %}{% endblock %}

@@ -19,7 +19,7 @@
 {% endblock %}
 
 {% macro post_card(p, author_username, author_avatar_url, allow_delete) %}
-<article class="card post">
+<article class="card post" data-post-url="{{ url_for('routes.post_detail', post_id=p.id) }}">
     <header class="post-header">
         {% if author_avatar_url %}
             <img src="{{ author_avatar_url }}" class="avatar" alt="" loading="lazy">
@@ -32,11 +32,13 @@
     {% if p.image_urls and p.image_urls|length > 0 %}
         <div class="post-images post-images-{{ p.image_urls|length }}">
             {% for img in p.image_urls %}
-                <img src="{{ img }}" class="post-image-tile" alt="Post görseli {{ loop.index }}" loading="lazy">
+                <img src="{{ img }}" class="post-image-tile" alt="Post görseli {{ loop.index }}"
+                     data-post-url="{{ url_for('routes.post_detail', post_id=p.id) }}" loading="lazy">
             {% endfor %}
         </div>
     {% elif p.image_url %}
-        <img src="{{ p.image_url }}" class="post-image" alt="Post görseli" loading="lazy">
+        <img src="{{ p.image_url }}" class="post-image" alt="Post görseli"
+             data-post-url="{{ url_for('routes.post_detail', post_id=p.id) }}" loading="lazy">
     {% endif %}
     {% if p.content %}
         <p class="post-content">{{ p.content }}</p>
@@ -160,17 +162,7 @@
     </section>
 </div>
 
-{# --- Görsel lightbox (Medya sekmesi) --- #}
-<div class="modal-overlay lightbox-overlay" id="lightbox" role="dialog" aria-modal="true" aria-label="Görsel büyütme" hidden>
-    <button type="button" class="lightbox-close" id="lightbox-close" aria-label="Kapat">×</button>
-    <button type="button" class="lightbox-nav lightbox-prev" id="lightbox-prev" aria-label="Önceki görsel">‹</button>
-    <img src="" alt="" class="lightbox-img" id="lightbox-img">
-    <button type="button" class="lightbox-nav lightbox-next" id="lightbox-next" aria-label="Sonraki görsel">›</button>
-    <a href="#" class="lightbox-goto" id="lightbox-goto">Gönderiyi gör</a>
-</div>
-
 <script src="{{ url_for('static', filename='js/follow.js') }}"></script>
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 <script src="{{ url_for('static', filename='js/profileTabs.js') }}"></script>
-<script src="{{ url_for('static', filename='js/lightbox.js') }}"></script>
 {% endblock %}

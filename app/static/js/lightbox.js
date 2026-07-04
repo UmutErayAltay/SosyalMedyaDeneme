@@ -1,5 +1,8 @@
-// Medya grid lightbox — odak hapsi, Escape ile kapanma, odağın tetikleyiciye
-// dönmesi, ok tuşlarıyla önceki/sonraki (WCAG modal dialog deseni).
+// Görsel lightbox — feed, post detay ve profil (Medya sekmesi) görsellerinde
+// ortak kullanılır. Bir görsele tıklandığında, en yakın galeri kapsayıcısı
+// (.media-grid veya .post-images) içindeki tüm görseller "galeri" olur; tekil
+// görsellerde (kapsayıcı yoksa) sadece o görsel gösterilir. Odak hapsi, Escape
+// ile kapanma, odağın tetikleyiciye dönmesi, ok tuşlarıyla önceki/sonraki.
 
 (function () {
     var overlay = document.getElementById('lightbox');
@@ -11,25 +14,43 @@
     var nextBtn = document.getElementById('lightbox-next');
     var gotoLink = document.getElementById('lightbox-goto');
 
-    var thumbs = [];
+    var TRIGGER_SELECTOR = '.media-thumb, .post-image, .post-image-tile';
+    var GALLERY_SELECTOR = '.media-grid, .post-images';
+
+    var gallery = [];
     var currentIndex = -1;
     var lastFocused = null;
 
-    function refreshThumbs() {
-        thumbs = Array.prototype.slice.call(document.querySelectorAll('.media-thumb'));
+    function srcOf(el) {
+        return el.dataset.lightboxSrc || el.src || '';
+    }
+
+    function postUrlOf(el) {
+        return el.dataset.postUrl || '#';
+    }
+
+    function buildGallery(trigger) {
+        var container = trigger.closest(GALLERY_SELECTOR);
+        if (container) {
+            return Array.prototype.slice.call(container.querySelectorAll(TRIGGER_SELECTOR));
+        }
+        return [trigger];
     }
 
     function render() {
-        var thumb = thumbs[currentIndex];
-        if (!thumb) return;
-        img.src = thumb.dataset.lightboxSrc;
-        gotoLink.href = thumb.dataset.postUrl;
+        var el = gallery[currentIndex];
+        if (!el) return;
+        img.src = srcOf(el);
+        gotoLink.href = postUrlOf(el);
+        var multi = gallery.length > 1;
+        prevBtn.hidden = !multi;
+        nextBtn.hidden = !multi;
     }
 
-    function open(index) {
-        refreshThumbs();
-        if (!thumbs[index]) return;
-        currentIndex = index;
+    function open(trigger) {
+        gallery = buildGallery(trigger);
+        currentIndex = gallery.indexOf(trigger);
+        if (currentIndex === -1) currentIndex = 0;
         lastFocused = document.activeElement;
         render();
         overlay.hidden = false;
@@ -45,16 +66,16 @@
     }
 
     function show(delta) {
-        if (!thumbs.length) return;
-        currentIndex = (currentIndex + delta + thumbs.length) % thumbs.length;
+        if (!gallery.length) return;
+        currentIndex = (currentIndex + delta + gallery.length) % gallery.length;
         render();
     }
 
     document.addEventListener('click', function (e) {
-        var thumb = e.target.closest('.media-thumb');
-        if (thumb) {
-            refreshThumbs();
-            open(thumbs.indexOf(thumb));
+        var trigger = e.target.closest(TRIGGER_SELECTOR);
+        if (trigger) {
+            e.preventDefault();
+            open(trigger);
         }
     });
 
@@ -75,7 +96,9 @@
         } else if (e.key === 'ArrowLeft') {
             show(-1);
         } else if (e.key === 'Tab') {
-            var focusable = overlay.querySelectorAll('button, a[href]');
+            var focusable = Array.prototype.slice.call(
+                overlay.querySelectorAll('button, a[href]')
+            ).filter(function (el) { return !el.hidden; });
             if (!focusable.length) return;
             var first = focusable[0];
             var last = focusable[focusable.length - 1];
