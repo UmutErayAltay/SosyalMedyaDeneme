@@ -4,7 +4,8 @@
    window.initConversation() içinde kullanır (innerHTML ile eklenen <script> çalışmaz). #}
 <div class="messages-panel" id="conversation-panel"
      data-conversation-id="{{ conversation_id }}"
-     data-send-url="{{ url_for('messaging.send_message', conversation_id=conversation_id) }}">
+     data-send-url="{{ url_for('messaging.send_message', conversation_id=conversation_id) }}"
+     data-other-username="{{ other_user.username if other_user else 'Kullanıcı' }}">
     <header class="conv-header">
         <a href="{{ url_for('messaging.inbox') }}" class="conv-back-link" aria-label="Mesajlara dön">← Geri</a>
         <h2>{{ other_user.username if other_user else 'Bilinmeyen' }}</h2>
@@ -20,12 +21,21 @@
             {% if m.content %}
                 <p>{{ m.content }}</p>
             {% endif %}
-            <span class="time">{{ m.created_at[11:16] }}</span>
+            <span class="time">
+                {{ m.created_at[11:16] }}
+                {% if m.sender_id == me.id %}
+                    <span class="read-receipt {{ 'read' if m.read_at }}"
+                          aria-label="{{ 'Okundu' if m.read_at else 'İletildi' }}">{{ '✓✓' if m.read_at else '✓' }}</span>
+                {% endif %}
+            </span>
         </div>
         {% else %}
         <p class="muted center">Konuşmaya başla — ilk mesajı sen yaz.</p>
         {% endfor %}
     </div>
+
+    {# "Yazıyor..." göstergesi — aria-live=polite, sadece durum değişince duyurulur (typing.js) #}
+    <p class="typing-indicator" id="typing-indicator" aria-live="polite" hidden></p>
 
     <form id="msg-form" class="composer-msg" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -38,4 +48,5 @@
         <button type="submit" class="btn btn-primary" aria-label="Mesajı gönder">Gönder</button>
     </form>
     <span id="msg-image-name" class="muted" aria-live="polite"></span>
+    <p class="muted drop-hint sr-only" id="drop-hint" aria-live="polite"></p>
 </div>

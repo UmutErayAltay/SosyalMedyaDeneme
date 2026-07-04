@@ -3,6 +3,7 @@
 
 (function () {
     var modal = document.getElementById('post-modal');
+    var modalBox = modal ? modal.querySelector('.modal') : null;
     var openBtn = document.getElementById('open-post-modal');
     var closeBtn = document.getElementById('close-post-modal');
     var fileInput = document.getElementById('post-image-input');
@@ -81,6 +82,40 @@
                 note.textContent = 'İlk 4 görsel yüklenecek.';
                 previewGrid.appendChild(note);
             }
+        });
+    }
+
+    // --- Sürükle-bırak görsel yükleme (tıklanabilir "Görsel Ekle" her zaman
+    // alternatif olarak duruyor — WCAG 2.5.7 tek-imleçli alternatif) ---
+    if (fileInput && modalBox) {
+        ['dragover', 'dragenter'].forEach(function (evt) {
+            modalBox.addEventListener(evt, function (e) {
+                e.preventDefault();
+                modalBox.classList.add('drag-over');
+            });
+        });
+        ['dragleave', 'dragend'].forEach(function (evt) {
+            modalBox.addEventListener(evt, function () {
+                modalBox.classList.remove('drag-over');
+            });
+        });
+        modalBox.addEventListener('drop', function (e) {
+            e.preventDefault();
+            modalBox.classList.remove('drag-over');
+            var dropped = e.dataTransfer && e.dataTransfer.files;
+            if (!dropped || !dropped.length) return;
+
+            var dt = new DataTransfer();
+            var count = 0;
+            for (var i = 0; i < dropped.length && count < 4; i++) {
+                if (dropped[i].type.startsWith('image/')) {
+                    dt.items.add(dropped[i]);
+                    count++;
+                }
+            }
+            if (count === 0) return;
+            fileInput.files = dt.files;
+            fileInput.dispatchEvent(new Event('change'));
         });
     }
 })();

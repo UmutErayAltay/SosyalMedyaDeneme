@@ -4,6 +4,7 @@ Model: her iki kullanıcı için ortak bir 'conversation' satırı.
 conversation_participants üzerinden kullanıcı ↔ konuşma eşleşmesi.
 Görsel mesajları, tekli post paylaşma ve çoklu post paylaşma desteklenir.
 """
+from datetime import datetime, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash, jsonify
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
@@ -11,6 +12,23 @@ from .storage_helper import upload_image
 from .notifications import notify
 
 bp = Blueprint("messaging", __name__)
+
+
+def _mark_read(sb, conversation_id: str, me: str, messages: list[dict]) -> None:
+    """Karşı tarafın (henüz okunmamış) mesajlarını okundu işaretler.
+
+    sql/migration_read_receipts.sql çalıştırılmadan `read_at` kolonu yoksa
+    PostgREST hata döner — bu durumda sessizce atlanır (konuşma sayfası
+    migration uygulanana kadar da çalışmaya devam etsin diye).
+    """
+    unread_ids = [m["id"] for m in messages if m["sender_id"] != me and not m.get("read_at")]
+    if not unread_ids:
+        return
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        sb.table("messages").update({"read_at": now_iso}).in_("id", unread_ids).execute()
+    except Exception:
+        pass
 
 
 def _notify_conversation(sb, conversation_id: str, sender_id: str) -> None:
@@ -128,6 +146,7 @@ def conversation(conversation_id):
     messages = sb.table("messages").select(
         "*, profiles!messages_sender_id_fkey(username, avatar_url)"
     ).eq("conversation_id", conversation_id).order("created_at").execute().data
+    _mark_read(sb, conversation_id, me, messages)
 
     if request.headers.get("X-Requested-With") == "fetch":
         return render_template("messages/_conversation_panel.html",

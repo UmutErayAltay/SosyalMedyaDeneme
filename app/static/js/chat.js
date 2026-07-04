@@ -31,7 +31,13 @@
             html += '<p>' + escapeHtml(msg.content) + '</p>';
         }
         var time = msg.created_at ? msg.created_at.substring(11, 16) : 'şimdi';
-        html += '<span class="time">' + time + '</span></div>';
+        html += '<span class="time">' + time;
+        if (isMine) {
+            var read = !!msg.read_at;
+            html += ' <span class="read-receipt' + (read ? ' read' : '') + '" aria-label="' + (read ? 'Okundu' : 'İletildi') + '">'
+                + (read ? '✓✓' : '✓') + '</span>';
+        }
+        html += '</span></div>';
         return html;
     }
 
@@ -133,6 +139,7 @@
 
         var conversationId = panel.dataset.conversationId;
         var sendUrl = panel.dataset.sendUrl;
+        var otherUsername = panel.dataset.otherUsername || 'Kullanıcı';
         if (!conversationId || !sendUrl) return;
 
         ensureLightbox();
@@ -168,6 +175,57 @@
             });
         }
 
+        // --- Sürükle-bırak görsel yükleme (tıklanabilir dosya seçici zaten var — WCAG
+        // 2.5.7 tek-imleçli alternatif olarak korunuyor, sürükleme sadece ek kolaylık) ---
+        var dropHint = document.getElementById('drop-hint');
+        if (imageInput) {
+            ['dragover', 'dragenter'].forEach(function (evt) {
+                panel.addEventListener(evt, function (e) {
+                    e.preventDefault();
+                    panel.classList.add('drag-over');
+                });
+            });
+            ['dragleave', 'dragend'].forEach(function (evt) {
+                panel.addEventListener(evt, function () {
+                    panel.classList.remove('drag-over');
+                });
+            });
+            panel.addEventListener('drop', function (e) {
+                e.preventDefault();
+                panel.classList.remove('drag-over');
+                var files = e.dataTransfer && e.dataTransfer.files;
+                if (!files || !files.length) return;
+                var file = files[0];
+                if (!file.type.startsWith('image/')) {
+                    if (dropHint) dropHint.textContent = 'Sadece görsel dosyaları desteklenir.';
+                    return;
+                }
+                var dt = new DataTransfer();
+                dt.items.add(file);
+                imageInput.files = dt.files;
+                imageInput.dispatchEvent(new Event('change'));
+                if (dropHint) dropHint.textContent = file.name + ' eklendi.';
+            });
+        }
+
+        // --- "Yazıyor..." göstergesi: broadcast ile (DB'ye yazılmaz), throttle'lı gönderim ---
+        var typingIndicator = document.getElementById('typing-indicator');
+        var typingClearTimer = null;
+        var lastTypingSentAt = 0;
+
+        function sendTyping(isTyping) {
+            if (!activeChannel) return;
+            var now = Date.now();
+            if (isTyping && now - lastTypingSentAt < 2000) return; // en fazla 2sn'de bir gönder
+            lastTypingSentAt = isTyping ? now : 0;
+            activeChannel.send({ type: 'broadcast', event: 'typing', payload: { typing: isTyping } });
+        }
+
+        if (typingIndicator) {
+            input.addEventListener('input', function () { sendTyping(true); });
+            input.addEventListener('blur', function () { sendTyping(false); });
+        }
+
         function appendMessage(msg, isMine, opts) {
             var empty = stream.querySelector('.muted.center');
             if (empty) empty.remove();
@@ -187,6 +245,7 @@
             var hasImage = imageInput && imageInput.files.length > 0;
             if (!content && !hasImage) return;
 
+            sendTyping(false);
             var submitBtn = form.querySelector('button[type="submit"]');
             submitBtn.disabled = true;
 
@@ -255,7 +314,10 @@
         if (window.supabaseClient) {
             try {
                 var topic = 'messages:' + conversationId;
-                var channel = window.supabaseClient.channel(topic);
+                // self:false — kendi "yazıyor" broadcast'imizi kendimize geri göstermeyelim
+                var channel = window.supabaseClient.channel(topic, {
+                    config: { broadcast: { self: false } }
+                });
                 channel.on('postgres_changes', {
                     event: 'INSERT',
                     schema: 'public',
@@ -265,6 +327,39 @@
                     var msg = payload.new;
                     var isMine = msg.sender_id === window.ME_ID;
                     if (!isMine) appendMessage(msg, isMine);
+                }).on('postgres_changes', {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'messages',
+                    filter: 'conversation_id=eq.' + conversationId
+                }, function (payload) {
+                    // Karşı taraf mesajımızı okudu — checkmark'ı canlı güncelle
+                    var msg = payload.new;
+                    if (msg.sender_id !== window.ME_ID || !msg.read_at) return;
+                    var el = stream.querySelector('[data-msg-id="' + msg.id + '"]');
+                    var receipt = el && el.querySelector('.read-receipt');
+                    if (receipt) {
+                        receipt.textContent = '✓✓';
+                        receipt.classList.add('read');
+                        receipt.setAttribute('aria-label', 'Okundu');
+                    }
+                }).on('broadcast', { event: 'typing' }, function (msg) {
+                    if (!typingIndicator) return;
+                    var payload = msg.payload || {};
+                    if (typingClearTimer) clearTimeout(typingClearTimer);
+                    if (payload.typing) {
+                        if (typingIndicator.hidden) {
+                            typingIndicator.textContent = otherUsername + ' yazıyor...';
+                            typingIndicator.hidden = false;
+                        }
+                        typingClearTimer = setTimeout(function () {
+                            typingIndicator.hidden = true;
+                            typingIndicator.textContent = '';
+                        }, 4000);
+                    } else {
+                        typingIndicator.hidden = true;
+                        typingIndicator.textContent = '';
+                    }
                 }).subscribe(function (status) {
                     if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
                         console.warn('Realtime bağlantı sorunu, durum:', status);
