@@ -609,6 +609,9 @@ label input { margin-top: 6px; }
 }
 
 /* Navbar scroll-hide (aşağı kaydırınca gizlen, yukarı kaydırınca gel) */
+header[role="banner"] {
+    display: contents;
+}
 .navbar { transition: transform 0.25s ease; }
 .navbar.navbar-hidden { transform: translateY(-100%); }
 @media (prefers-reduced-motion: reduce) {

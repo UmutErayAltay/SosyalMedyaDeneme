@@ -278,7 +278,7 @@ def profile_edit():
     prof = sb.table("profiles").select("*").eq("id", me).execute()
     if not prof.data:
         abort(404)
-    return render_template("profile_edit.html", profile=prof.data[0])
+    return render_template("profile_edit.html", profile=prof.data[0], me=session["user"])
 
 
 @bp.route("/search")
@@ -287,7 +287,7 @@ def profile_edit():
 def search():
     q = request.args.get("q", "").strip()
     if len(q) < 2:
-        return render_template("search.html", q=q, users=[], posts=[])
+        return render_template("search.html", q=q, users=[], posts=[], me=session.get("user"))
 
     sb = get_sb()
     # Kullanıcı ara (username ILIKE)
@@ -301,4 +301,4 @@ def search():
         "profiles!posts_user_id_fkey(username, avatar_url)"
     ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
 
-    return render_template("search.html", q=q, users=users, posts=posts)
+    return render_template("search.html", q=q, users=users, posts=posts, me=session.get("user"))

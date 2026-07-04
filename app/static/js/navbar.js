@@ -1,5 +1,4 @@
-// Mobil menü toggle — erişilebilir (aria-expanded)
-
+// Mobil menü toggle
 (function () {
     var toggle = document.querySelector('.nav-toggle');
     var links = document.getElementById('nav-links');
@@ -32,53 +31,74 @@
     });
 })();
 
-// Scroll-hide navbar: aşağı kaydırınca gizlen, yukarı kaydırınca GERİ GELİR.
-// Arama input'u odaktayken veya sayfanın en üstündeyken HİÇBİR ZAMAN gizlenmez
-// (erişilebilirlik: odaktaki öğenin görsel bağlamı kaybolmamalı).
-//
-// ÖNCEKİ SORUN: gizlendikten sonra lastActedY=y güncelleniyordu, yukarı
-// kaydırırken delta hep küçük kalıp TOLERANCE'i geçemiyordu → "yukarı kaydırınca
-// geri gelmiyor" hatası.
-// ÇÖZÜM: lastY her frame'de güncellenir, yön (yukarı/aşağı) basit karşılaştırma
-// ile tespit edilir, eşiğin altında daima görünür.
+// GARANTİLİ AKILLI NAVBAR (WHEEL + TOUCH + SCROLL HİBRİT SİSTEMİ)
 (function () {
     var navbar = document.querySelector('.navbar');
     var searchInput = document.getElementById('nav-search-input');
     var navLinks = document.getElementById('nav-links');
     if (!navbar) return;
 
-    var HIDE_THRESHOLD = 120;   // bu mesafenin altında navbar hep görünür
-    var lastY = window.scrollY;
-    var ticking = false;
-
-    function update() {
-        var y = Math.max(window.scrollY, 0);
-        var searchFocused = document.activeElement === searchInput;
-        var menuOpen = navLinks && navLinks.classList.contains('open');
-
-        if (searchFocused || menuOpen || y < HIDE_THRESHOLD) {
-            navbar.classList.remove('navbar-hidden');
-        } else if (y < lastY) {
-            // Yukarı kaydırıyor → göster
-            navbar.classList.remove('navbar-hidden');
-        } else if (y > lastY) {
-            // Aşağı kaydırıyor → gizle
-            navbar.classList.add('navbar-hidden');
-        }
-        lastY = y;
-        ticking = false;
+    var HIDE_THRESHOLD = 60; // Sayfa en üstteyken gizlenmeyi engellemek için eşik
+    
+    function showNavbar() {
+        navbar.classList.remove('navbar-hidden');
     }
 
-    window.addEventListener('scroll', function () {
-        if (!ticking) {
-            requestAnimationFrame(update);
-            ticking = true;
+    function hideNavbar() {
+        var currentScroll = window.scrollY || document.documentElement.scrollTop;
+        if (currentScroll > HIDE_THRESHOLD) {
+            navbar.classList.add('navbar-hidden');
+        }
+    }
+
+    // 1. FARE TEKERLEĞİ (Wheel) - Overflow alanlarında (örn. mesaj paneli) kaydırmayı da yakalar
+    window.addEventListener('wheel', function (e) {
+        var searchFocused = document.activeElement === searchInput;
+        var menuOpen = navLinks && navLinks.classList.contains('open');
+        if (searchFocused || menuOpen) return;
+
+        if (e.deltaY < 0) {
+            showNavbar(); // Tekerlek yukarı kaydırıldı
+        } else if (e.deltaY > 0) {
+            hideNavbar(); // Tekerlek aşağı kaydırıldı
         }
     }, { passive: true });
 
+    // 2. MOBİL DOKUNMA (Touch) - Dokunmatik ekranlardaki ivmeyi yakalar
+    var touchStartY = 0;
+    window.addEventListener('touchstart', function (e) {
+        touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    window.addEventListener('touchmove', function (e) {
+        var searchFocused = document.activeElement === searchInput;
+        if (searchFocused) return;
+
+        var touchEndY = e.touches[0].clientY;
+        var diffY = touchStartY - touchEndY;
+
+        if (Math.abs(diffY) > 10) { // 10px tolerans (titremeyi önler)
+            if (diffY < 0) {
+                showNavbar(); // Sayfa yukarı
+            } else {
+                hideNavbar(); // Sayfa aşağı
+            }
+            touchStartY = touchEndY;
+        }
+    }, { passive: true });
+
+    // 3. STANDART SCROLL & AJAX (Fallback)
+    window.addEventListener('scroll', function () {
+        var currentScrollY = window.scrollY || document.documentElement.scrollTop;
+        if (currentScrollY <= HIDE_THRESHOLD) {
+            showNavbar();
+        }
+    }, { passive: true });
+
+    // Sayfa içi AJAX geçişlerinde (örneğin sol menü tıklamalarında) navbar'ı geri getir
+    window.addEventListener('popstate', showNavbar);
+
     if (searchInput) {
-        searchInput.addEventListener('focus', function () {
-            navbar.classList.remove('navbar-hidden');
-        });
+        searchInput.addEventListener('focus', showNavbar);
     }
 })();
