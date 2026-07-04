@@ -295,10 +295,11 @@ def search():
         "id, username, full_name, avatar_url"
     ).ilike("username", f"%{q}%").limit(20).execute().data
 
-    # Post ara (content ILIKE)
+    # Post ara (content ILIKE) — beğeni/yorum sayıları feed ile aynı desende
     posts = sb.table("posts").select(
         "id, content, image_url, image_urls, created_at, user_id, "
-        "profiles!posts_user_id_fkey(username, avatar_url)"
+        "profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
     ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
+    _attach_post_metrics(sb, posts, _my_id())
 
     return render_template("search.html", q=q, users=users, posts=posts, me=session.get("user"))

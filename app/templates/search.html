@@ -57,6 +57,16 @@
                      data-post-url="{{ url_for('routes.post_detail', post_id=p.id) }}" loading="lazy">
             {% endif %}
             <footer class="post-actions">
+                <button type="button"
+                        class="btn btn-ghost like-btn {{ 'liked' if p.liked_by_me }}"
+                        data-liked="{{ '1' if p.liked_by_me else '0' }}"
+                        data-like-url="{{ url_for('social.toggle_like', post_id=p.id) }}"
+                        aria-label="Beğen">
+                    ♥ <span class="like-count">{{ p.like_count or 0 }}</span>
+                </button>
+                <a href="{{ url_for('routes.post_detail', post_id=p.id) }}" class="btn btn-ghost" aria-label="Yorumlar">
+                    💬 {{ p.comment_count or 0 }}
+                </a>
                 <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ p.id }}" aria-haspopup="dialog">
                     📤 Gönder
                 </button>
@@ -69,4 +79,5 @@
 
     {% endif %}
 </div>
+<script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 {% endblock %}
