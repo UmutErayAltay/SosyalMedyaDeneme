@@ -7,13 +7,18 @@
         return div.innerHTML;
     }
 
+    function csrfToken() {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.content : '';
+    }
+
     function buildCommentHtml(data, content) {
         var username = data.username || 'Sen';
         var avatarHtml = data.avatar_url
-            ? '<img src="' + data.avatar_url + '" class="avatar avatar-sm" alt="" loading="lazy">'
+            ? '<img src="' + escapeHtml(data.avatar_url) + '" class="avatar avatar-sm" alt="" loading="lazy">'
             : '<div class="avatar avatar-sm avatar-placeholder" aria-hidden="true"></div>';
         return '<div class="comment-meta">' + avatarHtml +
-            '<a href="/u/' + encodeURIComponent(username) + '" class="username">' + username + '</a>' +
+            '<a href="/u/' + encodeURIComponent(username) + '" class="username">' + escapeHtml(username) + '</a>' +
             '<span class="time">şimdi</span></div>' +
             '<p>' + escapeHtml(content) + '</p>';
     }
@@ -37,7 +42,7 @@
                 formData.append('content', content);
                 var res = await fetch('/social/comment/' + postId, {
                     method: 'POST', body: formData,
-                    headers: { 'X-Requested-With': 'fetch' },
+                    headers: { 'X-Requested-With': 'fetch', 'X-CSRF-Token': csrfToken() },
                 });
                 if (!res.ok) throw new Error('İstek başarısız');
                 var data = await res.json();
@@ -98,7 +103,8 @@
             likeBtn.dataset.busy = '1';
             try {
                 var res = await fetch(likeBtn.dataset.likeUrl, {
-                    method: 'POST', headers: { 'X-Requested-With': 'fetch' },
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'fetch', 'X-CSRF-Token': csrfToken() },
                 });
                 if (!res.ok) throw new Error('İstek başarısız');
                 var data = await res.json();
@@ -133,7 +139,7 @@
             formData.append('content', content);
             var res = await fetch('/social/comment/' + postId + '/reply/' + parentId, {
                 method: 'POST', body: formData,
-                headers: { 'X-Requested-With': 'fetch' },
+                headers: { 'X-Requested-With': 'fetch', 'X-CSRF-Token': csrfToken() },
             });
             if (!res.ok) throw new Error('İstek başarısız');
             var data = await res.json();

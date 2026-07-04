@@ -23,26 +23,50 @@ def _my_id() -> str:
     return session["user"]["id"]
 
 
+PAGE_SIZE = 20
+
+
+def _attach_post_metrics(sb, posts: list, me: str) -> None:
+    """Postlara like_count / comment_count / liked_by_me ekler.
+
+    Sayılar embedded count ile tek sorguda gelir; liked_by_me için
+    tüm postlar üzerinden tek bir IN sorgusu yapılır (N+1 önlenir).
+    """
+    post_ids = [p["id"] for p in posts]
+    my_likes = set()
+    if post_ids:
+        my_likes = {
+            l["post_id"] for l in sb.table("likes").select("post_id")
+            .eq("user_id", me).in_("post_id", post_ids).execute().data
+        }
+    for p in posts:
+        p["like_count"] = p["likes"][0]["count"] if p.get("likes") else 0
+        p["comment_count"] = p["comments"][0]["count"] if p.get("comments") else 0
+        p["liked_by_me"] = p["id"] in my_likes
+
+
 @bp.route("/")
 @login_required
 @retry_on_connection_error
 def feed():
-    """Ana akış: tüm postları (yeni → eski) yazarı + etkileşim sayılarıyla getir."""
+    """Ana akış: postlar (yeni → eski) yazar + etkileşim sayılarıyla, sayfalı."""
     sb = get_sb()
+    page = max(request.args.get("page", 1, type=int), 1)
+    offset = (page - 1) * PAGE_SIZE
 
-    # post + yazar profili
+    # Post + yazar + beğeni/yorum sayıları tek sorguda.
+    # Bir fazla satır çekilir: sonraki sayfa var mı bilgisi için.
     posts = sb.table("posts").select(
-        "*, profiles!posts_user_id_fkey(username, avatar_url)"
-    ).order("created_at", desc=True).limit(50).execute().data
+        "*, profiles!posts_user_id_fkey(username, avatar_url), "
+        "likes(count), comments(count)"
+    ).order("created_at", desc=True).range(offset, offset + PAGE_SIZE).execute().data
 
-    me = _my_id()
-    for p in posts:
-        # beğeni sayısı + ben beğendim mi?
-        like_res = sb.table("likes").select("user_id").eq("post_id", p["id"]).execute()
-        p["like_count"] = len(like_res.data)
-        p["liked_by_me"] = me in [l["user_id"] for l in like_res.data]
+    has_next = len(posts) > PAGE_SIZE
+    posts = posts[:PAGE_SIZE]
+    _attach_post_metrics(sb, posts, _my_id())
 
-    return render_template("feed.html", posts=posts, me=session.get("user"))
+    return render_template("feed.html", posts=posts, me=session.get("user"),
+                           page=page, has_next=has_next)
 
 
 @bp.route("/post/new", methods=["POST"])
@@ -86,27 +110,32 @@ def create_post():
 def post_detail(post_id):
     sb = get_sb()
     res = sb.table("posts").select(
-        "*, profiles!posts_user_id_fkey(username, avatar_url)"
+        "*, profiles!posts_user_id_fkey(username, avatar_url), "
+        "likes(count), comments(count)"
     ).eq("id", post_id).execute()
     if not res.data:
         abort(404)
     post = res.data[0]
 
-    # beğeni sayısı + ben beğendim mi? (feed() ile aynı mantık)
     me = _my_id()
-    like_res = sb.table("likes").select("user_id").eq("post_id", post_id).execute()
-    post["like_count"] = len(like_res.data)
-    post["liked_by_me"] = me in [l["user_id"] for l in like_res.data]
+    _attach_post_metrics(sb, [post], me)
 
+    # Yorumlar + beğeni sayıları tek sorguda
     comments = sb.table("comments").select(
-        "*, profiles!comments_user_id_fkey(username, avatar_url)"
+        "*, profiles!comments_user_id_fkey(username, avatar_url), comment_likes(count)"
     ).eq("post_id", post_id).order("created_at", desc=False).execute().data
 
-    # Her yoruma beğeni sayısı + liked_by_me + cevaplar (parent_comment_id)
+    # Benim beğendiğim yorumlar tek IN sorgusuyla (N+1 önlenir)
+    comment_ids = [c["id"] for c in comments]
+    my_comment_likes = set()
+    if comment_ids:
+        my_comment_likes = {
+            l["comment_id"] for l in sb.table("comment_likes").select("comment_id")
+            .eq("user_id", me).in_("comment_id", comment_ids).execute().data
+        }
     for c in comments:
-        cl = sb.table("comment_likes").select("user_id").eq("comment_id", c["id"]).execute()
-        c["like_count"] = len(cl.data)
-        c["liked_by_me"] = me in [l["user_id"] for l in cl.data]
+        c["like_count"] = c["comment_likes"][0]["count"] if c.get("comment_likes") else 0
+        c["liked_by_me"] = c["id"] in my_comment_likes
 
     # Hiyerarşik yapı: ana yorumlar + cevaplar
     top_comments = [c for c in comments if not c.get("parent_comment_id")]
@@ -143,32 +172,21 @@ def profile(username):
     me = _my_id()
     is_self = me == prof["id"]
 
-    # Postlar + yazar bilgisi
-    posts = sb.table("posts").select("*").eq(
-        "user_id", prof["id"]
-    ).order("created_at", desc=True).execute().data
+    # Postlar + etkileşim sayıları tek sorguda
+    posts = sb.table("posts").select(
+        "*, likes(count), comments(count)"
+    ).eq("user_id", prof["id"]).order("created_at", desc=True).execute().data
+    _attach_post_metrics(sb, posts, me)
 
-    # Her posta etkileşim metrikleri (beğeni/yorum sayısı + liked_by_me)
-    for p in posts:
-        like_res = sb.table("likes").select("user_id").eq("post_id", p["id"]).execute()
-        p["like_count"] = len(like_res.data)
-        p["liked_by_me"] = me in [l["user_id"] for l in like_res.data]
-        comment_res = sb.table("comments").select("id").eq("post_id", p["id"]).execute()
-        p["comment_count"] = len(comment_res.data)
-
-    # --- Profil istatistikleri ---
-    followers_count = len(sb.table("follows").select("follower_id").eq(
-        "following_id", prof["id"]
-    ).execute().data)
-    following_count = len(sb.table("follows").select("following_id").eq(
-        "follower_id", prof["id"]
-    ).execute().data)
+    # --- Profil istatistikleri (count='exact' ile satır çekmeden say) ---
+    followers_count = sb.table("follows").select(
+        "follower_id", count="exact", head=True
+    ).eq("following_id", prof["id"]).execute().count or 0
+    following_count = sb.table("follows").select(
+        "following_id", count="exact", head=True
+    ).eq("follower_id", prof["id"]).execute().count or 0
     # Toplam beğeni (kullanıcının tüm postlarına gelen)
-    post_ids = [p["id"] for p in posts]
-    total_likes = 0
-    if post_ids:
-        for p in posts:
-            total_likes += p["like_count"]
+    total_likes = sum(p["like_count"] for p in posts)
 
     is_following = False
     if not is_self:

@@ -1,5 +1,22 @@
 {% extends "base.html" %}
 {% block title %}{{ profile.username }}{% endblock %}
+{% block description %}{{ profile.bio[:155] if profile.bio else profile.username ~ ' — Sosyal profili' }}{% endblock %}
+{% block og_title %}{{ profile.username }}{% endblock %}
+{% block og_type %}profile{% endblock %}
+{% block og_image %}{% if profile.avatar_url %}<meta property="og:image" content="{{ profile.avatar_url }}">{% endif %}{% endblock %}
+{% block head %}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "Person",
+    "name": {{ (profile.full_name or profile.username)|tojson }},
+    "alternateName": {{ profile.username|tojson }},
+    "url": {{ request.base_url|tojson }}
+    {% if profile.avatar_url %}, "image": {{ profile.avatar_url|tojson }}{% endif %}
+    {% if profile.bio %}, "description": {{ profile.bio|tojson }}{% endif %}
+}
+</script>
+{% endblock %}
 {% block content %}
 <header class="card profile-header">
     {% if profile.avatar_url %}
@@ -33,8 +50,11 @@
                         aria-label="{{ 'Takipten çık' if is_following else 'Takip et' }}">
                     {{ 'Takipten çık' if is_following else 'Takip et' }}
                 </button>
-                <a href="{{ url_for('messaging.start_conversation', username=profile.username) }}"
-                   class="btn btn-ghost">Mesaj gönder</a>
+                <form action="{{ url_for('messaging.start_conversation', username=profile.username) }}"
+                      method="post" class="inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-ghost">Mesaj gönder</button>
+                </form>
             {% endif %}
         </div>
     </div>
@@ -79,6 +99,7 @@
             {% if is_self %}
                 <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
                       onsubmit="return confirm('Bu postu silmek istiyor musun?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-ghost danger" aria-label="Postu sil">🗑 Sil</button>
                 </form>
             {% endif %}

@@ -20,8 +20,11 @@ document.addEventListener("click", async (e) => {
 
     try {
         const res = await fetch(btn.dataset.followUrl, {
-            method: "GET",
-            headers: { "X-Requested-With": "fetch" },
+            method: "POST",
+            headers: {
+                "X-Requested-With": "fetch",
+                "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "",
+            },
         });
         if (!res.ok) throw new Error("İstek başarısız: " + res.status);
 

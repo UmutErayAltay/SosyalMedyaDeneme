@@ -26,7 +26,10 @@ document.addEventListener("click", async (e) => {
         // --- 2) Sunucuya gönder ---
         const res = await fetch(btn.dataset.likeUrl, {
             method: "POST",
-            headers: { "X-Requested-With": "fetch" },
+            headers: {
+                "X-Requested-With": "fetch",
+                "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "",
+            },
         });
         if (!res.ok) throw new Error("İstek başarısız: " + res.status);
         const data = await res.json();

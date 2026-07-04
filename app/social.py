@@ -153,7 +153,7 @@ def reply_comment(post_id, parent_id):
     return redirect(url_for("routes.post_detail", post_id=post_id))
 
 
-@bp.route("/follow/<username>")
+@bp.route("/follow/<username>", methods=["POST"])
 @login_required
 @retry_on_connection_error
 def toggle_follow(username):

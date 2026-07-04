@@ -47,10 +47,13 @@
                 📤 Gönder
             </button>
             
-            <a href="{{ url_for('routes.post_detail', post_id=p.id) }}" class="btn btn-ghost" aria-label="Yorumlar">Yorum</a>
+            <a href="{{ url_for('routes.post_detail', post_id=p.id) }}" class="btn btn-ghost" aria-label="Yorumlar">
+                💬 {{ p.comment_count or 0 }}
+            </a>
             {% if me and p.user_id == me.id %}
                 <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
                     onsubmit="return confirm('Bu postu silmek istiyor musun?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-ghost danger" aria-label="Postu sil">Sil</button>
                 </form>
             {% endif %}
@@ -60,6 +63,18 @@
         <p class="muted center">Henüz post yok. İlkini sen paylaş!</p>
         {% endfor %}
     </section>
+
+    {# --- Sayfalama --- #}
+    {% if page > 1 or has_next %}
+    <nav class="pagination" aria-label="Sayfalama">
+        {% if page > 1 %}
+            <a href="{{ url_for('routes.feed', page=page-1) }}" class="btn btn-ghost">← Daha yeni</a>
+        {% endif %}
+        {% if has_next %}
+            <a href="{{ url_for('routes.feed', page=page+1) }}" class="btn btn-ghost">Daha eski →</a>
+        {% endif %}
+    </nav>
+    {% endif %}
 </div>
 
 {# --- Post Paylaşma Modalı --- #}
@@ -70,6 +85,7 @@
             <button type="button" class="modal-close" id="close-post-modal" aria-label="Kapat">×</button>
         </div>
         <form action="{{ url_for('routes.create_post') }}" method="post" enctype="multipart/form-data" class="modal-body">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <textarea name="content" placeholder="Ne düşünüyorsun?" rows="4" aria-label="Post içeriği"></textarea>
 
             <label class="btn btn-ghost image-pick">

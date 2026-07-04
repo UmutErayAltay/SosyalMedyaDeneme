@@ -4,6 +4,7 @@
 <div class="auth-card">
     <h1>Profili Düzenle</h1>
     <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="avatar-preview-row">
             <img id="avatar-preview"
                  src="{{ profile.avatar_url if profile.avatar_url else '' }}"

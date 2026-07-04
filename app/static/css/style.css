@@ -49,6 +49,15 @@ body {
     transition: background 0.2s, color 0.2s;
 }
 
+/* Hareket hassasiyeti olan kullanıcılar için animasyonları kapat (WCAG) */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
 a { color: inherit; text-decoration: none; }
 
 .muted { color: var(--muted); font-size: 13px; }
@@ -206,7 +215,15 @@ textarea:focus-visible, select:focus-visible {
 .btn-ghost:hover { background: var(--border); color: var(--text); }
 .btn-ghost.danger:hover { background: var(--danger-bg); color: var(--danger); }
 .btn-ghost.liked { color: var(--danger); }
-.btn.small { padding: 4px 10px; font-size: 12px; }
+/* WCAG 2.5.8: dokunmatik hedefler en az 24x24px */
+.btn.small { padding: 4px 10px; font-size: 12px; min-height: 24px; min-width: 24px; }
+
+/* Sayfalama */
+.pagination {
+    display: flex; justify-content: space-between; gap: 8px;
+    margin: 16px 0;
+}
+.pagination .btn { border: 1px solid var(--border); }
 
 /* Formlar */
 input, textarea {

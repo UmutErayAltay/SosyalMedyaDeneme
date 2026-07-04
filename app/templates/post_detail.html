@@ -1,5 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Post{% endblock %}
+{% set author = post.profiles.username if post.profiles else 'Bilinmeyen' %}
+{% set first_image = post.image_urls[0] if post.image_urls else post.image_url %}
+{% block title %}{{ author }}: {{ post.content[:40] if post.content else 'Görsel gönderisi' }}{% endblock %}
+{% block description %}{{ post.content[:155] if post.content else author ~ ' bir görsel paylaştı.' }}{% endblock %}
+{% block og_title %}{{ author }} — Sosyal{% endblock %}
+{% block og_type %}article{% endblock %}
+{% block og_image %}{% if first_image %}<meta property="og:image" content="{{ first_image }}">{% endif %}{% endblock %}
+{% block twitter_card %}{{ 'summary_large_image' if first_image else 'summary' }}{% endblock %}
+{% block head %}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "SocialMediaPosting",
+    "url": {{ request.base_url|tojson }},
+    "datePublished": {{ post.created_at|tojson }},
+    "articleBody": {{ (post.content or '')|tojson }},
+    "author": {"@type": "Person", "name": {{ author|tojson }}}
+    {% if first_image %}, "image": {{ first_image|tojson }}{% endif %}
+}
+</script>
+{% endblock %}
 {% block content %}
 <article class="card post">
     <header class="post-header">
@@ -77,6 +97,7 @@
             {% if me and c.user_id == me.id %}
             <form action="{{ url_for('social.delete_comment', comment_id=c.id) }}" method="post"
                   onsubmit="return confirm('Yorumu sil?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>
             </form>
             {% endif %}
@@ -116,6 +137,7 @@
                     {% if me and r.user_id == me.id %}
                     <form action="{{ url_for('social.delete_comment', comment_id=r.id) }}" method="post"
                           onsubmit="return confirm('Yorumu sil?')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>
                     </form>
                     {% endif %}

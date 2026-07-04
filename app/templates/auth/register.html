@@ -4,6 +4,7 @@
 <div class="auth-card">
     <h1>Hesap Oluştur</h1>
     <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label>Kullanıcı adı
             <input type="text" name="username" required minlength="3">
         </label>

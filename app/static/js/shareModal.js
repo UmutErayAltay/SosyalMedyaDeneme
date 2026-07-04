@@ -13,6 +13,7 @@
     let currentPostId = null;
     let selectedUsers = new Set();
     let searchTimeout = null;
+    let lastFocused = null;
 
     // Paylaş butonlarını dinle
     document.body.addEventListener('click', function (e) {
@@ -24,6 +25,7 @@
     });
 
     function openModal() {
+        lastFocused = document.activeElement;
         modal.hidden = false;
         document.body.style.overflow = 'hidden';
 
@@ -48,9 +50,30 @@
 
         userListDiv.innerHTML = '';
         updateSubmitButton();
+
+        // Odağı modalı açan butona geri döndür (WCAG odak yönetimi)
+        if (lastFocused) lastFocused.focus();
     }
 
     closeBtn.addEventListener('click', closeModal);
+
+    // Focus trap — modal açıkken Tab modal içinde kalır
+    modal.addEventListener('keydown', function (e) {
+        if (e.key !== 'Tab' || modal.hidden) return;
+        const focusable = modal.querySelectorAll(
+            'button:not([disabled]), textarea, input, a[href], [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    });
 
     modal.addEventListener('click', function (e) {
         if (e.target === modal) {
@@ -105,15 +128,26 @@
                 'share-target-item' +
                 (selectedUsers.has(u.id) ? ' selected' : '');
 
-            const avatarHtml = u.avatar_url
-                ? `<img src="${u.avatar_url}" class="avatar" alt="">`
-                : `<div class="avatar avatar-placeholder"></div>`;
+            // XSS'e karşı innerHTML yerine DOM ile oluştur (username kullanıcı girdisi)
+            let avatarEl;
+            if (u.avatar_url) {
+                avatarEl = document.createElement('img');
+                avatarEl.src = u.avatar_url;
+                avatarEl.className = 'avatar';
+                avatarEl.alt = '';
+            } else {
+                avatarEl = document.createElement('div');
+                avatarEl.className = 'avatar avatar-placeholder';
+            }
 
-            item.innerHTML = `
-                ${avatarHtml}
-                <span class="username">${u.username}</span>
-                <div class="checkbox"></div>
-            `;
+            const nameEl = document.createElement('span');
+            nameEl.className = 'username';
+            nameEl.textContent = u.username;
+
+            const checkEl = document.createElement('div');
+            checkEl.className = 'checkbox';
+
+            item.append(avatarEl, nameEl, checkEl);
 
             item.addEventListener('click', function () {
 
@@ -158,7 +192,8 @@
             const res = await fetch(`/messages/share/${currentPostId}`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
                 },
                 body: JSON.stringify({
                     user_ids: Array.from(selectedUsers),
