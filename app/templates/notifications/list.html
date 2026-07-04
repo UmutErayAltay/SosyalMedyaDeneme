@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Bildirimler{% endblock %}
+{% block content %}
+<h1>Bildirimler</h1>
+
+<section class="notif-list" aria-label="Bildirimler">
+    {% for n in notifications %}
+    <a href="{{ n.target_url }}" class="card notif-item{{ '' if n.is_read else ' unread' }}">
+        {% if n.actor and n.actor.avatar_url %}
+            <img src="{{ n.actor.avatar_url }}" class="avatar avatar-sm" alt="" loading="lazy">
+        {% else %}
+            <div class="avatar avatar-sm avatar-placeholder" aria-hidden="true"></div>
+        {% endif %}
+        <span class="notif-text">
+            <strong>{{ n.actor.username if n.actor else 'Biri' }}</strong> {{ n.text }}
+        </span>
+        <span class="time">{{ n.created_at[:16]|replace('T',' ') }}</span>
+    </a>
+    {% else %}
+    <p class="muted center">Henüz bildirimin yok.</p>
+    {% endfor %}
+</section>
+
+{% if page > 1 or has_next %}
+<nav class="pagination" aria-label="Sayfalama">
+    {% if page > 1 %}
+        <a href="{{ url_for('notifications.list_notifications', page=page-1) }}" class="btn btn-ghost">← Daha yeni</a>
+    {% endif %}
+    {% if has_next %}
+        <a href="{{ url_for('notifications.list_notifications', page=page+1) }}" class="btn btn-ghost">Daha eski →</a>
+    {% endif %}
+</nav>
+{% endif %}
+{% endblock %}

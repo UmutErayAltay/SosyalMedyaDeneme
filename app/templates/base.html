@@ -55,6 +55,13 @@
         <div class="nav-links" id="nav-links">
             <a href="{{ url_for('routes.feed') }}" aria-label="Akış">Akış</a>
             <a href="{{ url_for('messaging.inbox') }}" aria-label="Mesajlar">Mesajlar</a>
+            <a href="{{ url_for('notifications.list_notifications') }}" class="nav-bell"
+               aria-label="Bildirimler{% if unread_notifications %}, {{ unread_notifications }} okunmamış{% endif %}">
+                🔔
+                <span class="notif-badge{{ '' if unread_notifications else ' hidden' }}"
+                      id="notif-badge" aria-hidden="true">{{ unread_notifications or '' }}</span>
+            </a>
+            <span class="sr-only" id="notif-live" aria-live="polite"></span>
             <a href="{{ url_for('routes.profile', username=me.username) if me.username else '#' }}"
                class="nav-profile" aria-label="Profilim">
                 {% if me.avatar_url %}
@@ -111,7 +118,8 @@
     
     {# --- YENİ EKLENEN KISIM: Share JS --- #}
     <script src="{{ url_for('static', filename='js/shareModal.js') }}"></script>
-    
+    {% if me %}<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>{% endif %}
+
     {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -131,6 +131,33 @@ textarea:focus-visible, select:focus-visible {
 .nav-profile { display: flex; align-items: center; gap: 6px; }
 .nav-avatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
 
+/* Bildirim zili + rozet */
+.nav-bell {
+    position: relative; display: inline-flex;
+    align-items: center; justify-content: center;
+    width: 32px; height: 32px; font-size: 16px;
+    border-radius: 50%; margin-left: 8px;
+}
+.nav-bell:hover { background: var(--border); }
+.notif-badge {
+    position: absolute; top: -2px; right: -2px;
+    background: var(--danger); color: #fff;
+    font-size: 10px; font-weight: 700; line-height: 1;
+    min-width: 16px; height: 16px; padding: 0 3px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+}
+.notif-badge.hidden { display: none; }
+
+/* Bildirim listesi */
+.notif-list { display: flex; flex-direction: column; gap: 8px; }
+.notif-item {
+    display: flex; align-items: center; gap: 10px;
+    text-decoration: none; color: var(--text);
+}
+.notif-item.unread { background: var(--border); }
+.notif-text { flex: 1; font-size: 14px; }
+
 /* Theme toggle butonu */
 .theme-toggle {
     background: none; border: 1px solid var(--border);

@@ -2,6 +2,7 @@
 from flask import Blueprint, request, redirect, url_for, session, flash, abort, jsonify
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
+from .notifications import notify
 
 bp = Blueprint("social", __name__)
 
@@ -22,6 +23,10 @@ def toggle_like(post_id):
     else:
         sb.table("likes").insert({"post_id": post_id, "user_id": me}).execute()
         liked = True
+        post = sb.table("posts").select("user_id").eq("id", post_id).execute().data
+        if post:
+            notify(sb, recipient_id=post[0]["user_id"], actor_id=me,
+                   type_="like", post_id=post_id)
 
     count = len(sb.table("likes").select("post_id").eq("post_id", post_id).execute().data)
 
@@ -52,6 +57,11 @@ def add_comment(post_id):
         "content": content,
     }).execute()
     comment_id = res.data[0]["id"] if res.data else None
+
+    post = sb.table("posts").select("user_id").eq("id", post_id).execute().data
+    if post:
+        notify(sb, recipient_id=post[0]["user_id"], actor_id=me["id"],
+               type_="comment", post_id=post_id, comment_id=comment_id)
 
     # Profil bilgisini çek (avatar + username)
     prof = sb.table("profiles").select("username, avatar_url").eq("id", me["id"]).execute()
@@ -104,6 +114,10 @@ def toggle_comment_like(comment_id):
             "comment_id": comment_id, "user_id": me
         }).execute()
         liked = True
+        c = sb.table("comments").select("user_id, post_id").eq("id", comment_id).execute().data
+        if c:
+            notify(sb, recipient_id=c[0]["user_id"], actor_id=me,
+                   type_="comment_like", post_id=c[0]["post_id"], comment_id=comment_id)
 
     count = len(sb.table("comment_likes").select("user_id").eq(
         "comment_id", comment_id
@@ -136,6 +150,11 @@ def reply_comment(post_id, parent_id):
         "parent_comment_id": parent_id,
     }).execute()
     comment_id = res.data[0]["id"] if res.data else None
+
+    parent = sb.table("comments").select("user_id").eq("id", parent_id).execute().data
+    if parent:
+        notify(sb, recipient_id=parent[0]["user_id"], actor_id=me["id"],
+               type_="reply", post_id=post_id, comment_id=comment_id)
 
     prof = sb.table("profiles").select("username, avatar_url").eq("id", me["id"]).execute()
     prof_data = prof.data[0] if prof.data else {}
@@ -182,6 +201,7 @@ def toggle_follow(username):
             "follower_id": me, "following_id": target_id
         }).execute()
         following = True
+        notify(sb, recipient_id=target_id, actor_id=me, type_="follow")
 
     # AJAX isteği ise JSON dön, değilse redirect
     if request.headers.get("X-Requested-With") == "fetch":

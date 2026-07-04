@@ -8,8 +8,19 @@ from flask import Blueprint, render_template, request, redirect, url_for, sessio
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .storage_helper import upload_image
+from .notifications import notify
 
 bp = Blueprint("messaging", __name__)
+
+
+def _notify_conversation(sb, conversation_id: str, sender_id: str) -> None:
+    """Konuşmadaki diğer katılımcı(lar)a yeni mesaj bildirimi gönderir."""
+    others = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id
+    ).neq("user_id", sender_id).execute().data
+    for o in others:
+        notify(sb, recipient_id=o["user_id"], actor_id=sender_id,
+               type_="message", conversation_id=conversation_id)
 
 
 def _get_or_create_conversation(me_id: str, target_id: str) -> str:
@@ -148,6 +159,7 @@ def send_message(conversation_id):
         "content": content,
         "image_url": image_url,
     }).execute()
+    _notify_conversation(sb, conversation_id, me)
 
     if wants_json:
         return jsonify(inserted.data[0])
@@ -186,6 +198,7 @@ def share_post(conversation_id, post_id):
         "content": share_text,
         "image_url": first_img, # Görseli buraya ekliyoruz!
     }).execute()
+    _notify_conversation(sb, conversation_id, me)
 
     return redirect(url_for("messaging.conversation", conversation_id=conversation_id))
 
@@ -282,6 +295,7 @@ def share_post_multiple(post_id):
             "content": share_text.strip(),
             "image_url": post_image
         }).execute()
+        _notify_conversation(sb, cid, me)
         sent_count += 1
 
     return jsonify({"sent": sent_count})
