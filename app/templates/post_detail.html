@@ -25,14 +25,19 @@
     {% endif %}
 
     <footer class="post-actions">
-        <button type="button"
-                class="btn btn-ghost like-btn {{ 'liked' if post.liked_by_me }}"
-                data-liked="{{ '1' if post.liked_by_me else '0' }}"
-                data-like-url="{{ url_for('social.toggle_like', post_id=post.id) }}"
-                aria-label="Beğen">
-            ♥ <span class="like-count">{{ post.like_count or 0 }}</span>
-        </button>
-    </footer>
+    <button type="button"
+            class="btn btn-ghost like-btn {{ 'liked' if post.liked_by_me }}"
+            data-liked="{{ '1' if post.liked_by_me else '0' }}"
+            data-like-url="{{ url_for('social.toggle_like', post_id=post.id) }}"
+            aria-label="Beğen">
+        ♥ <span class="like-count">{{ post.like_count or 0 }}</span>
+    </button>
+    
+    {# YENİ: Paylaş Modalı Tetikleyici Buton (Düzeltildi) #}
+    <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ post.id }}" aria-haspopup="dialog">
+        📤 Gönder
+    </button>
+</footer>
 </article>
 
 <section class="card comment-form">

@@ -30,9 +30,13 @@
         syncIcons();
     });
 
-    // Sistem teması değişince (eğer kullanıcı manuel seçmediyse) takip et
+    // DEĞİŞTİ: localStorage kontrolünü try/catch içine aldık
+    // ve mantığı "kullanıcı zaten manuel seçim yaptıysa dokunma" şeklinde netleştirdik.
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (e) {
-        if (!localStorage.getItem('theme')) {
+        var userChoice;
+        try { userChoice = localStorage.getItem('theme'); } catch (err) { userChoice = null; }
+
+        if (!userChoice) {
             if (e.matches) root.setAttribute('data-theme', 'dark');
             else root.removeAttribute('data-theme');
             syncIcons();

@@ -8,7 +8,7 @@ Supabase Auth kullanır. Kayıt akışı:
 Arkadaşlar arası test için email confirmation BYPASS ediliyor.
 """
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash
-from .supabase_client import get_sb, get_auth
+from .supabase_client import get_sb, get_auth, call_with_ssl_retry
 
 bp = Blueprint("auth", __name__)
 
@@ -75,10 +75,12 @@ def register():
 
             # 3) Otomatik giriş (sign_in ile geçerli session al)
             try:
-                login_res = get_auth().auth.sign_in_with_password({
-                    "email": email,
-                    "password": password,
-                })
+                login_res = call_with_ssl_retry(
+                    lambda: get_auth().auth.sign_in_with_password({
+                        "email": email,
+                        "password": password,
+                    })
+                )
                 _save_session(login_res)
                 flash(f"Hoş geldin {username}!", "success")
                 return redirect(url_for("routes.feed"))
@@ -100,10 +102,12 @@ def login():
         password = request.form.get("password", "").strip()
 
         try:
-            res = get_auth().auth.sign_in_with_password({
-                "email": email,
-                "password": password,
-            })
+            res = call_with_ssl_retry(
+                lambda: get_auth().auth.sign_in_with_password({
+                    "email": email,
+                    "password": password,
+                })
+            )
             if not _save_session(res):
                 flash("E-posta veya şifre hatalı.", "error")
                 return redirect(url_for("auth.login"))

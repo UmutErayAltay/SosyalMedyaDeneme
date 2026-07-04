@@ -3,14 +3,20 @@
 {% block content %}
 <div class="conversation-layout">
     <header class="conv-header">
-        <a href="{{ url_for('messaging.inbox') }}">← Geri</a>
+        <a href="{{ url_for('messaging.inbox') }}" aria-label="Mesajlara dön">← Geri</a>
         <h2>{{ other_user.username if other_user else 'Bilinmeyen' }}</h2>
     </header>
 
-    <div class="message-stream" id="stream">
+    {# aria-live: ekran okuyucu yeni mesajı duyurur (WCAG 4.1.3), aria-atomic=false sadece yeni mesajı okur #}
+    <div class="message-stream" id="stream" role="log" aria-live="polite" aria-atomic="false" aria-label="Mesaj geçmişi">
         {% for m in messages %}
-        <div class="msg {{ 'mine' if m.sender_id == me.id else 'theirs' }}">
-            <p>{{ m.content }}</p>
+        <div class="msg {{ 'mine' if m.sender_id == me.id else 'theirs' }}" data-msg-id="{{ m.id }}">
+            {% if m.image_url %}
+                <img src="{{ m.image_url }}" class="msg-image" alt="Görsel mesaj" loading="lazy">
+            {% endif %}
+            {% if m.content %}
+                <p>{{ m.content }}</p>
+            {% endif %}
             <span class="time">{{ m.created_at[11:16] }}</span>
         </div>
         {% else %}
@@ -18,11 +24,243 @@
         {% endfor %}
     </div>
 
-    <form action="{{ url_for('messaging.send_message', conversation_id=conversation_id) }}" method="post"
-          class="composer-msg">
-        <input type="text" name="content" placeholder="Mesaj yaz..." required autocomplete="off">
-        <button type="submit" class="btn btn-primary">Gönder</button>
+    <form id="msg-form" class="composer-msg" enctype="multipart/form-data">
+        <label class="msg-image-btn" aria-label="Görsel gönder">
+            📷
+            <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" id="msg-image-input" hidden>
+        </label>
+        <textarea name="content" id="msg-input" placeholder="Mesaj yaz..." rows="1"
+                  aria-label="Mesaj içeriği"></textarea>
+        <button type="submit" class="btn btn-primary" aria-label="Mesajı gönder">Gönder</button>
     </form>
+    <span id="msg-image-name" class="muted" aria-live="polite"></span>
 </div>
-<script src="{{ url_for('static', filename='js/autoscroll.js') }}"></script>
+
+<script>
+    window.CONVERSATION_ID = "{{ conversation_id }}";
+    window.ME_ID = "{{ me.id }}";
+    window.SUPABASE_URL = "{{ config.SUPABASE_URL }}";
+    window.SUPABASE_KEY = "{{ config.SUPABASE_PUBLISHABLE_KEY }}";
+    window.SEND_URL = "{{ url_for('messaging.send_message', conversation_id=conversation_id) }}";
+    window.SB_ACCESS_TOKEN = "{{ session.access_token }}";
+    window.SB_REFRESH_TOKEN = "{{ session.refresh_token }}";
+</script>
+{# Supabase JS client (realtime için) — sadece mesajlaşma sayfasında yüklenir #}
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+window.supabaseClient = window.supabase.createClient(
+    window.SUPABASE_URL,
+    window.SUPABASE_KEY
+);
+
+window.supabaseClient.auth.setSession({
+    access_token: window.SB_ACCESS_TOKEN,
+    refresh_token: window.SB_REFRESH_TOKEN
+});
+</script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+
+    function formatSharedPosts() {
+
+        document.querySelectorAll('.msg').forEach(msgDiv => {
+
+            let p = msgDiv.querySelector('p');
+            if (!p || p.dataset.formatted) return;
+
+            let text = p.innerHTML;
+
+            if (text.includes("📎 Paylaşılan post:")) {
+
+                let parts = text.split("📎 Paylaşılan post: ");
+                let note = parts[0].trim();
+
+                let rest = parts[1];
+                let lines = rest.split('\n').map(l => l.trim()).filter(l => l !== '');
+
+                let postUrl = lines[0];
+                let author = lines[lines.length - 1];
+
+                if (author.startsWith("—"))
+                    author = author.replace("—", "").trim();
+
+                let postContent = lines.slice(1, lines.length - 1)
+                    .join(" ")
+                    .replace(/^"|"$/g, "")
+                    .trim();
+
+                let cardHtml = `
+                    ${note ? `<div class="share-note">${note.replace(/\n/g,"<br>")}</div>` : ""}
+                    <a href="${postUrl}" class="shared-card">
+                        <div class="shared-card-header">
+                            <strong>${author}</strong>
+                        </div>
+
+                        <div class="shared-card-body">
+                            <p>${postContent || "Görsel gönderisi"}</p>
+                            <span class="shared-card-btn">Gönderiyi Gör</span>
+                        </div>
+                    </a>
+                `;
+
+                p.innerHTML = cardHtml;
+
+                let img = msgDiv.querySelector("img.msg-image");
+
+                if (img) {
+                    img.classList.remove("msg-image");
+                    img.classList.add("shared-card-img");
+
+                    const body = p.querySelector(".shared-card-body");
+
+                    if (body)
+                        body.prepend(img);
+                }
+
+            } else {
+
+                p.innerHTML = text.replace(/\n/g,"<br>");
+
+            }
+
+            p.dataset.formatted = "true";
+
+        });
+
+    }
+
+    window.formatSharedPosts = formatSharedPosts;
+
+    formatSharedPosts();
+
+    const stream = document.getElementById("stream");
+
+    if (stream) {
+        const observer = new MutationObserver(formatSharedPosts);
+        observer.observe(stream,{
+            childList:true,
+            subtree:true
+        });
+    }
+
+});
+</script>
+<style>
+.post-card { border: 1px solid #ddd; border-radius: 12px; overflow: hidden; width: 220px; background: #fff; }
+.card-img { width: 100%; height: 120px; object-fit: cover; }
+.card-body { padding: 10px; }
+.card-link { display: block; margin-top: 8px; font-weight: bold; color: var(--primary); }
+.shared-card{
+    display:block;
+    border:1px solid var(--border);
+    border-radius:12px;
+    overflow:hidden;
+    text-decoration:none;
+    color:inherit;
+}
+
+.shared-card-img{
+    width:100%;
+    display:block;
+    max-height:280px;
+    object-fit:cover;
+}
+
+.shared-card-body{
+    padding:12px;
+}
+
+.shared-card-header{
+    padding:12px;
+    font-weight:600;
+    border-bottom:1px solid var(--border);
+}
+
+.shared-card-btn{
+    display:inline-block;
+    margin-top:10px;
+    color:var(--primary);
+    font-weight:600;
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    window.formatSharedPosts = formatSharedPosts; {
+        document.querySelectorAll('.msg').forEach(msgDiv => {
+            let p = msgDiv.querySelector('p');
+            if (!p || p.dataset.formatted) return;
+
+            let text = p.innerHTML; // Metni al
+            
+            // Eğer bu bir paylaşılan post ise
+            if (text.includes("📎 Paylaşılan post:")) {
+                
+                // Mesajın içeriğini parçalarına ayır
+                let parts = text.split("📎 Paylaşılan post: ");
+                let note = parts[0].trim();
+                
+                let rest = parts[1];
+                let lines = rest.split('\n').map(l => l.trim()).filter(l => l !== '');
+                
+                let postUrl = lines[0]; // Linki al
+                let authorLineIndex = lines.length - 1;
+                let author = lines[authorLineIndex]; // Yazarı al
+                
+                if(author.startsWith("—")) author = author.replace("—", "").trim();
+                
+                // Geri kalan her şey gönderi metnidir
+                let postContent = lines.slice(1, authorLineIndex).join(' ').replace(/^"|"$/g, '').trim();
+
+                // Kartın HTML iskeletini oluştur
+                let cardHtml = `
+                    ${note ? `<div class="share-note">${note.replace(/\n/g, '<br>')}</div>` : ''}
+                    <a href="${postUrl}" class="shared-card">
+                        <div class="shared-card-header">
+                            <span style="font-size:16px">👤</span>
+                            <strong>${author}</strong>
+                        </div>
+                        <div class="shared-card-body">
+                            <p>${postContent || "Görsel gönderisi"}</p>
+                            <span class="shared-card-btn">Gönderiyi Gör</span>
+                        </div>
+                    </a>
+                `;
+
+                p.innerHTML = cardHtml;
+                p.style.margin = "0"; // Düzeni korumak için sıfırlama
+                
+                // Backend'den çektiğimiz görseli yakala ve kartın İÇİNE taşı
+                let img = msgDiv.querySelector('img.msg-image');
+                if (img) {
+                    img.classList.remove("msg-image");
+                    img.classList.add("shared-card-img");
+
+                    const card = p.querySelector(".shared-card");
+                    const body = card.querySelector(".shared-card-body");
+
+                    body.insertAdjacentElement("afterbegin", img);
+                }
+                
+            } else {
+                // Normal mesajsa sadece enterları <br> etiketine çevir
+                p.innerHTML = text.replace(/\n/g, '<br>');
+            }
+            
+            p.dataset.formatted = "true";
+        });
+    }
+
+    // İlk yüklemede çalıştır
+    formatSharedPosts();
+
+    // Chat açıkken yeni mesaj gelirse anında karta çevir (Realtime)
+    const stream = document.getElementById('stream');
+    if (stream) {
+        const observer = new MutationObserver(formatSharedPosts);
+        observer.observe(stream, { childList: true, subtree: true });
+    }
+});
+</script>
+<script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 {% endblock %}

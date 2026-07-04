@@ -40,23 +40,6 @@
     --focus-ring: 0 0 0 3px rgba(224, 224, 224, 0.4);
 }
 
-@media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-        --bg: #121212;
-        --card: #1e1e1e;
-        --text: #e8e8e8;
-        --muted: #a0a0a0;
-        --border: #333;
-        --primary: #e0e0e0;
-        --primary-hover: #fff;
-        --danger: #ff6b6b;
-        --danger-bg: #3a1c1c;
-        --success-bg: #1c3a1c;
-        --success-text: #6ee7b7;
-        --focus-ring: 0 0 0 3px rgba(224, 224, 224, 0.4);
-    }
-}
-
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background: var(--bg);
@@ -316,6 +299,74 @@ label input { margin-top: 6px; }
 .composer-msg { display: flex; gap: 8px; }
 .composer-msg input { flex: 1; }
 
+
+.msg-image {
+    display: block;
+    max-width: 240px;
+    max-height: 240px;
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+    border-radius: 10px;
+    cursor: zoom-in;
+    margin-bottom: 4px;
+}
+
+.msg-image-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.msg-image-wrapper.uploading .msg-image {
+    filter: brightness(0.55);
+}
+
+.upload-spinner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.upload-spinner::after {
+    content: "";
+    width: 28px;
+    height: 28px;
+    border: 3px solid rgba(255, 255, 255, 0.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Lightbox (büyütülmüş görsel) */
+.lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 24px;
+    cursor: zoom-out;
+}
+
+.lightbox-overlay img {
+    max-width: 90vw;
+    max-height: 90vh;
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.lightbox-overlay.hidden {
+    display: none;
+}
+
 /* Inbox */
 .inbox-item { display: flex; align-items: center; gap: 12px; }
 .inbox-item .preview { margin-top: 2px; }
@@ -361,54 +412,140 @@ label input { margin-top: 6px; }
 }
 .search-user:hover { background: var(--bg); }
 
-/* =========================
-   POST PAYLAŞMA MODALI
-   ========================= */
+/* =========================   POST PAYLAŞMA MODALI   ========================= */
 .composer-trigger { margin-bottom: 16px; }
 .btn-full { width: 100%; }
-
-.modal-overlay {
-    position: fixed; inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex; align-items: center; justify-content: center;
+.modal-overlay {    
+    position: fixed; inset: 0;    
+    background: rgba(0, 0, 0, 0.5);    
+    display: flex; align-items: center; justify-content: center;    
     z-index: 100; padding: 16px;
 }
 .modal-overlay[hidden] { display: none; }
-
-.modal {
-    background: var(--card);
-    border-radius: var(--radius);
-    width: 100%; max-width: 500px;
-    max-height: 90vh; overflow-y: auto;
+.modal {    
+    background: var(--card);    
+    border-radius: var(--radius);    
+    width: 100%; max-width: 500px;    
+    max-height: 90vh; overflow-y: auto;    
     box-shadow: 0 8px 32px rgba(0,0,0,0.2);
 }
-
-.modal-header {
-    display: flex; justify-content: space-between; align-items: center;
+.modal-header {    
+    display: flex; justify-content: space-between; align-items: center;    
     padding: 16px 20px; border-bottom: 1px solid var(--border);
 }
 .modal-header h2 { font-size: 18px; }
-.modal-close {
-    background: none; border: none; font-size: 24px;
-    cursor: pointer; color: var(--muted); padding: 4px 8px;
+.modal-close {    
+    background: none; border: none; font-size: 24px;    
+    cursor: pointer; color: var(--muted); padding: 4px 8px;    
     line-height: 1; border-radius: 6px;
 }
 .modal-close:hover { background: var(--border); color: var(--text); }
-
 .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
 .modal-body textarea { min-height: 100px; }
 
 /* Çoklu görsel önizleme grid */
-.image-preview-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
+.image-preview-grid {    
+    display: grid;    
+    grid-template-columns: repeat(2, 1fr);    
     gap: 8px;
 }
-.image-preview-item img {
-    width: 100%; aspect-ratio: 1; object-fit: cover;
+.image-preview-item img {    
+    width: 100%; aspect-ratio: 1; object-fit: cover;    
     border-radius: 8px;
 }
 
+/* === YENİ EKLEME: ÇOKLU POST GÖNDERME (SHARE) MODALI BİLEŞENLERİ === */
+#share-search-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--background);
+    color: var(--text);
+}
+
+.share-user-list {
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+}
+
+.share-target-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    border-bottom: 1px solid var(--border);
+}
+
+.share-target-item:last-child {
+    border-bottom: none;
+}
+
+.share-target-item:hover {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="dark"] .share-target-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.share-target-item.selected {
+    background: rgba(var(--primary-rgb, 59, 130, 246), 0.1); /* --primary rengine göre alpha ayarı */
+}
+
+.share-target-item .avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    margin-right: 12px;
+    object-fit: cover;
+}
+
+.share-target-item .avatar-placeholder {
+    background: var(--border);
+}
+
+.share-target-item .username {
+    flex: 1;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.share-target-item .checkbox {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--muted);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.share-target-item.selected .checkbox {
+    border-color: var(--primary);
+    background: var(--primary);
+}
+
+.share-target-item.selected .checkbox::after {
+    content: '✓';
+    color: #fff;
+    font-size: 12px;
+    font-weight: bold;
+}
+.shared-card-img{
+    width:100%;
+    max-height:280px;
+    object-fit:cover;
+    display:block;
+    border-radius:10px;
+    margin-bottom:10px;
+}
 /* =========================
    POST GÖRSEL GRID (çoklu)
    ========================= */

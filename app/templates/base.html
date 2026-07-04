@@ -83,10 +83,31 @@
         {% block content %}{% endblock %}
     </main>
 
+    {# --- YENİ EKLENEN KISIM: Post Gönderme (Share) Modalı --- #}
+    <div class="modal-overlay" id="share-modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title" hidden>
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="share-modal-title">Gönder</h2>
+                <button type="button" class="modal-close" id="close-share-modal" aria-label="Kapat">×</button>
+            </div>
+            <div class="modal-body">
+                <input type="search" id="share-search-input" placeholder="Kişi ara..." autocomplete="off" aria-label="Kişi ara">
+                <div id="share-user-list" class="share-user-list" aria-live="polite">
+                    </div>
+                <textarea id="share-note-input" placeholder="İsteğe bağlı bir not ekle..." rows="2" aria-label="Not ekle"></textarea>
+                <button type="button" id="share-submit-btn" class="btn btn-primary btn-full" disabled>Gönder</button>
+            </div>
+        </div>
+    </div>
+
     {# --- Dark mode toggle JS (FOUC'suz) --- #}
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
     {# --- Mobil menü toggle JS --- #}
     <script src="{{ url_for('static', filename='js/navbar.js') }}"></script>
+    
+    {# --- YENİ EKLENEN KISIM: Share JS --- #}
+    <script src="{{ url_for('static', filename='js/shareModal.js') }}"></script>
+    
     {% block scripts %}{% endblock %}
 </body>
 </html>
