@@ -45,14 +45,12 @@ def _get_or_create_conversation(me_id: str, target_id: str) -> str:
         return cid
 
 
-@bp.route("/")
-@login_required
-@retry_on_connection_error
-def inbox():
-    """Konuşma listesi (en son mesaja göre sıralı)."""
-    sb = get_sb()
-    me = session["user"]["id"]
+def _build_convos(sb, me: str) -> list[dict]:
+    """Kullanıcının konuşma listesini (diğer katılımcı + son mesaj) döner.
 
+    inbox() ve conversation() arasında paylaşılır — iki panelli düzende her
+    ikisi de sol taraftaki aynı listeyi render eder.
+    """
     parts = sb.table("conversation_participants").select(
         "conversation_id"
     ).eq("user_id", me).execute().data
@@ -86,15 +84,31 @@ def inbox():
 
     convos.sort(key=lambda c: c["last_message"]["created_at"]
                 if c["last_message"] else "", reverse=True)
+    return convos
 
-    return render_template("messages/inbox.html", convos=convos, me=session["user"])
+
+@bp.route("/")
+@login_required
+@retry_on_connection_error
+def inbox():
+    """Konuşma listesi (en son mesaja göre sıralı). Sağ panel boş/placeholder."""
+    sb = get_sb()
+    me = session["user"]["id"]
+    convos = _build_convos(sb, me)
+    return render_template("messages/inbox.html", convos=convos, active_id=None,
+                           me=session["user"])
 
 
 @bp.route("/<conversation_id>")
 @login_required
 @retry_on_connection_error
 def conversation(conversation_id):
-    """Tek bir konuşmanın mesaj akışı."""
+    """Tek bir konuşmanın mesaj akışı.
+
+    AJAX isteği (sol listeden tıklanınca, X-Requested-With: fetch) ise sadece
+    sağ paneli döner — messagesPanel.js bunu tam sayfa yenilemeden DOM'a enjekte
+    eder. Normal (tam sayfa) istekte ise sol liste + sağ panel birlikte render edilir.
+    """
     sb = get_sb()
     me = session["user"]["id"]
 
@@ -115,10 +129,16 @@ def conversation(conversation_id):
         "*, profiles!messages_sender_id_fkey(username, avatar_url)"
     ).eq("conversation_id", conversation_id).order("created_at").execute().data
 
+    if request.headers.get("X-Requested-With") == "fetch":
+        return render_template("messages/_conversation_panel.html",
+                               messages=messages, other_user=other_user,
+                               conversation_id=conversation_id, me=session["user"])
+
+    convos = _build_convos(sb, me)
     return render_template("messages/conversation.html",
                            messages=messages, other_user=other_user,
-                           conversation_id=conversation_id,
-                           me=session["user"])
+                           conversation_id=conversation_id, convos=convos,
+                           active_id=conversation_id, me=session["user"])
 
 
 @bp.route("/<conversation_id>/send", methods=["POST"])

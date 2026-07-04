@@ -6,6 +6,18 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Sayfa geçişlerinde native crossfade (MPA) — desteklemeyen tarayıcılarda sessizce yok sayılır */
+@view-transition {
+    navigation: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+        animation: none !important;
+    }
+}
+
 :root {
     /* Aydınlık tema (varsayılan) */
     --bg: #fafafa;
@@ -317,12 +329,39 @@ label input { margin-top: 6px; }
     border-left: 2px solid var(--border);
 }
 
-/* Mesajlaşma */
-.conversation-layout {
-    max-width: var(--max-width);
-    margin: 24px auto; padding: 0 16px;
-    display: flex; flex-direction: column; height: calc(100vh - 130px);
+/* Mesajlaşma — iki panelli düzen (sol: konuşma listesi, sağ: aktif konuşma) */
+.container-wide { max-width: 960px; }
+
+.messages-layout {
+    display: flex; gap: 20px;
+    height: calc(100vh - 130px);
 }
+.messages-sidebar {
+    width: 300px; flex-shrink: 0;
+    overflow-y: auto; padding-right: 12px;
+    border-right: 1px solid var(--border);
+}
+.messages-sidebar h1 { font-size: 18px; margin-bottom: 12px; }
+.inbox-item.active { background: var(--border); }
+
+.messages-panel {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column;
+}
+.messages-panel-empty {
+    align-items: center; justify-content: center; color: var(--muted);
+}
+
+/* Mobilde: liste VEYA panel gösterilir, ikisi birden değil */
+.conv-back-link { display: none; }
+@media (max-width: 720px) {
+    .conv-back-link { display: inline-block; }
+    .messages-sidebar { width: 100%; border-right: none; padding-right: 0; }
+    .messages-panel { display: none; }
+    .messages-layout.showing-panel .messages-sidebar { display: none; }
+    .messages-layout.showing-panel .messages-panel { display: flex; }
+}
+
 .conv-header { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
 .message-stream {
     flex: 1; overflow-y: auto; padding: 12px;
@@ -342,6 +381,16 @@ label input { margin-top: 6px; }
 }
 .composer-msg { display: flex; gap: 8px; }
 .composer-msg input { flex: 1; }
+
+/* Sohbette paylaşılan post kartı (chat.js formatSharedPosts ile oluşturulur) */
+.shared-card {
+    display: block; border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; text-decoration: none; color: inherit;
+}
+.shared-card-img { width: 100%; display: block; max-height: 280px; object-fit: cover; }
+.shared-card-body { padding: 12px; }
+.shared-card-header { padding: 12px; font-weight: 600; border-bottom: 1px solid var(--border); }
+.shared-card-btn { display: inline-block; margin-top: 10px; color: var(--primary); font-weight: 600; }
 
 
 .msg-image {
@@ -545,6 +594,53 @@ label input { margin-top: 6px; }
     padding: 8px 16px; border-radius: 20px; text-decoration: none; font-size: 13px;
 }
 .lightbox-goto:hover { background: rgba(255, 255, 255, 0.3); }
+
+/* Sayfa geçişi ilerleme çubuğu (algısal performans) */
+#page-progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0;
+    background: var(--primary); z-index: 300; opacity: 0;
+    transition: opacity 0.2s;
+}
+
+/* Navbar scroll-hide (aşağı kaydırınca gizlen, yukarı kaydırınca gel) */
+.navbar { transition: transform 0.25s ease; }
+.navbar.navbar-hidden { transform: translateY(-100%); }
+@media (prefers-reduced-motion: reduce) {
+    .navbar.navbar-hidden { transform: none; opacity: 0; pointer-events: none; }
+}
+
+/* Bildirim slide-in paneli */
+.notif-panel-backdrop {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 150;
+}
+.notif-panel-backdrop[hidden] { display: none; }
+.notif-panel {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 151;
+    width: 100%; max-width: 380px;
+    background: var(--card); box-shadow: -8px 0 32px rgba(0, 0, 0, 0.2);
+    display: flex; flex-direction: column;
+    transform: translateX(0);
+    animation: notif-panel-in 0.25s ease;
+}
+.notif-panel[hidden] { display: none; }
+@keyframes notif-panel-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .notif-panel { animation: none; }
+}
+.notif-panel-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.notif-panel-header h2 { font-size: 18px; }
+.notif-panel-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.notif-panel-viewall {
+    display: block; text-align: center; padding: 14px;
+    border-top: 1px solid var(--border); color: var(--primary); font-weight: 600;
+}
+.notif-panel-viewall:hover { background: var(--border); }
 
 /* === YENİ EKLEME: ÇOKLU POST GÖNDERME (SHARE) MODALI BİLEŞENLERİ === */
 #share-search-input {

@@ -31,3 +31,46 @@
         }
     });
 })();
+
+// Scroll-hide navbar: aşağı kaydırınca gizlen, yukarı kaydırınca geri gel.
+// Arama input'u odaktayken veya sayfanın en üstündeyken HİÇBİR ZAMAN gizlenmez
+// (erişilebilirlik: odaktaki öğenin görsel bağlamı kaybolmamalı).
+(function () {
+    var navbar = document.querySelector('.navbar');
+    var searchInput = document.getElementById('nav-search-input');
+    var navLinks = document.getElementById('nav-links');
+    if (!navbar) return;
+
+    var HIDE_THRESHOLD = 80;
+    var lastY = window.scrollY;
+    var ticking = false;
+
+    function update() {
+        var y = window.scrollY;
+        var searchFocused = document.activeElement === searchInput;
+        var menuOpen = navLinks && navLinks.classList.contains('open');
+
+        if (searchFocused || menuOpen || y < HIDE_THRESHOLD) {
+            navbar.classList.remove('navbar-hidden');
+        } else if (y > lastY) {
+            navbar.classList.add('navbar-hidden');
+        } else {
+            navbar.classList.remove('navbar-hidden');
+        }
+        lastY = y;
+        ticking = false;
+    }
+
+    window.addEventListener('scroll', function () {
+        if (!ticking) {
+            requestAnimationFrame(update);
+            ticking = true;
+        }
+    }, { passive: true });
+
+    if (searchInput) {
+        searchInput.addEventListener('focus', function () {
+            navbar.classList.remove('navbar-hidden');
+        });
+    }
+})();

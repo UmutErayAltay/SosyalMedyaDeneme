@@ -34,6 +34,9 @@
     {% block head %}{% endblock %}
 </head>
 <body>
+    {# --- Sayfa geçişi ilerleme çubuğu (algısal performans) --- #}
+    <div id="page-progress-bar" aria-hidden="true"></div>
+
     {# --- Erişilebilirlik: klavye kullanıcıları için "İçeriğe atla" --- #}
     <a href="#main-content" class="skip-link">İçeriğe atla</a>
 
@@ -55,8 +58,9 @@
         <div class="nav-links" id="nav-links">
             <a href="{{ url_for('routes.feed') }}" aria-label="Akış">Akış</a>
             <a href="{{ url_for('messaging.inbox') }}" aria-label="Mesajlar">Mesajlar</a>
-            <a href="{{ url_for('notifications.list_notifications') }}" class="nav-bell"
-               aria-label="Bildirimler{% if unread_notifications %}, {{ unread_notifications }} okunmamış{% endif %}">
+            <a href="{{ url_for('notifications.list_notifications') }}" class="nav-bell" id="notif-bell"
+               aria-label="Bildirimler{% if unread_notifications %}, {{ unread_notifications }} okunmamış{% endif %}"
+               aria-haspopup="dialog">
                 🔔
                 <span class="notif-badge{{ '' if unread_notifications else ' hidden' }}"
                       id="notif-badge" aria-hidden="true">{{ unread_notifications or '' }}</span>
@@ -80,7 +84,7 @@
     </header>
     {% endif %}
 
-    <main class="container" id="main-content" role="main">
+    <main class="container {% block container_class %}{% endblock %}" id="main-content" role="main">
         {# --- Flash mesajları: aria-live ile ekran okuyucu duyurusu --- #}
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -111,6 +115,21 @@
         </div>
     </div>
 
+    {# --- Bildirim slide-in paneli (zil tıklanınca AJAX ile doldurulur) --- #}
+    <div class="notif-panel-backdrop" id="notif-panel-backdrop" hidden></div>
+    <div class="notif-panel" id="notif-panel" role="dialog" aria-modal="true"
+         aria-labelledby="notif-panel-title" hidden>
+        <div class="notif-panel-header">
+            <h2 id="notif-panel-title">Bildirimler</h2>
+            <button type="button" class="modal-close" id="notif-panel-close" aria-label="Kapat">×</button>
+        </div>
+        <div class="notif-panel-list" id="notif-panel-list" aria-live="polite">
+        </div>
+        <a href="{{ url_for('notifications.list_notifications') }}" class="notif-panel-viewall">Tümünü gör</a>
+    </div>
+
+    {# --- Sayfa geçişi ilerleme çubuğu JS --- #}
+    <script src="{{ url_for('static', filename='js/pageProgress.js') }}"></script>
     {# --- Dark mode toggle JS (FOUC'suz) --- #}
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
     {# --- Mobil menü toggle JS --- #}

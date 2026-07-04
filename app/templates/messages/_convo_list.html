@@ -1,0 +1,27 @@
+{# Sohbet listesi (sol panel) — inbox.html ve conversation.html arasında paylaşılır. #}
+<div class="messages-sidebar">
+    <h1>Mesajlar</h1>
+    <div class="inbox-list" id="inbox-list">
+        {% for c in convos %}
+        <a href="{{ url_for('messaging.conversation', conversation_id=c.id) }}"
+           class="card inbox-item{{ ' active' if c.id == active_id else '' }}"
+           data-conversation-id="{{ c.id }}">
+            {% if c.other_user and c.other_user.avatar_url %}
+                <img src="{{ c.other_user.avatar_url }}" class="avatar" alt="" loading="lazy">
+            {% else %}
+                <div class="avatar avatar-placeholder" aria-hidden="true"></div>
+            {% endif %}
+            <div>
+                <strong>{{ c.other_user.username if c.other_user else 'Bilinmeyen' }}</strong>
+                {% if c.last_message %}
+                <p class="muted preview">{{ c.last_message.content[:40] }}</p>
+                {% else %}
+                <p class="muted preview">Mesaj yok</p>
+                {% endif %}
+            </div>
+        </a>
+        {% else %}
+        <p class="muted">Henüz konuşma yok. Birinin profiline gidip "Mesaj gönder" de.</p>
+        {% endfor %}
+    </div>
+</div>
