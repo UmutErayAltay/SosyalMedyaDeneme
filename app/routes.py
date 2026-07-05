@@ -79,9 +79,9 @@ def feed():
                    "likes(count), comments(count)")
     blocked_ids = blocked_user_ids(sb, me)
     try:
-        # Görünürlük + engelleme filtreleri SQL seviyesinde uygulanır (sayfalama
-        # sonrası Python'da süzmek PAGE_SIZE'ı tutarsız hale getirirdi).
-        query = sb.table("posts").select(select_cols).or_(visible_or_filter(sb, me))
+        # Görünürlük + engelleme + taslak filtreleri SQL seviyesinde uygulanır
+        # (sayfalama sonrası Python'da süzmek PAGE_SIZE'ı tutarsız hale getirirdi).
+        query = sb.table("posts").select(select_cols).or_(visible_or_filter(sb, me)).eq("is_draft", False)
         if blocked_ids:
             query = query.not_.in_("user_id", list(blocked_ids))
         posts = query.order("created_at", desc=True).range(offset, offset + PAGE_SIZE).execute().data
@@ -160,23 +160,32 @@ def create_post():
     if visibility not in ("public", "followers"):
         visibility = "public"
 
+    # Taslak olarak kaydet: post DB'de oluşur ama feed/profil/arama/hashtag'te
+    # hiç görünmez, hashtag senkronu/mention bildirimi de YAYINLANMADAN
+    # tetiklenmez (içerik henüz herkese açık değil) — bkz. publish_draft().
+    is_draft = request.form.get("action") == "draft"
+
     sb = get_sb()
     try:
-        # sql/migration_post_visibility.sql veya migration_video_posts.sql
-        # henüz uygulanmamışsa ilgili kolon yok — post paylaşımı bundan
-        # etkilenmesin diye kolonsuz (eski) haliyle dene
-        full_data = {**insert_data, "visibility": visibility}
+        # sql/migration_post_visibility.sql, migration_video_posts.sql veya
+        # migration_drafts.sql henüz uygulanmamışsa ilgili kolon(lar) yok —
+        # post paylaşımı bundan etkilenmesin diye kolonsuz (eski) haliyle dene
+        full_data = {**insert_data, "visibility": visibility, "is_draft": is_draft}
         if video_url:
             full_data["video_url"] = video_url
         inserted = sb.table("posts").insert(full_data).execute()
     except Exception:
         inserted = sb.table("posts").insert(insert_data).execute()
     post_id = inserted.data[0]["id"] if inserted.data else None
-    if post_id and content:
+    if post_id and content and not is_draft:
         sync_post_hashtags(sb, post_id, content)
         notify_mentions(sb, actor_id=_my_id(), content=content, post_id=post_id)
     if post_id and has_poll:
         create_poll(sb, post_id, poll_options)
+
+    if is_draft:
+        flash("Taslak kaydedildi.", "success")
+        return redirect(url_for("routes.drafts_list"))
 
     flash("Post paylaşıldı.", "success")
     return redirect(url_for("routes.feed"))
@@ -221,13 +230,19 @@ def edit_post(post_id):
         except Exception:
             sb.table("posts").update(update_data).eq("id", post_id).execute()
 
-        sync_post_hashtags(sb, post_id, content)
-        if added_mentions:
-            # Sentetik bir "@kullanıcı @kullanıcı2" metni: notify_mentions zaten
-            # extract_mentions ile ayrıştırıyor, sadece YENİ eklenenleri bildirir
-            notify_mentions(sb, actor_id=me, content=" ".join(f"@{u}" for u in added_mentions), post_id=post_id)
+        # Taslak henüz yayınlanmadıysa hashtag senkronu/mention bildirimi
+        # ERTELENİR (bkz. publish_draft()) — içerik herkese açık değilken
+        # bunları tetiklemek yanlış olurdu.
+        if not post.get("is_draft"):
+            sync_post_hashtags(sb, post_id, content)
+            if added_mentions:
+                # Sentetik bir "@kullanıcı @kullanıcı2" metni: notify_mentions zaten
+                # extract_mentions ile ayrıştırıyor, sadece YENİ eklenenleri bildirir
+                notify_mentions(sb, actor_id=me, content=" ".join(f"@{u}" for u in added_mentions), post_id=post_id)
 
         flash("Post güncellendi.", "success")
+        if post.get("is_draft"):
+            return redirect(url_for("routes.drafts_list"))
         return redirect(url_for("routes.post_detail", post_id=post_id))
 
     return render_template("post_edit.html", post=post, me=session.get("user"))
@@ -247,6 +262,10 @@ def post_detail(post_id):
     post = res.data[0]
 
     me = _my_id()
+
+    # Taslak: sadece sahibi görebilir (bkz. drafts_list()/publish_draft())
+    if post.get("is_draft") and post["user_id"] != me:
+        abort(404)
 
     # Engelleme (iki yönlü): post sahibiyle aramda herhangi bir yönde engelleme
     # varsa post hiç yokmuş gibi davran.
@@ -303,6 +322,48 @@ def delete_post(post_id):
     ).execute()
     flash("Post silindi.", "success")
     return redirect(url_for("routes.feed"))
+
+
+@bp.route("/taslaklar")
+@login_required
+@retry_on_connection_error
+def drafts_list():
+    """Kendi taslaklarımın listesi — SADECE burada görünürler (feed/profil/
+    arama/hashtag'te asla görünmezler)."""
+    sb = get_sb()
+    me = _my_id()
+    drafts = []
+    try:
+        drafts = sb.table("posts").select("*").eq("user_id", me).eq(
+            "is_draft", True
+        ).order("created_at", desc=True).execute().data
+    except Exception:
+        pass  # migration_drafts.sql henüz uygulanmamışsa boş liste gösterilir
+    return render_template("drafts.html", drafts=drafts, me=session.get("user"))
+
+
+@bp.route("/post/<post_id>/publish", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def publish_draft(post_id):
+    """Bir taslağı yayınlar — artık is_draft=false olur, TAM O ANDA hashtag
+    senkronu + mention bildirimi tetiklenir (taslakken içerik herkese açık
+    olmadığı için bunlar bilerek ERTELENMİŞTİ)."""
+    sb = get_sb()
+    me = _my_id()
+
+    post = sb.table("posts").select("*").eq("id", post_id).execute().data
+    if not post or post[0]["user_id"] != me:
+        abort(403)
+    post = post[0]
+
+    sb.table("posts").update({"is_draft": False}).eq("id", post_id).execute()
+    if post.get("content"):
+        sync_post_hashtags(sb, post_id, post["content"])
+        notify_mentions(sb, actor_id=me, content=post["content"], post_id=post_id)
+
+    flash("Post yayınlandı.", "success")
+    return redirect(url_for("routes.post_detail", post_id=post_id))
 
 
 @bp.route("/post/<post_id>/pin", methods=["POST"])
@@ -369,6 +430,7 @@ def profile(username):
     posts = sb.table("posts").select(
         "*, likes(count), comments(count)"
     ).eq("user_id", prof["id"]).order("created_at", desc=True).execute().data
+    posts = [p for p in posts if not p.get("is_draft")]  # taslaklar SADECE /taslaklar'da görünür
     posts = filter_visible(posts, visible_author_ids)
     posts = filter_not_blocked(posts, blocked_ids)
     # Sabitlenmiş post en üste taşınır (görünür değilse zaten listede yok,
@@ -650,6 +712,7 @@ def search():
     posts = sb.table("posts").select(
         "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
     ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
+    posts = [p for p in posts if not p.get("is_draft")]  # taslaklar aramada görünmez
     posts = filter_visible(posts, followed_and_self_ids(sb, me))
     posts = filter_not_blocked(posts, blocked_ids)
     _attach_post_metrics(sb, posts, me)
