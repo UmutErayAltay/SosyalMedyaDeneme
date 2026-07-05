@@ -1,10 +1,11 @@
 """Ana rotalar: feed, post paylaşma, profil, post detayı."""
+from datetime import datetime, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .storage_helper import upload_image, upload_images, upload_video
 from .hashtags import sync_post_hashtags
-from .mentions import notify_mentions, get_valid_usernames
+from .mentions import notify_mentions, get_valid_usernames, extract_mentions
 from .visibility import followed_and_self_ids, filter_visible, visible_or_filter
 from .blocks import blocked_user_ids, filter_not_blocked, is_blocked_either_way, has_blocked
 
@@ -162,6 +163,57 @@ def create_post():
 
     flash("Post paylaşıldı.", "success")
     return redirect(url_for("routes.feed"))
+
+
+@bp.route("/post/<post_id>/edit", methods=["GET", "POST"])
+@login_required
+@retry_on_connection_error
+def edit_post(post_id):
+    """Post içeriğini düzenler — SADECE metin (görsel/video değiştirilemez,
+    kapsam dışı bırakıldı). Düzenlenince edited_at damgalanır, hashtag'ler
+    yeniden senkronlanır, SADECE YENİ eklenen @mention'lara bildirim gider
+    (zaten var olan mention'lar tekrar bildirim üretmesin diye eski/yeni
+    içerik farkı alınır)."""
+    sb = get_sb()
+    me = _my_id()
+
+    post = sb.table("posts").select("*").eq("id", post_id).execute().data
+    if not post or post[0]["user_id"] != me:
+        abort(403)
+    post = post[0]
+
+    if request.method == "POST":
+        content = request.form.get("content", "").strip()
+        has_media = post.get("image_urls") or post.get("image_url") or post.get("video_url")
+        if not content and not has_media:
+            flash("Boş post olamaz.", "error")
+            return redirect(url_for("routes.edit_post", post_id=post_id))
+
+        visibility = request.form.get("visibility", post.get("visibility") or "public")
+        if visibility not in ("public", "followers"):
+            visibility = "public"
+
+        old_mentions = set(extract_mentions(post.get("content") or ""))
+        new_mentions = set(extract_mentions(content))
+        added_mentions = new_mentions - old_mentions
+
+        update_data = {"content": content, "edited_at": datetime.now(timezone.utc).isoformat()}
+        try:
+            # 'visibility' kolonu yoksa (migration henüz yok) kolonsuz güncelle
+            sb.table("posts").update({**update_data, "visibility": visibility}).eq("id", post_id).execute()
+        except Exception:
+            sb.table("posts").update(update_data).eq("id", post_id).execute()
+
+        sync_post_hashtags(sb, post_id, content)
+        if added_mentions:
+            # Sentetik bir "@kullanıcı @kullanıcı2" metni: notify_mentions zaten
+            # extract_mentions ile ayrıştırıyor, sadece YENİ eklenenleri bildirir
+            notify_mentions(sb, actor_id=me, content=" ".join(f"@{u}" for u in added_mentions), post_id=post_id)
+
+        flash("Post güncellendi.", "success")
+        return redirect(url_for("routes.post_detail", post_id=post_id))
+
+    return render_template("post_edit.html", post=post, me=session.get("user"))
 
 
 @bp.route("/post/<post_id>")

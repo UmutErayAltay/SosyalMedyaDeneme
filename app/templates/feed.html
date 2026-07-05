@@ -23,6 +23,9 @@
                 {% if p.visibility == 'followers' %}
                     <span class="visibility-badge" title="Sadece takipçiler görebilir">🔒</span>
                 {% endif %}
+                {% if p.edited_at %}
+                    <span class="edited-badge muted" title="Düzenlendi">(düzenlendi)</span>
+                {% endif %}
             </header>
             <p class="post-content">{{ p.content|linkify_hashtags|linkify_mentions(valid_usernames) }}</p>
 
@@ -66,6 +69,7 @@
                 {{ '🔖' if p.bookmarked_by_me else '📑' }}
             </button>
             {% if me and p.user_id == me.id %}
+                <a href="{{ url_for('routes.edit_post', post_id=p.id) }}" class="btn btn-ghost" aria-label="Postu düzenle">Düzenle</a>
                 <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
                     onsubmit="return confirm('Bu postu silmek istiyor musun?')">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

@@ -24,6 +24,9 @@
         {% if profile is defined and profile.pinned_post_id == p.id %}
             <span class="pinned-badge" title="Profilde sabitlenmiş">📌 Sabitlenmiş</span>
         {% endif %}
+        {% if p.edited_at %}
+            <span class="edited-badge muted" title="Düzenlendi">(düzenlendi)</span>
+        {% endif %}
     </header>
     {% if p.image_urls and p.image_urls|length > 0 %}
         <div class="post-images post-images-{{ p.image_urls|length }}">
@@ -73,6 +76,7 @@
             </form>
         {% endif %}
         {% if allow_delete %}
+            <a href="{{ url_for('routes.edit_post', post_id=p.id) }}" class="btn btn-ghost" aria-label="Postu düzenle">✏️ Düzenle</a>
             <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
                   onsubmit="return confirm('Bu postu silmek istiyor musun?')">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

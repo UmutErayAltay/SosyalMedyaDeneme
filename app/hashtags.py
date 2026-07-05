@@ -33,9 +33,20 @@ def extract_hashtags(content: str) -> list[str]:
 def sync_post_hashtags(sb, post_id: str, content: str) -> None:
     """Post içeriğindeki hashtag'leri hashtags/post_hashtags tablolarına işler.
 
+    Önce bu posta ait ESKİ eşleşmeler silinir, sonra içerikteki güncel
+    hashtag'ler yeniden eklenir — bu fonksiyon hem post oluşturulunca hem
+    DÜZENLENİNCE çağrılabilir (edit_post()) olsun diye idempotent: eski
+    çağrı deseni (sadece insert) tekrar çağrılınca aynı (post_id, hashtag_id)
+    çiftinde PK ihlali verip TÜM döngüyü sessizce iptal ederdi.
+
     Migration henüz uygulanmamışsa post paylaşımı bundan etkilenmesin diye
     sessizce atlanır (post zaten kaydedildi, hashtag indexleme ek bir adım).
     """
+    try:
+        sb.table("post_hashtags").delete().eq("post_id", post_id).execute()
+    except Exception:
+        return
+
     tags = extract_hashtags(content)
     if not tags:
         return
