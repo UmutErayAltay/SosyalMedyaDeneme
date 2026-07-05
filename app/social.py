@@ -4,6 +4,7 @@ from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .notifications import notify
 from .mentions import notify_mentions
+from .blocks import is_blocked_either_way
 
 bp = Blueprint("social", __name__)
 
@@ -208,6 +209,12 @@ def toggle_follow(username):
 
     if target_id == me:
         flash("Kendini takip edemezsin.", "error")
+        return redirect(url_for("routes.profile", username=username))
+
+    if is_blocked_either_way(sb, me, target_id):
+        if request.headers.get("X-Requested-With") == "fetch":
+            return jsonify(error="blocked"), 403
+        flash("Bu kullanıcıyı takip edemezsin.", "error")
         return redirect(url_for("routes.profile", username=username))
 
     existing = sb.table("follows").select().eq("follower_id", me).eq(

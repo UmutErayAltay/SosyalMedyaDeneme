@@ -6,6 +6,7 @@ from .storage_helper import upload_image, upload_images
 from .hashtags import sync_post_hashtags
 from .mentions import notify_mentions, get_valid_usernames
 from .visibility import followed_and_self_ids, filter_visible, visible_or_filter
+from .blocks import blocked_user_ids, filter_not_blocked, is_blocked_either_way, has_blocked
 
 bp = Blueprint("routes", __name__)
 
@@ -74,11 +75,13 @@ def feed():
     # Bir fazla satır çekilir: sonraki sayfa var mı bilgisi için.
     select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url), "
                    "likes(count), comments(count)")
-    query = sb.table("posts").select(select_cols)
+    blocked_ids = blocked_user_ids(sb, me)
     try:
-        # Görünürlük filtresi SQL seviyesinde uygulanır (sayfalama sonrası
-        # Python'da süzmek PAGE_SIZE'ı tutarsız hale getirirdi).
-        query = query.or_(visible_or_filter(sb, me))
+        # Görünürlük + engelleme filtreleri SQL seviyesinde uygulanır (sayfalama
+        # sonrası Python'da süzmek PAGE_SIZE'ı tutarsız hale getirirdi).
+        query = sb.table("posts").select(select_cols).or_(visible_or_filter(sb, me))
+        if blocked_ids:
+            query = query.not_.in_("user_id", list(blocked_ids))
         posts = query.order("created_at", desc=True).range(offset, offset + PAGE_SIZE).execute().data
     except Exception:
         # sql/migration_post_visibility.sql henüz uygulanmamışsa 'visibility'
@@ -161,6 +164,11 @@ def post_detail(post_id):
 
     me = _my_id()
 
+    # Engelleme (iki yönlü): post sahibiyle aramda herhangi bir yönde engelleme
+    # varsa post hiç yokmuş gibi davran.
+    if post["user_id"] != me and is_blocked_either_way(sb, me, post["user_id"]):
+        abort(404)
+
     # Sadece takipçilere özel post: yazar değilsen ve yazarı takip etmiyorsan
     # 404 (var olmadığı gibi davran — erişim reddi ayrı bir mesajla "bu post
     # var ama gizli" sinyali vermez, enumeration'ı önler).
@@ -224,17 +232,27 @@ def profile(username):
 
     me = _my_id()
     is_self = me == prof["id"]
+
+    # Engelleme: ONLAR beni engellemişse profil hiç yokmuş gibi davran
+    # (enumeration önleme). BEN onları engellemişsem profili YİNE DE
+    # gösteririm (engeli kaldırabilmem için gerekli) — sadece içerik
+    # aşağıdaki filter_not_blocked ile gizlenir.
+    if not is_self and has_blocked(sb, prof["id"], me):
+        abort(404)
+
     # 'Sadece takipçiler' postlarını görebilecek yazar kümesi (ben + takip
     # ettiklerim) — profildeki HER sekmede (Gönderiler/Medya/Beğenilenler/
     # Kaydedilenler) aynı süzme mantığı geçerli, çünkü liked/bookmarked
     # postlar BAŞKA yazarlara ait olabilir.
     visible_author_ids = followed_and_self_ids(sb, me)
+    blocked_ids = blocked_user_ids(sb, me)
 
     # Postlar + etkileşim sayıları tek sorguda
     posts = sb.table("posts").select(
         "*, likes(count), comments(count)"
     ).eq("user_id", prof["id"]).order("created_at", desc=True).execute().data
     posts = filter_visible(posts, visible_author_ids)
+    posts = filter_not_blocked(posts, blocked_ids)
     _attach_post_metrics(sb, posts, me)
 
     # Medya sekmesi: görsel içeren postlar (ek sorgu yok, mevcut listeden süzülür)
@@ -251,6 +269,7 @@ def profile(username):
             "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
         ).in_("id", liked_ids).execute().data
         liked_posts = filter_visible(liked_posts, visible_author_ids)
+        liked_posts = filter_not_blocked(liked_posts, blocked_ids)
         _attach_post_metrics(sb, liked_posts, me)
         # .in_() sırayı garanti etmez; beğeni sırasına (liked_ids) göre yeniden diz
         order = {pid: i for i, pid in enumerate(liked_ids)}
@@ -270,6 +289,7 @@ def profile(username):
                     "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
                 ).in_("id", bm_ids).execute().data
                 bookmarked_posts = filter_visible(bookmarked_posts, visible_author_ids)
+                bookmarked_posts = filter_not_blocked(bookmarked_posts, blocked_ids)
                 _attach_post_metrics(sb, bookmarked_posts, me)
                 bm_order = {pid: i for i, pid in enumerate(bm_ids)}
                 bookmarked_posts.sort(key=lambda p: bm_order.get(p["id"], 0))
@@ -287,16 +307,19 @@ def profile(username):
     total_likes = sum(p["like_count"] for p in posts)
 
     is_following = False
+    is_blocked_by_me = False
     if not is_self:
         f = sb.table("follows").select().eq("follower_id", me).eq(
             "following_id", prof["id"]
         ).execute()
         is_following = bool(f.data)
+        is_blocked_by_me = prof["id"] in blocked_ids
 
     return render_template("profile.html", profile=prof, posts=posts,
                            media_posts=media_posts, liked_posts=liked_posts,
                            bookmarked_posts=bookmarked_posts,
-                           is_self=is_self, is_following=is_following, me=session.get("user"),
+                           is_self=is_self, is_following=is_following,
+                           is_blocked_by_me=is_blocked_by_me, me=session.get("user"),
                            valid_usernames=get_valid_usernames(sb),
                            stats={
                                "posts": len(posts),
@@ -424,13 +447,16 @@ def search():
         return render_template("search.html", q=q, users=[], posts=[], me=session.get("user"),
                                valid_usernames=get_valid_usernames(sb))
 
+    me = _my_id()
+    blocked_ids = blocked_user_ids(sb, me)
+
     # Kullanıcı ara (username ILIKE)
     users = sb.table("profiles").select(
         "id, username, full_name, avatar_url"
     ).ilike("username", f"%{q}%").limit(20).execute().data
+    users = [u for u in users if u["id"] not in blocked_ids]
 
     # Post ara (content ILIKE) — beğeni/yorum sayıları feed ile aynı desende
-    me = _my_id()
     try:
         # 'visibility' kolonu ile dene (sql/migration_post_visibility.sql uygulandıysa)
         posts = sb.table("posts").select(
@@ -443,6 +469,7 @@ def search():
             "profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
         ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
     posts = filter_visible(posts, followed_and_self_ids(sb, me))
+    posts = filter_not_blocked(posts, blocked_ids)
     _attach_post_metrics(sb, posts, me)
 
     return render_template("search.html", q=q, users=users, posts=posts, me=session.get("user"),

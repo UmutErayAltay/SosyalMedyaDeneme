@@ -44,6 +44,12 @@
         <div class="profile-actions">
             {% if is_self %}
                 <a href="{{ url_for('routes.profile_edit') }}" class="btn btn-ghost">Profili düzenle</a>
+            {% elif is_blocked_by_me %}
+                <form action="{{ url_for('blocks.toggle_block', username=profile.username) }}"
+                      method="post" class="inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-ghost">Engeli kaldır</button>
+                </form>
             {% else %}
                 <button type="button"
                         class="btn follow-btn {{ 'btn-ghost' if is_following else 'btn-primary' }}"
@@ -57,6 +63,12 @@
                       method="post" class="inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-ghost">Mesaj gönder</button>
+                </form>
+                <form action="{{ url_for('blocks.toggle_block', username=profile.username) }}"
+                      method="post" class="inline"
+                      onsubmit="return confirm('{{ profile.username }} kullanıcısını engellemek istediğine emin misin?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-ghost danger">Engelle</button>
                 </form>
             {% endif %}
         </div>

@@ -31,6 +31,9 @@
         <button type="submit" class="btn btn-primary">Kaydet</button>
         <a href="{{ url_for('routes.profile', username=profile.username) }}" class="btn btn-ghost">İptal</a>
     </form>
+    <p class="muted" style="margin-top: 16px;">
+        <a href="{{ url_for('blocks.blocked_list') }}">🚫 Engellenen kullanıcılar</a>
+    </p>
 </div>
 <script>
     // Avatar önizleme

@@ -84,6 +84,7 @@ def hashtag_posts(tag):
     from .routes import _attach_post_metrics  # döngüsel import'u önlemek için lazy
     from .mentions import get_valid_usernames
     from .visibility import followed_and_self_ids, filter_visible
+    from .blocks import blocked_user_ids, filter_not_blocked
 
     sb = get_sb()
     me = session["user"]["id"]
@@ -102,6 +103,7 @@ def hashtag_posts(tag):
                     "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
                 ).in_("id", post_ids).order("created_at", desc=True).execute().data
                 posts = filter_visible(posts, followed_and_self_ids(sb, me))
+                posts = filter_not_blocked(posts, blocked_user_ids(sb, me))
                 _attach_post_metrics(sb, posts, me)
     except Exception:
         pass  # sql/migration_hashtags.sql henüz uygulanmamışsa boş liste gösterilir

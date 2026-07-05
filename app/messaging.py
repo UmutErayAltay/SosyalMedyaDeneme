@@ -10,6 +10,7 @@ from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .storage_helper import upload_image
 from .notifications import notify
+from .blocks import is_blocked_either_way, blocked_user_ids
 
 bp = Blueprint("messaging", __name__)
 
@@ -178,6 +179,17 @@ def send_message(conversation_id):
     has_image = image_file and image_file.filename
     wants_json = "application/json" in request.headers.get("Accept", "")
 
+    # Engelleme: konuşma bir engellemeden ÖNCE başlamış olabilir — her mesaj
+    # gönderiminde diğer katılımcı(lar)la aramda bir engelleme var mı kontrol et.
+    others = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id
+    ).neq("user_id", me).execute().data
+    if any(is_blocked_either_way(sb, me, o["user_id"]) for o in others):
+        if wants_json:
+            return jsonify({"error": "blocked"}), 403
+        flash("Bu kullanıcıyla mesajlaşamazsın.", "error")
+        return redirect(url_for("messaging.conversation", conversation_id=conversation_id))
+
     if not content and not has_image:
         if wants_json:
             return jsonify({"error": "empty"}), 400
@@ -254,6 +266,10 @@ def start_conversation(username):
         abort(404)
     target_id = target.data[0]["id"]
 
+    if is_blocked_either_way(sb, me, target_id):
+        flash("Bu kullanıcıyla mesajlaşamazsın.", "error")
+        return redirect(url_for("routes.profile", username=username))
+
     cid = _get_or_create_conversation(me, target_id)
     return redirect(url_for("messaging.conversation", conversation_id=cid))
 
@@ -266,12 +282,14 @@ def share_targets():
     sb = get_sb()
     me = session["user"]["id"]
     q = request.args.get("q", "").strip()
+    blocked_ids = blocked_user_ids(sb, me)
 
     if q:
         if len(q) < 2:
             return jsonify([])
         # Arama yapıldığında eşleşen kullanıcıları getir (kendisi hariç)
         users = sb.table("profiles").select("id, username, avatar_url").ilike("username", f"%{q}%").neq("id", me).limit(20).execute().data
+        users = [u for u in users if u["id"] not in blocked_ids]
         return jsonify(users)
 
     # Varsayılan: Takip edilen kullanıcıları getir
@@ -282,7 +300,7 @@ def share_targets():
     # Tekrar edenleri temizle
     user_dict = {}
     for f in follows:
-        if f.get("profiles"):
+        if f.get("profiles") and f["profiles"]["id"] not in blocked_ids:
             p = f["profiles"]
             user_dict[p["id"]] = p
 
