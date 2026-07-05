@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Gündem{% endblock %}
+{% block description %}Son 24 saatte en çok kullanılan hashtag'ler{% endblock %}
+{% block content %}
+<h1>🔥 Gündem</h1>
+<p class="muted">Son 24 saatte en çok kullanılan etiketler (sadece herkese açık postlar sayılır).</p>
+
+<section class="card trending-list">
+    {% for t in trending_tags %}
+    <a href="{{ url_for('hashtags.hashtag_posts', tag=t.tag) }}" class="trending-item">
+        <span class="trending-rank">{{ loop.index }}</span>
+        <span class="trending-tag">#{{ t.tag }}</span>
+        <span class="muted trending-count">{{ t.count }} post</span>
+    </a>
+    {% else %}
+    <p class="muted center">Henüz gündemde bir şey yok — son 24 saatte herkese açık hashtag'li post paylaşılmamış.</p>
+    {% endfor %}
+</section>
+{% endblock %}

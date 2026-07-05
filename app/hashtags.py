@@ -7,6 +7,7 @@ linkify_hashtags jinja filtresiyle #etiket'ler tıklanabilir link olur —
 güvenli sıralama).
 """
 import re
+from datetime import datetime, timedelta, timezone
 from flask import Blueprint, render_template, session, url_for
 from markupsafe import Markup, escape
 from .decorators import login_required
@@ -121,3 +122,47 @@ def hashtag_posts(tag):
 
     return render_template("hashtag.html", tag=tag, posts=posts, me=session.get("user"),
                            valid_usernames=get_valid_usernames(sb))
+
+
+def _trending_hashtags(sb, hours: int = 24, limit: int = 10) -> list[dict]:
+    """Son `hours` saat içinde en çok kullanılan hashtag'ler.
+
+    Sadece HERKESE AÇIK postlar sayılır — bir 'sadece takipçiler' postunun
+    etiketi herkese açık gündem listesine sızmamalı. Engelleme ilişkileri
+    hesaba KATILMIYOR (gündem viewer'a özel değil, paylaşılan/global bir
+    liste — tam kişiselleştirme bu özelliğin amacını bozardı).
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    try:
+        recent_posts = sb.table("posts").select("id").gte(
+            "created_at", cutoff
+        ).eq("visibility", "public").execute().data
+        post_ids = [p["id"] for p in recent_posts]
+        if not post_ids:
+            return []
+
+        rows = sb.table("post_hashtags").select("hashtag_id").in_("post_id", post_ids).execute().data
+        counts: dict = {}
+        for r in rows:
+            counts[r["hashtag_id"]] = counts.get(r["hashtag_id"], 0) + 1
+        if not counts:
+            return []
+
+        top_ids = sorted(counts, key=lambda hid: counts[hid], reverse=True)[:limit]
+        tags = sb.table("hashtags").select("id, tag").in_("id", top_ids).execute().data
+        tag_by_id = {t["id"]: t["tag"] for t in tags}
+        return [
+            {"tag": tag_by_id[hid], "count": counts[hid]}
+            for hid in top_ids if hid in tag_by_id
+        ]
+    except Exception:
+        return []  # migration_hashtags.sql veya migration_post_visibility.sql henüz uygulanmamış olabilir
+
+
+@bp.route("/gundem")
+@login_required
+@retry_on_connection_error
+def trending():
+    sb = get_sb()
+    trending_tags = _trending_hashtags(sb, hours=24, limit=10)
+    return render_template("trending.html", trending_tags=trending_tags, me=session.get("user"))
