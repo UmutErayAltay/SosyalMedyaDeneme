@@ -3,6 +3,7 @@ from flask import Blueprint, request, redirect, url_for, session, flash, abort, 
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .notifications import notify
+from .mentions import notify_mentions
 
 bp = Blueprint("social", __name__)
 
@@ -81,6 +82,7 @@ def add_comment(post_id):
     if post:
         notify(sb, recipient_id=post[0]["user_id"], actor_id=me["id"],
                type_="comment", post_id=post_id, comment_id=comment_id)
+    notify_mentions(sb, actor_id=me["id"], content=content, post_id=post_id, comment_id=comment_id)
 
     # Profil bilgisini çek (avatar + username)
     prof = sb.table("profiles").select("username, avatar_url").eq("id", me["id"]).execute()
@@ -174,6 +176,7 @@ def reply_comment(post_id, parent_id):
     if parent:
         notify(sb, recipient_id=parent[0]["user_id"], actor_id=me["id"],
                type_="reply", post_id=post_id, comment_id=comment_id)
+    notify_mentions(sb, actor_id=me["id"], content=content, post_id=post_id, comment_id=comment_id)
 
     prof = sb.table("profiles").select("username, avatar_url").eq("id", me["id"]).execute()
     prof_data = prof.data[0] if prof.data else {}

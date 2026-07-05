@@ -32,7 +32,7 @@
            class="username">{{ post.profiles.username if post.profiles else 'Bilinmeyen' }}</a>
         <span class="time">{{ post.created_at[:16]|replace('T',' ') }}</span>
     </header>
-    <p class="post-content">{{ post.content|linkify_hashtags }}</p>
+    <p class="post-content">{{ post.content|linkify_hashtags|linkify_mentions(valid_usernames) }}</p>
 
     {% if post.image_urls and post.image_urls|length > 0 %}
         <div class="post-images post-images-{{ post.image_urls|length }}">
@@ -94,7 +94,7 @@
             </a>
             <span class="time">{{ c.created_at[:16]|replace('T',' ') }}</span>
         </div>
-        <p>{{ c.content }}</p>
+        <p>{{ c.content|linkify_mentions(valid_usernames) }}</p>
         <div class="comment-actions">
             <button type="button"
                     class="btn btn-ghost small comment-like-btn {{ 'liked' if c.liked_by_me }}"
@@ -136,7 +136,7 @@
                     </a>
                     <span class="time">{{ r.created_at[:16]|replace('T',' ') }}</span>
                 </div>
-                <p>{{ r.content }}</p>
+                <p>{{ r.content|linkify_mentions(valid_usernames) }}</p>
                 <div class="comment-actions">
                     <button type="button"
                             class="btn btn-ghost small comment-like-btn {{ 'liked' if r.liked_by_me }}"

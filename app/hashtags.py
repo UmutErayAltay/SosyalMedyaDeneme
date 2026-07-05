@@ -82,6 +82,7 @@ def linkify_hashtags(content: str):
 @retry_on_connection_error
 def hashtag_posts(tag):
     from .routes import _attach_post_metrics  # döngüsel import'u önlemek için lazy
+    from .mentions import get_valid_usernames
 
     sb = get_sb()
     me = session["user"]["id"]
@@ -103,4 +104,5 @@ def hashtag_posts(tag):
     except Exception:
         pass  # sql/migration_hashtags.sql henüz uygulanmamışsa boş liste gösterilir
 
-    return render_template("hashtag.html", tag=tag, posts=posts, me=session.get("user"))
+    return render_template("hashtag.html", tag=tag, posts=posts, me=session.get("user"),
+                           valid_usernames=get_valid_usernames(sb))

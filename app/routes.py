@@ -4,6 +4,7 @@ from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .storage_helper import upload_image, upload_images
 from .hashtags import sync_post_hashtags
+from .mentions import notify_mentions, get_valid_usernames
 
 bp = Blueprint("routes", __name__)
 
@@ -79,7 +80,8 @@ def feed():
     _attach_post_metrics(sb, posts, _my_id())
 
     return render_template("feed.html", posts=posts, me=session.get("user"),
-                           page=page, has_next=has_next)
+                           page=page, has_next=has_next,
+                           valid_usernames=get_valid_usernames(sb))
 
 
 @bp.route("/post/new", methods=["POST"])
@@ -117,6 +119,7 @@ def create_post():
     post_id = inserted.data[0]["id"] if inserted.data else None
     if post_id and content:
         sync_post_hashtags(sb, post_id, content)
+        notify_mentions(sb, actor_id=_my_id(), content=content, post_id=post_id)
 
     flash("Post paylaşıldı.", "success")
     return redirect(url_for("routes.feed"))
@@ -162,7 +165,7 @@ def post_detail(post_id):
     comments = top_comments
 
     return render_template("post_detail.html", post=post, comments=comments,
-                           me=session.get("user"))
+                           me=session.get("user"), valid_usernames=get_valid_usernames(sb))
 
 
 @bp.route("/post/<post_id>/delete", methods=["POST"])
@@ -254,6 +257,7 @@ def profile(username):
                            media_posts=media_posts, liked_posts=liked_posts,
                            bookmarked_posts=bookmarked_posts,
                            is_self=is_self, is_following=is_following, me=session.get("user"),
+                           valid_usernames=get_valid_usernames(sb),
                            stats={
                                "posts": len(posts),
                                "followers": followers_count,
@@ -375,10 +379,11 @@ def profile_edit():
 @retry_on_connection_error
 def search():
     q = request.args.get("q", "").strip()
-    if len(q) < 2:
-        return render_template("search.html", q=q, users=[], posts=[], me=session.get("user"))
-
     sb = get_sb()
+    if len(q) < 2:
+        return render_template("search.html", q=q, users=[], posts=[], me=session.get("user"),
+                               valid_usernames=get_valid_usernames(sb))
+
     # Kullanıcı ara (username ILIKE)
     users = sb.table("profiles").select(
         "id, username, full_name, avatar_url"
@@ -391,4 +396,5 @@ def search():
     ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
     _attach_post_metrics(sb, posts, _my_id())
 
-    return render_template("search.html", q=q, users=users, posts=posts, me=session.get("user"))
+    return render_template("search.html", q=q, users=users, posts=posts, me=session.get("user"),
+                           valid_usernames=get_valid_usernames(sb))

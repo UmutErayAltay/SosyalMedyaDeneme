@@ -62,11 +62,14 @@ def create_app() -> Flask:
     from .messaging import bp as messaging_bp
     from .notifications import bp as notifications_bp
     from .hashtags import bp as hashtags_bp, linkify_hashtags
+    from .mentions import linkify_mentions
 
     # Emoji reaksiyon ikonları şablonlarda {{ REACTIONS['love'] }} olarak kullanılabilir
     app.jinja_env.globals["REACTIONS"] = REACTIONS
     # Post içeriğini XSS-güvenli şekilde render eder + #hashtag'leri linkler
     app.jinja_env.filters["linkify_hashtags"] = linkify_hashtags
+    # @kullanıcı etiketlerini (sadece gerçekten var olan kullanıcı adlarını) linkler
+    app.jinja_env.filters["linkify_mentions"] = linkify_mentions
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(routes_bp)

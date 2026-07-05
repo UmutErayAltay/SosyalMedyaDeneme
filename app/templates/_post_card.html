@@ -3,7 +3,11 @@
    Jinja'nın {% from ... import ... %} mekanizması, import edilen template'in
    tüm üst-seviye ifadelerini "modül" olarak çalıştırır; extends zinciri veya
    sayfa-özel değişkenlere (ör. profile) referans varsa import sırasında
-   bunlar tanımsız olduğu için patlar. Bu yüzden makro ayrı bir dosyada. #}
+   bunlar tanımsız olduğu için patlar. Bu yüzden makro ayrı bir dosyada.
+
+   `valid_usernames` makro parametresi DEĞİL — çağıran template'in context'inden
+   geliyor, bu yüzden bu dosyayı import eden template'ler `{% import ... with
+   context %}` kullanmalı (bkz. profile.html, hashtag.html). #}
 {% macro post_card(p, author_username, author_avatar_url, allow_delete) %}
 <article class="card post" data-post-url="{{ url_for('routes.post_detail', post_id=p.id) }}">
     <header class="post-header">
@@ -27,7 +31,7 @@
              data-post-url="{{ url_for('routes.post_detail', post_id=p.id) }}" loading="lazy">
     {% endif %}
     {% if p.content %}
-        <p class="post-content">{{ p.content|linkify_hashtags }}</p>
+        <p class="post-content">{{ p.content|linkify_hashtags|linkify_mentions(valid_usernames) }}</p>
     {% endif %}
     <footer class="post-actions">
         <button type="button"

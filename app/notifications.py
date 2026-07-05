@@ -3,6 +3,8 @@
 notify() diğer blueprint'lerden (social.py, messaging.py) çağrılır;
 kendine bildirim gönderilmez (recipient_id == actor_id ise sessizce atlanır).
 """
+from datetime import datetime, timedelta, timezone
+
 from flask import Blueprint, render_template, request, session, jsonify, url_for
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
@@ -10,6 +12,18 @@ from .supabase_client import get_sb, retry_on_connection_error
 bp = Blueprint("notifications", __name__)
 
 PAGE_SIZE = 20
+
+# Bildirimler bu süreden eski olunca silinir. Ayrı bir cron/scheduler altyapısı
+# yok — liste sayfası ziyaretinde fırsatçı (opportunistic) temizlik yeterli
+# (bkz. _cleanup_old_notifications), çünkü bu ölçekte bir arkadaş grubu
+# uygulamasında bildirim listesini kimse hiç görmeden aylarca birikmesi olası değil.
+RETENTION_DAYS = 60
+
+
+def _cleanup_old_notifications(sb, me: str) -> None:
+    """`me`'ye ait, RETENTION_DAYS'ten eski bildirimleri siler."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).isoformat()
+    sb.table("notifications").delete().eq("recipient_id", me).lt("created_at", cutoff).execute()
 
 # Bildirim türüne göre yönlendirilecek hedef URL
 _TARGET_BUILDERS = {
@@ -19,6 +33,7 @@ _TARGET_BUILDERS = {
     "comment_like": lambda n: url_for("routes.post_detail", post_id=n["post_id"]),
     "follow": lambda n: url_for("routes.profile", username=n["actor"]["username"]),
     "message": lambda n: url_for("messaging.conversation", conversation_id=n["conversation_id"]),
+    "mention": lambda n: url_for("routes.post_detail", post_id=n["post_id"]),
 }
 
 _TEXT = {
@@ -28,6 +43,7 @@ _TEXT = {
     "comment_like": "yorumunu beğendi",
     "follow": "seni takip etmeye başladı",
     "message": "sana mesaj gönderdi",
+    "mention": "seni bir gönderide etiketledi",
 }
 
 
@@ -131,6 +147,9 @@ def list_notifications():
     me = session["user"]["id"]
     page = max(request.args.get("page", 1, type=int), 1)
     offset = (page - 1) * PAGE_SIZE
+
+    if page == 1:
+        _cleanup_old_notifications(sb, me)
 
     rows, has_next = _fetch_and_mark_read(sb, me, PAGE_SIZE, offset)
 
