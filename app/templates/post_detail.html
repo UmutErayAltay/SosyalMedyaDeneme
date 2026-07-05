@@ -31,6 +31,9 @@
         <a href="{{ url_for('routes.profile', username=post.profiles.username) if post.profiles else '#' }}"
            class="username">{{ post.profiles.username if post.profiles else 'Bilinmeyen' }}</a>
         <span class="time">{{ post.created_at[:16]|replace('T',' ') }}</span>
+        {% if post.visibility == 'followers' %}
+            <span class="visibility-badge" title="Sadece takipçiler görebilir">🔒</span>
+        {% endif %}
     </header>
     <p class="post-content">{{ post.content|linkify_hashtags|linkify_mentions(valid_usernames) }}</p>
 

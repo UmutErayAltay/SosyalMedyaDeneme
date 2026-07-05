@@ -5,6 +5,7 @@ from .supabase_client import get_sb, retry_on_connection_error
 from .storage_helper import upload_image, upload_images
 from .hashtags import sync_post_hashtags
 from .mentions import notify_mentions, get_valid_usernames
+from .visibility import followed_and_self_ids, filter_visible, visible_or_filter
 
 bp = Blueprint("routes", __name__)
 
@@ -65,19 +66,30 @@ def _attach_post_metrics(sb, posts: list, me: str) -> None:
 def feed():
     """Ana akış: postlar (yeni → eski) yazar + etkileşim sayılarıyla, sayfalı."""
     sb = get_sb()
+    me = _my_id()
     page = max(request.args.get("page", 1, type=int), 1)
     offset = (page - 1) * PAGE_SIZE
 
     # Post + yazar + beğeni/yorum sayıları tek sorguda.
     # Bir fazla satır çekilir: sonraki sayfa var mı bilgisi için.
-    posts = sb.table("posts").select(
-        "*, profiles!posts_user_id_fkey(username, avatar_url), "
-        "likes(count), comments(count)"
-    ).order("created_at", desc=True).range(offset, offset + PAGE_SIZE).execute().data
+    select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url), "
+                   "likes(count), comments(count)")
+    query = sb.table("posts").select(select_cols)
+    try:
+        # Görünürlük filtresi SQL seviyesinde uygulanır (sayfalama sonrası
+        # Python'da süzmek PAGE_SIZE'ı tutarsız hale getirirdi).
+        query = query.or_(visible_or_filter(sb, me))
+        posts = query.order("created_at", desc=True).range(offset, offset + PAGE_SIZE).execute().data
+    except Exception:
+        # sql/migration_post_visibility.sql henüz uygulanmamışsa 'visibility'
+        # kolonu yok — filtresiz eski davranışa düş (feed asla kırılmasın)
+        posts = sb.table("posts").select(select_cols).order(
+            "created_at", desc=True
+        ).range(offset, offset + PAGE_SIZE).execute().data
 
     has_next = len(posts) > PAGE_SIZE
     posts = posts[:PAGE_SIZE]
-    _attach_post_metrics(sb, posts, _my_id())
+    _attach_post_metrics(sb, posts, me)
 
     return render_template("feed.html", posts=posts, me=session.get("user"),
                            page=page, has_next=has_next,
@@ -114,8 +126,17 @@ def create_post():
     if image_urls:
         insert_data["image_url"] = image_urls[0]
 
+    visibility = request.form.get("visibility", "public")
+    if visibility not in ("public", "followers"):
+        visibility = "public"
+
     sb = get_sb()
-    inserted = sb.table("posts").insert(insert_data).execute()
+    try:
+        # sql/migration_post_visibility.sql henüz uygulanmamışsa 'visibility'
+        # kolonu yok — post paylaşımı bundan etkilenmesin diye kolonsuz dene
+        inserted = sb.table("posts").insert({**insert_data, "visibility": visibility}).execute()
+    except Exception:
+        inserted = sb.table("posts").insert(insert_data).execute()
     post_id = inserted.data[0]["id"] if inserted.data else None
     if post_id and content:
         sync_post_hashtags(sb, post_id, content)
@@ -139,6 +160,17 @@ def post_detail(post_id):
     post = res.data[0]
 
     me = _my_id()
+
+    # Sadece takipçilere özel post: yazar değilsen ve yazarı takip etmiyorsan
+    # 404 (var olmadığı gibi davran — erişim reddi ayrı bir mesajla "bu post
+    # var ama gizli" sinyali vermez, enumeration'ı önler).
+    if post.get("visibility") == "followers" and post["user_id"] != me:
+        following = sb.table("follows").select("follower_id").eq(
+            "follower_id", me
+        ).eq("following_id", post["user_id"]).execute().data
+        if not following:
+            abort(404)
+
     _attach_post_metrics(sb, [post], me)
 
     # Yorumlar + beğeni sayıları tek sorguda
@@ -192,11 +224,17 @@ def profile(username):
 
     me = _my_id()
     is_self = me == prof["id"]
+    # 'Sadece takipçiler' postlarını görebilecek yazar kümesi (ben + takip
+    # ettiklerim) — profildeki HER sekmede (Gönderiler/Medya/Beğenilenler/
+    # Kaydedilenler) aynı süzme mantığı geçerli, çünkü liked/bookmarked
+    # postlar BAŞKA yazarlara ait olabilir.
+    visible_author_ids = followed_and_self_ids(sb, me)
 
     # Postlar + etkileşim sayıları tek sorguda
     posts = sb.table("posts").select(
         "*, likes(count), comments(count)"
     ).eq("user_id", prof["id"]).order("created_at", desc=True).execute().data
+    posts = filter_visible(posts, visible_author_ids)
     _attach_post_metrics(sb, posts, me)
 
     # Medya sekmesi: görsel içeren postlar (ek sorgu yok, mevcut listeden süzülür)
@@ -212,6 +250,7 @@ def profile(username):
         liked_posts = sb.table("posts").select(
             "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
         ).in_("id", liked_ids).execute().data
+        liked_posts = filter_visible(liked_posts, visible_author_ids)
         _attach_post_metrics(sb, liked_posts, me)
         # .in_() sırayı garanti etmez; beğeni sırasına (liked_ids) göre yeniden diz
         order = {pid: i for i, pid in enumerate(liked_ids)}
@@ -230,6 +269,7 @@ def profile(username):
                 bookmarked_posts = sb.table("posts").select(
                     "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
                 ).in_("id", bm_ids).execute().data
+                bookmarked_posts = filter_visible(bookmarked_posts, visible_author_ids)
                 _attach_post_metrics(sb, bookmarked_posts, me)
                 bm_order = {pid: i for i, pid in enumerate(bm_ids)}
                 bookmarked_posts.sort(key=lambda p: bm_order.get(p["id"], 0))
@@ -390,11 +430,20 @@ def search():
     ).ilike("username", f"%{q}%").limit(20).execute().data
 
     # Post ara (content ILIKE) — beğeni/yorum sayıları feed ile aynı desende
-    posts = sb.table("posts").select(
-        "id, content, image_url, image_urls, created_at, user_id, "
-        "profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
-    ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
-    _attach_post_metrics(sb, posts, _my_id())
+    me = _my_id()
+    try:
+        # 'visibility' kolonu ile dene (sql/migration_post_visibility.sql uygulandıysa)
+        posts = sb.table("posts").select(
+            "id, content, image_url, image_urls, created_at, user_id, visibility, "
+            "profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+        ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
+    except Exception:
+        posts = sb.table("posts").select(
+            "id, content, image_url, image_urls, created_at, user_id, "
+            "profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+        ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
+    posts = filter_visible(posts, followed_and_self_ids(sb, me))
+    _attach_post_metrics(sb, posts, me)
 
     return render_template("search.html", q=q, users=users, posts=posts, me=session.get("user"),
                            valid_usernames=get_valid_usernames(sb))

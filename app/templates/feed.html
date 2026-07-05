@@ -20,6 +20,9 @@
                 <a href="{{ url_for('routes.profile', username=p.profiles.username) if p.profiles else '#' }}"
                    class="username">{{ p.profiles.username if p.profiles else 'Bilinmeyen' }}</a>
                 <span class="time">{{ p.created_at[:16]|replace('T',' ') }}</span>
+                {% if p.visibility == 'followers' %}
+                    <span class="visibility-badge" title="Sadece takipçiler görebilir">🔒</span>
+                {% endif %}
             </header>
             <p class="post-content">{{ p.content|linkify_hashtags|linkify_mentions(valid_usernames) }}</p>
 
@@ -104,6 +107,12 @@
                        multiple style="display:none" id="post-image-input">
             </label>
             <div id="post-image-preview" class="image-preview-grid" aria-live="polite"></div>
+
+            <label class="post-visibility-label" for="post-visibility-select">Kimler görebilir?</label>
+            <select name="visibility" id="post-visibility-select" class="post-visibility-select">
+                <option value="public" selected>🌐 Herkese açık</option>
+                <option value="followers">🔒 Sadece takipçilerim</option>
+            </select>
 
             <button type="submit" class="btn btn-primary btn-full">Paylaş</button>
         </form>

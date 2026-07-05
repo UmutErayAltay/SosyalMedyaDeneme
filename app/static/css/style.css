@@ -313,6 +313,12 @@ label input { margin-top: 6px; }
 .post-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .username { font-weight: 600; }
 .time { color: var(--muted); font-size: 12px; margin-left: auto; }
+.visibility-badge { font-size: 12px; margin-left: 6px; cursor: help; }
+.post-visibility-label { font-size: 13px; color: var(--muted); margin-top: 8px; display: block; }
+.post-visibility-select {
+    width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font-size: 14px; margin-bottom: 8px;
+}
 .post-content { margin-bottom: 12px; word-break: break-word; }
 .hashtag-link { color: var(--primary); font-weight: 600; text-decoration: none; }
 .hashtag-link:hover { text-decoration: underline; }
