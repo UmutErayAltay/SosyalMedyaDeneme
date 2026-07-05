@@ -97,6 +97,7 @@ def hashtag_posts(tag):
     from .mentions import get_valid_usernames
     from .visibility import followed_and_self_ids, filter_visible
     from .blocks import blocked_user_ids, filter_not_blocked
+    from .polls import attach_polls
 
     sb = get_sb()
     me = session["user"]["id"]
@@ -117,6 +118,7 @@ def hashtag_posts(tag):
                 posts = filter_visible(posts, followed_and_self_ids(sb, me))
                 posts = filter_not_blocked(posts, blocked_user_ids(sb, me))
                 _attach_post_metrics(sb, posts, me)
+                attach_polls(sb, posts, me)
     except Exception:
         pass  # sql/migration_hashtags.sql henüz uygulanmamışsa boş liste gösterilir
 

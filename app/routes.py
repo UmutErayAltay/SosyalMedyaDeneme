@@ -8,6 +8,7 @@ from .hashtags import sync_post_hashtags
 from .mentions import notify_mentions, get_valid_usernames, extract_mentions
 from .visibility import followed_and_self_ids, filter_visible, visible_or_filter
 from .blocks import blocked_user_ids, filter_not_blocked, is_blocked_either_way, has_blocked
+from .polls import create_poll, attach_polls
 
 bp = Blueprint("routes", __name__)
 
@@ -94,6 +95,7 @@ def feed():
     has_next = len(posts) > PAGE_SIZE
     posts = posts[:PAGE_SIZE]
     _attach_post_metrics(sb, posts, me)
+    attach_polls(sb, posts, me)
 
     return render_template("feed.html", posts=posts, me=session.get("user"),
                            page=page, has_next=has_next,
@@ -109,18 +111,31 @@ def create_post():
     video_file = request.files.get("video")
     has_video = bool(video_file and video_file.filename)
 
-    # Video ve görsel BİRLİKTE desteklenmiyor (tek medya türü/post) — video
-    # varsa görseller yok sayılır (form zaten JS ile bunu engelliyor, bkz.
-    # postModal.js, ama backend de aynı kuralı uygular).
-    valid_files = [] if has_video else [f for f in image_files if f and f.filename]
+    # Anket seçenekleri (en az 2 dolu olmalı) — anket de video/görsel gibi
+    # TEK "ek içerik" türü/post kuralına tabi, en yüksek önceliğe sahip
+    # (anket varsa görsel/video yok sayılır).
+    poll_options_raw = [request.form.get(f"poll_option_{i}", "").strip() for i in range(1, 5)]
+    poll_options = [o for o in poll_options_raw if o]
+    has_poll = len(poll_options) >= 2
 
-    if not content and not valid_files and not has_video:
+    # Video ve görsel BİRLİKTE desteklenmiyor (tek medya türü/post) — video
+    # veya anket varsa görseller yok sayılır (form zaten JS ile bunu engelliyor,
+    # bkz. postModal.js, ama backend de aynı kuralı uygular).
+    valid_files = [] if (has_video or has_poll) else [f for f in image_files if f and f.filename]
+
+    if has_poll and not content:
+        flash("Anket için bir soru yazmalısın.", "error")
+        return redirect(url_for("routes.feed"))
+
+    if not content and not valid_files and not has_video and not has_poll:
         flash("Boş post paylaşılamaz.", "error")
         return redirect(url_for("routes.feed"))
 
     image_urls = []
     video_url = None
-    if has_video:
+    if has_poll:
+        pass  # görsel/video yok sayılır, aşağıda create_poll() ile anket eklenir
+    elif has_video:
         video_url = upload_video(video_file, folder="posts")
         if not video_url:
             flash("Video yüklenemedi (geçersiz format veya 25MB'tan büyük).", "error")
@@ -160,6 +175,8 @@ def create_post():
     if post_id and content:
         sync_post_hashtags(sb, post_id, content)
         notify_mentions(sb, actor_id=_my_id(), content=content, post_id=post_id)
+    if post_id and has_poll:
+        create_poll(sb, post_id, poll_options)
 
     flash("Post paylaşıldı.", "success")
     return redirect(url_for("routes.feed"))
@@ -247,6 +264,7 @@ def post_detail(post_id):
             abort(404)
 
     _attach_post_metrics(sb, [post], me)
+    attach_polls(sb, [post], me)
 
     # Yorumlar + beğeni sayıları tek sorguda
     comments = sb.table("comments").select(
@@ -359,6 +377,7 @@ def profile(username):
     if pinned_id:
         posts.sort(key=lambda p: 0 if p["id"] == pinned_id else 1)
     _attach_post_metrics(sb, posts, me)
+    attach_polls(sb, posts, me)
 
     # Medya sekmesi: görsel içeren postlar (ek sorgu yok, mevcut listeden süzülür)
     media_posts = [p for p in posts if p.get("image_urls") or p.get("image_url")]
@@ -376,6 +395,7 @@ def profile(username):
         liked_posts = filter_visible(liked_posts, visible_author_ids)
         liked_posts = filter_not_blocked(liked_posts, blocked_ids)
         _attach_post_metrics(sb, liked_posts, me)
+        attach_polls(sb, liked_posts, me)
         # .in_() sırayı garanti etmez; beğeni sırasına (liked_ids) göre yeniden diz
         order = {pid: i for i, pid in enumerate(liked_ids)}
         liked_posts.sort(key=lambda p: order.get(p["id"], 0))
@@ -396,6 +416,7 @@ def profile(username):
                 bookmarked_posts = filter_visible(bookmarked_posts, visible_author_ids)
                 bookmarked_posts = filter_not_blocked(bookmarked_posts, blocked_ids)
                 _attach_post_metrics(sb, bookmarked_posts, me)
+                attach_polls(sb, bookmarked_posts, me)
                 bm_order = {pid: i for i, pid in enumerate(bm_ids)}
                 bookmarked_posts.sort(key=lambda p: bm_order.get(p["id"], 0))
         except Exception:
@@ -571,6 +592,7 @@ def search():
     posts = filter_visible(posts, followed_and_self_ids(sb, me))
     posts = filter_not_blocked(posts, blocked_ids)
     _attach_post_metrics(sb, posts, me)
+    attach_polls(sb, posts, me)
 
     return render_template("search.html", q=q, users=users, posts=posts, me=session.get("user"),
                            valid_usernames=get_valid_usernames(sb))

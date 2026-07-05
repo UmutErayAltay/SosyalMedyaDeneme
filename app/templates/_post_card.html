@@ -44,6 +44,7 @@
     {% if p.content %}
         <p class="post-content">{{ p.content|linkify_hashtags|linkify_mentions(valid_usernames) }}</p>
     {% endif %}
+    {{ poll_widget(p) }}
     <footer class="post-actions">
         <button type="button"
                 class="btn btn-ghost like-btn {{ 'liked' if p.liked_by_me }}"
@@ -85,4 +86,25 @@
         {% endif %}
     </footer>
 </article>
+{% endmacro %}
+
+{# Anket widget'ı — post_card içinden çağrılır, AYRICA feed.html/search.html/
+   post_detail.html gibi post_card kullanmayan (inline markup'lı) template'ler
+   de bunu doğrudan import edip kullanabilir (bkz. o dosyalardaki import satırı). #}
+{% macro poll_widget(p) %}
+{% if p.poll %}
+<div class="poll-widget" data-poll-id="{{ p.poll.id }}">
+    {% for opt in p.poll.options %}
+    <button type="button" class="poll-option {{ 'voted' if p.poll.my_vote == opt.id }}"
+            data-option-id="{{ opt.id }}"
+            data-vote-url="{{ url_for('polls.vote', poll_id=p.poll.id) }}"
+            aria-label="{{ opt.text }}, yüzde {{ opt.pct }}, {{ opt.votes }} oy">
+        <span class="poll-option-bar" style="width: {{ opt.pct }}%"></span>
+        <span class="poll-option-label">{{ opt.text }}</span>
+        <span class="poll-option-pct">{{ opt.pct }}%</span>
+    </button>
+    {% endfor %}
+    <p class="muted poll-total">{{ p.poll.total_votes }} oy</p>
+</div>
+{% endif %}
 {% endmacro %}

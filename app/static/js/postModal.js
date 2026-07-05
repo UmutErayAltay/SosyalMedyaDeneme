@@ -10,6 +10,10 @@
     var previewGrid = document.getElementById('post-image-preview');
     var videoInput = document.getElementById('post-video-input');
     var videoPreview = document.getElementById('post-video-preview');
+    var pollToggleBtn = document.getElementById('poll-toggle-btn');
+    var pollContainer = document.getElementById('poll-options-container');
+    var pollAddOptionBtn = document.getElementById('poll-add-option-btn');
+    var pollCancelBtn = document.getElementById('poll-cancel-btn');
     if (!modal || !openBtn) return;
 
     var lastFocused = null;
@@ -29,6 +33,7 @@
         modal.hidden = true;
         document.body.style.overflow = '';
         if (lastFocused) lastFocused.focus();
+        if (pollContainer && !pollContainer.hidden) resetPollUI();
     }
 
     openBtn.addEventListener('click', open);
@@ -112,6 +117,55 @@
             }
         });
     }
+
+    // --- Anket ekle: görsel/video ile AYNI POSTTA birlikte desteklenmiyor
+    // (backend de aynı kuralı uygular, bkz. routes.create_post()) ---
+    function resetPollUI() {
+        if (!pollContainer) return;
+        pollContainer.hidden = true;
+        if (pollToggleBtn) pollToggleBtn.hidden = false;
+        pollContainer.querySelectorAll('input').forEach(function (inp, i) {
+            inp.value = '';
+            if (i >= 2) inp.hidden = true;
+        });
+        if (pollAddOptionBtn) pollAddOptionBtn.hidden = false;
+    }
+
+    if (pollToggleBtn && pollContainer) {
+        pollToggleBtn.addEventListener('click', function () {
+            pollContainer.hidden = false;
+            pollToggleBtn.hidden = true;
+            // Anket seçilince görsel/video temizlenir
+            if (fileInput) fileInput.value = '';
+            if (previewGrid) previewGrid.innerHTML = '';
+            if (videoInput) videoInput.value = '';
+            if (videoPreview) { videoPreview.style.display = 'none'; videoPreview.removeAttribute('src'); }
+            var firstInput = pollContainer.querySelector('input');
+            if (firstInput) firstInput.focus();
+        });
+    }
+
+    if (pollAddOptionBtn && pollContainer) {
+        pollAddOptionBtn.addEventListener('click', function () {
+            var hiddenInputs = pollContainer.querySelectorAll('input[hidden]');
+            if (hiddenInputs.length === 0) return;
+            hiddenInputs[0].hidden = false;
+            hiddenInputs[0].focus();
+            if (hiddenInputs.length === 1) pollAddOptionBtn.hidden = true; // 4 seçenek doldu
+        });
+    }
+
+    if (pollCancelBtn) {
+        pollCancelBtn.addEventListener('click', resetPollUI);
+    }
+
+    // Görsel/video seçilince anket temizlenir (ters yön)
+    [fileInput, videoInput].forEach(function (inp) {
+        if (!inp) return;
+        inp.addEventListener('change', function () {
+            if (inp.files.length && pollContainer && !pollContainer.hidden) resetPollUI();
+        });
+    });
 
     // --- Sürükle-bırak görsel yükleme (tıklanabilir "Görsel Ekle" her zaman
     // alternatif olarak duruyor — WCAG 2.5.7 tek-imleçli alternatif) ---
