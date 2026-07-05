@@ -3,6 +3,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, sessio
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .storage_helper import upload_image, upload_images
+from .hashtags import sync_post_hashtags
 
 bp = Blueprint("routes", __name__)
 
@@ -111,7 +112,12 @@ def create_post():
     if image_urls:
         insert_data["image_url"] = image_urls[0]
 
-    get_sb().table("posts").insert(insert_data).execute()
+    sb = get_sb()
+    inserted = sb.table("posts").insert(insert_data).execute()
+    post_id = inserted.data[0]["id"] if inserted.data else None
+    if post_id and content:
+        sync_post_hashtags(sb, post_id, content)
+
     flash("Post paylaşıldı.", "success")
     return redirect(url_for("routes.feed"))
 

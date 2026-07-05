@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% import "_post_card.html" as pc %}
+{% block title %}#{{ tag }}{% endblock %}
+{% block description %}#{{ tag }} etiketli postlar{% endblock %}
+{% block content %}
+<h1>#{{ tag }}</h1>
+<p class="muted">{{ posts|length }} post</p>
+
+<section class="post-list">
+    {% for p in posts %}
+        {{ pc.post_card(p, p.profiles.username if p.profiles else 'Bilinmeyen',
+                     p.profiles.avatar_url if p.profiles else none,
+                     me and p.user_id == me.id) }}
+    {% else %}
+        <p class="muted center">Bu etiketle paylaşılmış post yok.</p>
+    {% endfor %}
+</section>
+
+<script src="{{ url_for('static', filename='js/likes.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
+{% endblock %}

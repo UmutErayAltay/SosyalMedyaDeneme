@@ -314,6 +314,8 @@ label input { margin-top: 6px; }
 .username { font-weight: 600; }
 .time { color: var(--muted); font-size: 12px; margin-left: auto; }
 .post-content { margin-bottom: 12px; word-break: break-word; }
+.hashtag-link { color: var(--primary); font-weight: 600; text-decoration: none; }
+.hashtag-link:hover { text-decoration: underline; }
 .post-actions { display: flex; gap: 8px; align-items: center; }
 .inline { display: inline; }
 
