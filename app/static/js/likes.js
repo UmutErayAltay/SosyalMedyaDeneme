@@ -121,7 +121,7 @@
         if (e.key === 'Escape' && picker && !picker.hidden) closePicker();
     });
 
-    // --- Basılı tutma tespiti (fare + dokunmatik) ---
+    // --- Basılı tutma tespiti (fare + dokunmatik) — press+hold+sürükle+bırak deseni ---
     function startPress(btn) {
         longPressFired = false;
         clearTimeout(pressTimer);
@@ -130,8 +130,31 @@
             openPicker(btn);
         }, LONG_PRESS_MS);
     }
-    function cancelPress() {
+
+    function pointFromEvent(e) {
+        if (e.changedTouches && e.changedTouches.length) {
+            return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+        }
+        return { x: e.clientX, y: e.clientY };
+    }
+
+    // Basılı tutup emoji üzerine sürükleyip bırakma: mousedown/mouseup farklı
+    // elemanlarda gerçekleştiği için tarayıcı native "click" event'i ÜRETMEZ —
+    // bu yüzden bırakma noktasındaki elemanı elle buluyoruz (elementFromPoint).
+    function endPress(e) {
         clearTimeout(pressTimer);
+        if (!longPressFired || !activeBtn) return;
+
+        var point = pointFromEvent(e);
+        var el = document.elementFromPoint(point.x, point.y);
+        var option = el && el.closest && el.closest('.reaction-option');
+        if (option) {
+            sendReaction(activeBtn, option.dataset.reaction);
+            closePicker();
+            longPressFired = false;
+        }
+        // Emoji üzerinde bırakılmadıysa picker açık kalır — kullanıcı ayrıca
+        // tıklayarak seçebilir (yukarıdaki picker click handler'ı devam eder).
     }
 
     document.addEventListener('mousedown', function (e) {
@@ -142,9 +165,14 @@
         var btn = e.target.closest('.like-btn');
         if (btn) startPress(btn);
     }, { passive: true });
-    ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(function (evt) {
-        document.addEventListener(evt, cancelPress);
-    });
+    document.addEventListener('mouseup', endPress);
+    document.addEventListener('touchend', endPress);
+    document.addEventListener('touchcancel', function () { clearTimeout(pressTimer); });
+
+    // Basılı tutma sırasında parmak kaydırınca sayfa scroll etmesin (seçim gesture'ı)
+    document.addEventListener('touchmove', function (e) {
+        if (longPressFired) e.preventDefault();
+    }, { passive: false });
 
     // --- Kısa tıklama: hızlı toggle (varsayılan 'like' reaksiyonu) ---
     document.addEventListener('click', function (e) {
