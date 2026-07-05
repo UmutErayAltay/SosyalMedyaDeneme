@@ -1,18 +1,24 @@
 {# Sohbet listesi (sol panel) — inbox.html ve conversation.html arasında paylaşılır. #}
 <div class="messages-sidebar">
-    <h1>Mesajlar</h1>
+    <div class="messages-sidebar-header">
+        <h1>Mesajlar</h1>
+        <button type="button" class="btn btn-ghost" id="open-new-group-modal">+ Yeni Grup</button>
+    </div>
     <div class="inbox-list" id="inbox-list">
         {% for c in convos %}
         <a href="{{ url_for('messaging.conversation', conversation_id=c.id) }}"
            class="card inbox-item{{ ' active' if c.id == active_id else '' }}"
            data-conversation-id="{{ c.id }}">
-            {% if c.other_user and c.other_user.avatar_url %}
+            {% if c.is_group %}
+                <div class="avatar avatar-placeholder" aria-hidden="true">👥</div>
+            {% elif c.other_user and c.other_user.avatar_url %}
                 <img src="{{ c.other_user.avatar_url }}" class="avatar" alt="" loading="lazy">
             {% else %}
                 <div class="avatar avatar-placeholder" aria-hidden="true"></div>
             {% endif %}
             <div>
-                <strong>{{ c.other_user.username if c.other_user else 'Bilinmeyen' }}</strong>
+                <strong>{{ c.name if c.is_group else (c.other_user.username if c.other_user else 'Bilinmeyen') }}</strong>
+                {% if c.is_group %}<span class="muted"> · {{ c.member_count }} kişi</span>{% endif %}
                 {% if c.last_message %}
                 <p class="muted preview">{{ c.last_message.content[:40] }}</p>
                 {% else %}
@@ -25,3 +31,20 @@
         {% endfor %}
     </div>
 </div>
+
+{# --- Yeni grup sohbeti modalı (paylaşım modalıyla aynı desen — bkz. shareModal.js) --- #}
+<div class="modal-overlay" id="new-group-modal" role="dialog" aria-modal="true" aria-labelledby="new-group-modal-title" hidden>
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="new-group-modal-title">Yeni Grup</h2>
+            <button type="button" class="modal-close" id="close-new-group-modal" aria-label="Kapat">×</button>
+        </div>
+        <div class="modal-body">
+            <input type="text" id="group-name-input" placeholder="Grup adı..." maxlength="60" aria-label="Grup adı">
+            <input type="search" id="group-search-input" placeholder="Kişi ara..." autocomplete="off" aria-label="Kişi ara">
+            <div id="group-user-list" class="share-user-list" aria-live="polite"></div>
+            <button type="button" id="group-submit-btn" class="btn btn-primary btn-full" disabled>Grup Oluştur</button>
+        </div>
+    </div>
+</div>
+<script src="{{ url_for('static', filename='js/groupChat.js') }}"></script>

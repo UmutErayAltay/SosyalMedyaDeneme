@@ -19,6 +19,9 @@
         var tempAttr = opts.tempId ? ' data-temp-id="' + opts.tempId + '"' : '';
         var html = '<div class="msg ' + cls + '" data-msg-id="' + (msg.id || '') + '"' + tempAttr + '>';
 
+        if (opts.senderName) {
+            html += '<span class="msg-sender">' + escapeHtml(opts.senderName) + '</span>';
+        }
         if (msg.image_url) {
             html += '<div class="msg-image-wrapper' + (opts.uploading ? ' uploading' : '') + '">';
             html += '<img src="' + escapeHtml(msg.image_url) + '" class="msg-image" alt="Görsel mesaj" loading="lazy">';
@@ -140,6 +143,9 @@
         var conversationId = panel.dataset.conversationId;
         var sendUrl = panel.dataset.sendUrl;
         var otherUsername = panel.dataset.otherUsername || 'Kullanıcı';
+        var isGroup = panel.dataset.isGroup === '1';
+        var memberMap = {};
+        try { memberMap = JSON.parse(panel.dataset.memberMap || '{}'); } catch (err) { memberMap = {}; }
         if (!conversationId || !sendUrl) return;
 
         ensureLightbox();
@@ -213,12 +219,17 @@
         var typingClearTimer = null;
         var lastTypingSentAt = 0;
 
+        var myUsername = panel.dataset.myUsername || 'Sen';
+
         function sendTyping(isTyping) {
             if (!activeChannel) return;
             var now = Date.now();
             if (isTyping && now - lastTypingSentAt < 2000) return; // en fazla 2sn'de bir gönder
             lastTypingSentAt = isTyping ? now : 0;
-            activeChannel.send({ type: 'broadcast', event: 'typing', payload: { typing: isTyping } });
+            activeChannel.send({
+                type: 'broadcast', event: 'typing',
+                payload: { typing: isTyping, username: myUsername },
+            });
         }
 
         if (typingIndicator) {
@@ -326,7 +337,10 @@
                 }, function (payload) {
                     var msg = payload.new;
                     var isMine = msg.sender_id === window.ME_ID;
-                    if (!isMine) appendMessage(msg, isMine);
+                    if (!isMine) {
+                        var senderName = isGroup ? (memberMap[msg.sender_id] || 'Bilinmeyen') : null;
+                        appendMessage(msg, isMine, { senderName: senderName });
+                    }
                 }).on('postgres_changes', {
                     event: 'UPDATE',
                     schema: 'public',
@@ -349,7 +363,10 @@
                     if (typingClearTimer) clearTimeout(typingClearTimer);
                     if (payload.typing) {
                         if (typingIndicator.hidden) {
-                            typingIndicator.textContent = otherUsername + ' yazıyor...';
+                            // Grup sohbetinde KİMİN yazdığını göstermek gerekir (sabit
+                            // "otherUsername" bir grupta anlamsız olurdu) — payload'daki
+                            // gönderen adı kullanılır, 1:1'de de tutarlı çalışır.
+                            typingIndicator.textContent = (payload.username || otherUsername) + ' yazıyor...';
                             typingIndicator.hidden = false;
                         }
                         typingClearTimer = setTimeout(function () {

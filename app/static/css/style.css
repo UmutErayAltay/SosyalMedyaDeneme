@@ -378,7 +378,13 @@ label input { margin-top: 6px; }
     overflow-y: auto; padding-right: 12px;
     border-right: 1px solid var(--border);
 }
-.messages-sidebar h1 { font-size: 18px; margin-bottom: 12px; }
+.messages-sidebar h1 { font-size: 18px; margin: 0; }
+.messages-sidebar-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px; gap: 8px;
+}
+.msg-sender { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 2px; }
+.conv-member-count { font-size: 13px; margin-left: 8px; }
 .inbox-item.active { background: var(--border); }
 
 .messages-panel {

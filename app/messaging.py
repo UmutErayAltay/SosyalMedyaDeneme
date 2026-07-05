@@ -1,8 +1,14 @@
-"""Birebir mesajlaşma (DM) ve Paylaşım özellikleri.
+"""Birebir mesajlaşma (DM) + grup sohbeti + Paylaşım özellikleri.
 
-Model: her iki kullanıcı için ortak bir 'conversation' satırı.
-conversation_participants üzerinden kullanıcı ↔ konuşma eşleşmesi.
-Görsel mesajları, tekli post paylaşma ve çoklu post paylaşma desteklenir.
+Model: bir 'conversation' satırı, conversation_participants (many-to-many)
+üzerinden N kullanıcıya bağlanır — 1:1 DM de grup sohbeti de AYNI şema,
+sadece conversations.is_group/name grup meta bilgisini taşır (bkz.
+sql/migration_group_chat.sql). Görsel mesajları, tekli post paylaşma ve
+çoklu post paylaşma desteklenir.
+
+Grup sohbetinde okundu bilgisi (✓✓) BİLEREK gösterilmiyor — messages.read_at
+tek bir kolon, "kim okudu" bilgisini tutamaz (N kişiden biri okuyunca ✓✓
+göstermek yanıltıcı olurdu). 1:1'de mevcut davranış aynen korunuyor.
 """
 from datetime import datetime, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash, jsonify
@@ -77,11 +83,24 @@ def _build_convos(sb, me: str) -> list[dict]:
 
     convos = []
     if cids:
-        # Diğer katılımcılar tek sorguda (konuşma başına ayrı sorgu yerine)
+        # Grup meta bilgisi (is_group/name) — sql/migration_group_chat.sql
+        # henüz uygulanmamışsa kolonlar yok, hepsi 1:1 gibi davranılır.
+        conv_meta = {}
+        try:
+            rows = sb.table("conversations").select("id, is_group, name").in_("id", cids).execute().data
+            conv_meta = {r["id"]: r for r in rows}
+        except Exception:
+            pass
+
+        # Diğer katılımcılar tek sorguda (konuşma başına ayrı sorgu yerine).
+        # Grup sohbetinde birden fazla "diğer katılımcı" olabilir, bu yüzden
+        # cid başına LİSTE olarak toplanır (1:1'de tek elemanlı olur).
         others = sb.table("conversation_participants").select(
             "conversation_id, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
         ).in_("conversation_id", cids).neq("user_id", me).execute().data
-        other_by_cid = {o["conversation_id"]: o.get("profiles") for o in others}
+        others_by_cid: dict = {}
+        for o in others:
+            others_by_cid.setdefault(o["conversation_id"], []).append(o.get("profiles"))
 
         # Son mesajlar tek sorguda: yeni → eski çekilir, konuşma başına
         # ilk görülen kayıt son mesajdır. limit, tüm konuşmaların son
@@ -95,11 +114,19 @@ def _build_convos(sb, me: str) -> list[dict]:
         for m in msgs:
             last_by_cid.setdefault(m["conversation_id"], m)
 
-        convos = [{
-            "id": cid,
-            "last_message": last_by_cid.get(cid),
-            "other_user": other_by_cid.get(cid),
-        } for cid in cids]
+        convos = []
+        for cid in cids:
+            meta = conv_meta.get(cid, {})
+            is_group = bool(meta.get("is_group"))
+            other_list = others_by_cid.get(cid, [])
+            convos.append({
+                "id": cid,
+                "last_message": last_by_cid.get(cid),
+                "other_user": None if is_group else (other_list[0] if other_list else None),
+                "is_group": is_group,
+                "name": meta.get("name") if is_group else None,
+                "member_count": len(other_list) + 1 if is_group else None,
+            })
 
     convos.sort(key=lambda c: c["last_message"]["created_at"]
                 if c["last_message"] else "", reverse=True)
@@ -138,27 +165,45 @@ def conversation(conversation_id):
     if not part.data:
         abort(403)
 
-    # Diğer katılımcı
-    other = sb.table("conversation_participants").select(
+    # Grup meta bilgisi (is_group/name) — migration henüz uygulanmamışsa 1:1 gibi davranılır
+    is_group = False
+    group_name = None
+    try:
+        conv = sb.table("conversations").select("is_group, name").eq("id", conversation_id).execute().data
+        if conv:
+            is_group = bool(conv[0].get("is_group"))
+            group_name = conv[0].get("name")
+    except Exception:
+        pass
+
+    # Diğer katılımcı(lar) — grupta birden fazla olabilir
+    others = sb.table("conversation_participants").select(
         "user_id, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
-    ).neq("user_id", me).eq("conversation_id", conversation_id).execute()
-    other_user = other.data[0]["profiles"] if other.data else None
+    ).neq("user_id", me).eq("conversation_id", conversation_id).execute().data
+    other_profiles = [o["profiles"] for o in others if o.get("profiles")]
+    other_user = None if is_group else (other_profiles[0] if other_profiles else None)
+    # Supabase Realtime INSERT payload'ı sadece ham satırı verir (join yok) —
+    # grup sohbetinde yeni mesajın kimden geldiğini göstermek için client-side
+    # bir id→username haritası gerekiyor (bkz. chat.js, data-member-map).
+    member_map = {p["id"]: p["username"] for p in other_profiles if p.get("id")}
 
     messages = sb.table("messages").select(
         "*, profiles!messages_sender_id_fkey(username, avatar_url)"
     ).eq("conversation_id", conversation_id).order("created_at").execute().data
-    _mark_read(sb, conversation_id, me, messages)
+    if not is_group:
+        # Grupta "okundu" bilgisi anlamsız (bkz. modül docstring'i) — sadece 1:1'de işaretlenir
+        _mark_read(sb, conversation_id, me, messages)
+
+    ctx = dict(messages=messages, other_user=other_user, is_group=is_group,
+               group_name=group_name, group_members=other_profiles, member_map=member_map,
+               conversation_id=conversation_id, me=session["user"])
 
     if request.headers.get("X-Requested-With") == "fetch":
-        return render_template("messages/_conversation_panel.html",
-                               messages=messages, other_user=other_user,
-                               conversation_id=conversation_id, me=session["user"])
+        return render_template("messages/_conversation_panel.html", **ctx)
 
     convos = _build_convos(sb, me)
-    return render_template("messages/conversation.html",
-                           messages=messages, other_user=other_user,
-                           conversation_id=conversation_id, convos=convos,
-                           active_id=conversation_id, me=session["user"])
+    return render_template("messages/conversation.html", convos=convos,
+                           active_id=conversation_id, **ctx)
 
 
 @bp.route("/<conversation_id>/send", methods=["POST"])
@@ -224,6 +269,12 @@ def share_post(conversation_id, post_id):
     sb = get_sb()
     me = session["user"]["id"]
 
+    others = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id
+    ).neq("user_id", me).execute().data
+    if any(is_blocked_either_way(sb, me, o["user_id"]) for o in others):
+        abort(403)
+
     # Postu, görselleriyle birlikte çek
     post = sb.table("posts").select(
         "id, content, image_url, image_urls, profiles!posts_user_id_fkey(username)"
@@ -272,6 +323,53 @@ def start_conversation(username):
 
     cid = _get_or_create_conversation(me, target_id)
     return redirect(url_for("messaging.conversation", conversation_id=cid))
+
+
+@bp.route("/group/new", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def create_group():
+    """Yeni bir grup sohbeti oluşturur (isim + en az 2 üye, kendisi dahil en az 3 kişi).
+
+    sql/migration_group_chat.sql henüz uygulanmamışsa conversations.is_group/name
+    kolonları yok — bu durumda grup oluşturma anlamlı olmadığı için (2 kişilik
+    "grup" normal DM'den ayırt edilemez) net bir hata döndürülür, sessizce
+    1:1'e düşülmez.
+    """
+    me = session["user"]["id"]
+    sb = get_sb()
+    data = request.get_json(silent=True) or {}
+
+    name = (data.get("name") or "").strip()
+    user_ids = [u for u in data.get("user_ids", []) if isinstance(u, str)]
+    user_ids = list(dict.fromkeys(uid for uid in user_ids if uid != me))  # kendini hariç tut, sırayı koru
+
+    if not name:
+        return jsonify(error="Grup adı gerekli."), 400
+    if len(user_ids) < 2:
+        return jsonify(error="En az 2 kişi seçmelisin."), 400
+
+    blocked_ids = blocked_user_ids(sb, me)
+    if any(uid in blocked_ids for uid in user_ids):
+        return jsonify(error="Engellediğin/seni engelleyen biriyle grup oluşturamazsın."), 403
+
+    try:
+        conv = sb.table("conversations").insert({
+            "is_group": True, "name": name, "created_by": me,
+        }).execute()
+    except Exception:
+        return jsonify(error="Grup sohbeti özelliği henüz aktif değil (migration uygulanmamış)."), 503
+    cid = conv.data[0]["id"]
+
+    all_members = [me] + user_ids
+    sb.table("conversation_participants").insert([
+        {"conversation_id": cid, "user_id": uid} for uid in all_members
+    ]).execute()
+
+    for uid in user_ids:
+        notify(sb, recipient_id=uid, actor_id=me, type_="message", conversation_id=cid)
+
+    return jsonify(conversation_id=cid)
 
 
 @bp.route("/share-targets")

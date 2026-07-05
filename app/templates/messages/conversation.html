@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ other_user.username if other_user else 'Mesajlar' }}{% endblock %}
+{% block title %}{{ (group_name if is_group else other_user.username) or 'Mesajlar' }}{% endblock %}
 {% block container_class %}container-wide{% endblock %}
 {% block content %}
 <div class="messages-layout showing-panel" id="messages-layout">

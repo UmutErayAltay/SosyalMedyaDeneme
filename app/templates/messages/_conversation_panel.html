@@ -5,16 +5,27 @@
 <div class="messages-panel" id="conversation-panel"
      data-conversation-id="{{ conversation_id }}"
      data-send-url="{{ url_for('messaging.send_message', conversation_id=conversation_id) }}"
-     data-other-username="{{ other_user.username if other_user else 'Kullanıcı' }}">
+     data-other-username="{{ (group_name if is_group else other_user.username) or 'Kullanıcı' }}"
+     data-my-username="{{ me.username or 'Sen' }}"
+     data-is-group="{{ '1' if is_group else '0' }}"
+     data-member-map="{{ (member_map if is_group else {})|tojson|forceescape }}">
     <header class="conv-header">
         <a href="{{ url_for('messaging.inbox') }}" class="conv-back-link" aria-label="Mesajlara dön">← Geri</a>
-        <h2>{{ other_user.username if other_user else 'Bilinmeyen' }}</h2>
+        {% if is_group %}
+            <h2>👥 {{ group_name or 'Grup' }}</h2>
+            <span class="muted conv-member-count">{{ group_members|length + 1 }} kişi</span>
+        {% else %}
+            <h2>{{ other_user.username if other_user else 'Bilinmeyen' }}</h2>
+        {% endif %}
     </header>
 
     {# aria-live: ekran okuyucu yeni mesajı duyurur (WCAG 4.1.3), aria-atomic=false sadece yeni mesajı okur #}
     <div class="message-stream" id="stream" role="log" aria-live="polite" aria-atomic="false" aria-label="Mesaj geçmişi">
         {% for m in messages %}
         <div class="msg {{ 'mine' if m.sender_id == me.id else 'theirs' }}" data-msg-id="{{ m.id }}">
+            {% if is_group and m.sender_id != me.id %}
+                <span class="msg-sender">{{ m.profiles.username if m.profiles else 'Bilinmeyen' }}</span>
+            {% endif %}
             {% if m.image_url %}
                 <img src="{{ m.image_url }}" class="msg-image" alt="Görsel mesaj" loading="lazy">
             {% endif %}
@@ -23,9 +34,11 @@
             {% endif %}
             <span class="time">
                 {{ m.created_at[11:16] }}
-                {% if m.sender_id == me.id %}
+                {% if m.sender_id == me.id and not is_group %}
                     <span class="read-receipt {{ 'read' if m.read_at }}"
                           aria-label="{{ 'Okundu' if m.read_at else 'İletildi' }}">{{ '✓✓' if m.read_at else '✓' }}</span>
+                {% elif m.sender_id == me.id %}
+                    <span class="read-receipt" aria-label="İletildi">✓</span>
                 {% endif %}
             </span>
         </div>
