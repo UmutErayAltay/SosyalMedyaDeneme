@@ -8,6 +8,8 @@
     var closeBtn = document.getElementById('close-post-modal');
     var fileInput = document.getElementById('post-image-input');
     var previewGrid = document.getElementById('post-image-preview');
+    var videoInput = document.getElementById('post-video-input');
+    var videoPreview = document.getElementById('post-video-preview');
     if (!modal || !openBtn) return;
 
     var lastFocused = null;
@@ -81,6 +83,32 @@
                 note.className = 'muted';
                 note.textContent = 'İlk 4 görsel yüklenecek.';
                 previewGrid.appendChild(note);
+            }
+        });
+    }
+
+    // --- Video ekle: görsel ile video AYNI POSTTA birlikte desteklenmiyor,
+    // biri seçilince diğeri temizlenir (backend de aynı kuralı uygular). ---
+    if (videoInput && videoPreview) {
+        videoInput.addEventListener('change', function (e) {
+            var file = e.target.files[0];
+            if (!file) {
+                videoPreview.style.display = 'none';
+                videoPreview.removeAttribute('src');
+                return;
+            }
+            if (fileInput) fileInput.value = '';
+            if (previewGrid) previewGrid.innerHTML = '';
+            videoPreview.src = URL.createObjectURL(file);
+            videoPreview.style.display = 'block';
+        });
+    }
+    if (fileInput && videoInput) {
+        fileInput.addEventListener('change', function () {
+            if (fileInput.files.length && videoInput.files.length) {
+                videoInput.value = '';
+                videoPreview.style.display = 'none';
+                videoPreview.removeAttribute('src');
             }
         });
     }

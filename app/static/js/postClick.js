@@ -17,6 +17,9 @@
         // Görsel alanları: lightbox çalışsın, kart navigasyonu olmasın
         if (e.target.closest('img, .post-image, .post-images, .post-image-tile, .media-thumb, .media-grid')) return;
 
+        // Video: native play/pause/scrub kontrolleri kart navigasyonuyla çakışmasın
+        if (e.target.closest('video')) return;
+
         var url = card.dataset.postUrl;
         if (e.metaKey || e.ctrlKey || e.button === 1) {
             window.open(url, '_blank');

@@ -540,6 +540,13 @@ label input { margin-top: 6px; }
     background: var(--bg); cursor: zoom-in;
 }
 .post-image-tile { cursor: zoom-in; }
+.post-video {
+    width: 100%; border-radius: 8px; margin: 8px 0 12px;
+    display: block; max-height: 600px; background: #000;
+}
+.post-video-preview {
+    width: 100%; border-radius: 8px; margin-top: 8px; max-height: 300px; background: #000;
+}
 
 /* Post kartı — metin/boşluk alanına tıklayınca detay sayfasına gider (postClick.js) */
 .card.post[data-post-url] { cursor: pointer; }

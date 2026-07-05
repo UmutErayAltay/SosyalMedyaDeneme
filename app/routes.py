@@ -2,7 +2,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
-from .storage_helper import upload_image, upload_images
+from .storage_helper import upload_image, upload_images, upload_video
 from .hashtags import sync_post_hashtags
 from .mentions import notify_mentions, get_valid_usernames
 from .visibility import followed_and_self_ids, filter_visible, visible_or_filter
@@ -105,16 +105,27 @@ def feed():
 def create_post():
     content = request.form.get("content", "").strip()
     image_files = request.files.getlist("images")
+    video_file = request.files.get("video")
+    has_video = bool(video_file and video_file.filename)
 
-    # En azından metin veya görsel olmalı
-    valid_files = [f for f in image_files if f and f.filename]
-    if not content and not valid_files:
+    # Video ve görsel BİRLİKTE desteklenmiyor (tek medya türü/post) — video
+    # varsa görseller yok sayılır (form zaten JS ile bunu engelliyor, bkz.
+    # postModal.js, ama backend de aynı kuralı uygular).
+    valid_files = [] if has_video else [f for f in image_files if f and f.filename]
+
+    if not content and not valid_files and not has_video:
         flash("Boş post paylaşılamaz.", "error")
         return redirect(url_for("routes.feed"))
 
-    # Çoklu görsel yükle (maksimum 4)
     image_urls = []
-    if valid_files:
+    video_url = None
+    if has_video:
+        video_url = upload_video(video_file, folder="posts")
+        if not video_url:
+            flash("Video yüklenemedi (geçersiz format veya 25MB'tan büyük).", "error")
+            return redirect(url_for("routes.feed"))
+    elif valid_files:
+        # Çoklu görsel yükle (maksimum 4)
         image_urls = upload_images(valid_files, folder="posts", max_count=4)
         if not image_urls:
             flash("Görsel yüklenemedi (geçersiz format veya 5MB'tan büyük).", "error")
@@ -135,9 +146,13 @@ def create_post():
 
     sb = get_sb()
     try:
-        # sql/migration_post_visibility.sql henüz uygulanmamışsa 'visibility'
-        # kolonu yok — post paylaşımı bundan etkilenmesin diye kolonsuz dene
-        inserted = sb.table("posts").insert({**insert_data, "visibility": visibility}).execute()
+        # sql/migration_post_visibility.sql veya migration_video_posts.sql
+        # henüz uygulanmamışsa ilgili kolon yok — post paylaşımı bundan
+        # etkilenmesin diye kolonsuz (eski) haliyle dene
+        full_data = {**insert_data, "visibility": visibility}
+        if video_url:
+            full_data["video_url"] = video_url
+        inserted = sb.table("posts").insert(full_data).execute()
     except Exception:
         inserted = sb.table("posts").insert(insert_data).execute()
     post_id = inserted.data[0]["id"] if inserted.data else None
@@ -494,18 +509,13 @@ def search():
     ).ilike("username", f"%{q}%").limit(20).execute().data
     users = [u for u in users if u["id"] not in blocked_ids]
 
-    # Post ara (content ILIKE) — beğeni/yorum sayıları feed ile aynı desende
-    try:
-        # 'visibility' kolonu ile dene (sql/migration_post_visibility.sql uygulandıysa)
-        posts = sb.table("posts").select(
-            "id, content, image_url, image_urls, created_at, user_id, visibility, "
-            "profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
-        ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
-    except Exception:
-        posts = sb.table("posts").select(
-            "id, content, image_url, image_urls, created_at, user_id, "
-            "profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
-        ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
+    # Post ara (content ILIKE) — beğeni/yorum sayıları feed ile aynı desende.
+    # "*" kullanılıyor (açık kolon listesi değil) çünkü visibility/video_url
+    # gibi opsiyonel kolonlar henüz migration'ı çalıştırılmamışsa bile PostgREST
+    # hata vermez — açık isimle istenen var olmayan bir kolon HATA verirdi.
+    posts = sb.table("posts").select(
+        "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+    ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
     posts = filter_visible(posts, followed_and_self_ids(sb, me))
     posts = filter_not_blocked(posts, blocked_ids)
     _attach_post_metrics(sb, posts, me)

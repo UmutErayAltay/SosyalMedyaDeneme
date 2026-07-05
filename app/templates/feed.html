@@ -37,6 +37,8 @@
             {% elif p.image_url %}
                 <img src="{{ p.image_url }}" class="post-image" alt="Post görseli"
                      data-post-url="{{ url_for('routes.post_detail', post_id=p.id) }}" loading="lazy">
+            {% elif p.video_url %}
+                <video src="{{ p.video_url }}" class="post-video" controls preload="metadata"></video>
             {% endif %}
         <footer class="post-actions">
             <button type="button"
@@ -107,6 +109,14 @@
                        multiple style="display:none" id="post-image-input">
             </label>
             <div id="post-image-preview" class="image-preview-grid" aria-live="polite"></div>
+
+            <label class="btn btn-ghost image-pick">
+                🎥 Video Ekle (maks. 25MB)
+                <input type="file" name="video" accept="video/mp4,video/webm,video/quicktime"
+                       style="display:none" id="post-video-input">
+            </label>
+            <video id="post-video-preview" class="post-video-preview" controls style="display:none"></video>
+            <p class="muted" style="font-size: 13px;">Görsel ve video aynı postta birlikte kullanılamaz.</p>
 
             <label class="post-visibility-label" for="post-visibility-select">Kimler görebilir?</label>
             <select name="visibility" id="post-visibility-select" class="post-visibility-select">

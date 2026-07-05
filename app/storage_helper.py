@@ -15,6 +15,13 @@ ALLOWED_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 BUCKET_NAME = "media"
 
+# İzin verilen video uzantıları + MIME tipleri — görsellerden ayrı, daha büyük
+# limit (25MB): arkadaş grubu ölçeğinde kısa klipler için yeterli, Supabase
+# Storage bant genişliğini/depolamasını gereksiz şişirmesin diye sınırlı.
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
+ALLOWED_VIDEO_MIMES = {"video/mp4", "video/webm", "video/quicktime"}
+MAX_VIDEO_SIZE = 25 * 1024 * 1024  # 25 MB
+
 
 def _get_extension(filename: str) -> str:
     """Dosya adından uzantıyı döndürür (örn 'photo.PNG' -> '.png')."""
@@ -72,6 +79,46 @@ def upload_image(file_storage, folder: str = "avatars") -> str | None:
         return None
 
     # 7) Public URL döndür
+    return get_sb().storage.from_(BUCKET_NAME).get_public_url(path)
+
+
+def upload_video(file_storage, folder: str = "posts") -> str | None:
+    """Flask FileStorage nesnesini (video) Supabase Storage'a yükler.
+
+    upload_image ile aynı akış (uzantı+MIME+boyut kontrolü, UUID adlandırma)
+    ama video'ya özel izin listesi/limit ile — bkz. ALLOWED_VIDEO_*.
+    """
+    if not file_storage or not file_storage.filename:
+        return None
+
+    filename = file_storage.filename
+    ext = _get_extension(filename)
+    if ext not in ALLOWED_VIDEO_EXTENSIONS:
+        return None
+
+    mime = file_storage.mimetype or ""
+    if mime not in ALLOWED_VIDEO_MIMES:
+        return None
+
+    file_storage.stream.seek(0, 2)
+    size = file_storage.stream.tell()
+    file_storage.stream.seek(0)
+    if size > MAX_VIDEO_SIZE:
+        return None
+
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+    path = f"{folder}/{unique_name}"
+    file_bytes = file_storage.read()
+
+    from .supabase_client import get_sb
+    try:
+        get_sb().storage.from_(BUCKET_NAME).upload(
+            path, file_bytes, {"content-type": mime}
+        )
+    except Exception as e:
+        current_app.logger.error(f"Video storage upload hatası: {e}")
+        return None
+
     return get_sb().storage.from_(BUCKET_NAME).get_public_url(path)
 
 
