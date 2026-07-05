@@ -72,6 +72,13 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-ghost danger">Engelle</button>
                 </form>
+                <form action="{{ url_for('reports.create_report') }}" method="post" class="inline"
+                      onsubmit="return confirm('{{ profile.username }} kullanıcısını şikayet etmek istediğine emin misin?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="target_type" value="user">
+                    <input type="hidden" name="target_id" value="{{ profile.id }}">
+                    <button type="submit" class="btn btn-ghost">🚩 Şikayet et</button>
+                </form>
             {% endif %}
         </div>
     </div>

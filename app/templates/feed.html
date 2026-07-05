@@ -77,6 +77,14 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-ghost danger" aria-label="Postu sil">Sil</button>
                 </form>
+            {% else %}
+                <form action="{{ url_for('reports.create_report') }}" method="post" class="inline"
+                      onsubmit="return confirm('Bu postu şikayet etmek istiyor musun?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="target_type" value="post">
+                    <input type="hidden" name="target_id" value="{{ p.id }}">
+                    <button type="submit" class="btn btn-ghost" aria-label="Postu şikayet et">🚩</button>
+                </form>
             {% endif %}
         </footer>
         </article>
