@@ -59,6 +59,13 @@
         <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ p.id }}" aria-haspopup="dialog">
             📤 Gönder
         </button>
+        <button type="button"
+                class="btn btn-ghost bookmark-btn {{ 'bookmarked' if p.bookmarked_by_me }}"
+                data-bookmarked="{{ '1' if p.bookmarked_by_me else '0' }}"
+                data-bookmark-url="{{ url_for('social.toggle_bookmark', post_id=p.id) }}"
+                aria-label="{{ 'Kaydedilenlerden kaldır' if p.bookmarked_by_me else 'Kaydet' }}">
+            {{ '🔖' if p.bookmarked_by_me else '📑' }}
+        </button>
         {% if allow_delete %}
             <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
                   onsubmit="return confirm('Bu postu silmek istiyor musun?')">
@@ -121,6 +128,10 @@
                 aria-controls="panel-media" class="tab-btn" tabindex="-1">Medya</button>
         <button type="button" role="tab" id="tab-liked" aria-selected="false"
                 aria-controls="panel-liked" class="tab-btn" tabindex="-1">Beğenilenler</button>
+        {% if is_self %}
+        <button type="button" role="tab" id="tab-bookmarks" aria-selected="false"
+                aria-controls="panel-bookmarks" class="tab-btn" tabindex="-1">Kaydedilenler</button>
+        {% endif %}
     </div>
 
     <section id="panel-posts" role="tabpanel" aria-labelledby="tab-posts" class="tabpanel">
@@ -162,9 +173,22 @@
             <p class="muted">Henüz beğenilen post yok.</p>
         {% endfor %}
     </section>
+
+    {% if is_self %}
+    <section id="panel-bookmarks" role="tabpanel" aria-labelledby="tab-bookmarks" class="tabpanel" hidden>
+        <h2 class="sr-only">Kaydedilenler</h2>
+        {% for p in bookmarked_posts %}
+            {{ post_card(p, p.profiles.username if p.profiles else 'Bilinmeyen',
+                         p.profiles.avatar_url if p.profiles else none, false) }}
+        {% else %}
+            <p class="muted">Henüz kaydedilen post yok.</p>
+        {% endfor %}
+    </section>
+    {% endif %}
 </div>
 
 <script src="{{ url_for('static', filename='js/follow.js') }}"></script>
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
 <script src="{{ url_for('static', filename='js/profileTabs.js') }}"></script>
 {% endblock %}

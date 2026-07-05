@@ -27,24 +27,34 @@ PAGE_SIZE = 20
 
 
 def _attach_post_metrics(sb, posts: list, me: str) -> None:
-    """Postlara like_count / comment_count / liked_by_me / my_reaction ekler.
+    """Postlara like_count / comment_count / liked_by_me / my_reaction /
+    bookmarked_by_me ekler.
 
-    Sayılar embedded count ile tek sorguda gelir; liked_by_me + my_reaction için
-    tüm postlar üzerinden tek bir IN sorgusu yapılır (N+1 önlenir).
+    Sayılar embedded count ile tek sorguda gelir; kullanıcıya özel alanlar için
+    tüm postlar üzerinden tek birer IN sorgusu yapılır (N+1 önlenir).
     """
     post_ids = [p["id"] for p in posts]
     my_reactions: dict = {}
+    my_bookmarks: set = set()
     if post_ids:
         my_reactions = {
             l["post_id"]: l.get("reaction_type") or "like"
             for l in sb.table("likes").select("post_id, reaction_type")
             .eq("user_id", me).in_("post_id", post_ids).execute().data
         }
+        try:
+            my_bookmarks = {
+                b["post_id"] for b in sb.table("bookmarks").select("post_id")
+                .eq("user_id", me).in_("post_id", post_ids).execute().data
+            }
+        except Exception:
+            pass  # sql/migration_bookmarks.sql henüz uygulanmamışsa sessizce atla
     for p in posts:
         p["like_count"] = p["likes"][0]["count"] if p.get("likes") else 0
         p["comment_count"] = p["comments"][0]["count"] if p.get("comments") else 0
         p["liked_by_me"] = p["id"] in my_reactions
         p["my_reaction"] = my_reactions.get(p["id"])
+        p["bookmarked_by_me"] = p["id"] in my_bookmarks
 
 
 @bp.route("/")
@@ -198,6 +208,25 @@ def profile(username):
         order = {pid: i for i, pid in enumerate(liked_ids)}
         liked_posts.sort(key=lambda p: order.get(p["id"], 0))
 
+    # Kaydedilenler sekmesi: sadece kendi profilini görüntülerken (kişisel liste,
+    # bkz. sql/migration_bookmarks.sql RLS — başkasının kaydettikleri görünmez)
+    bookmarked_posts = []
+    if is_self:
+        try:
+            bm_rows = sb.table("bookmarks").select("post_id").eq(
+                "user_id", me
+            ).order("created_at", desc=True).execute().data
+            bm_ids = [b["post_id"] for b in bm_rows]
+            if bm_ids:
+                bookmarked_posts = sb.table("posts").select(
+                    "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+                ).in_("id", bm_ids).execute().data
+                _attach_post_metrics(sb, bookmarked_posts, me)
+                bm_order = {pid: i for i, pid in enumerate(bm_ids)}
+                bookmarked_posts.sort(key=lambda p: bm_order.get(p["id"], 0))
+        except Exception:
+            pass  # migration henüz uygulanmamışsa sekme boş görünür, sayfa kırılmaz
+
     # --- Profil istatistikleri (count='exact' ile satır çekmeden say) ---
     followers_count = sb.table("follows").select(
         "follower_id", count="exact", head=True
@@ -217,6 +246,7 @@ def profile(username):
 
     return render_template("profile.html", profile=prof, posts=posts,
                            media_posts=media_posts, liked_posts=liked_posts,
+                           bookmarked_posts=bookmarked_posts,
                            is_self=is_self, is_following=is_following, me=session.get("user"),
                            stats={
                                "posts": len(posts),

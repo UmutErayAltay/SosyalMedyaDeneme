@@ -53,6 +53,13 @@
             <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ p.id }}" aria-haspopup="dialog">
                 📤 Gönder
             </button>
+            <button type="button"
+                    class="btn btn-ghost bookmark-btn {{ 'bookmarked' if p.bookmarked_by_me }}"
+                    data-bookmarked="{{ '1' if p.bookmarked_by_me else '0' }}"
+                    data-bookmark-url="{{ url_for('social.toggle_bookmark', post_id=p.id) }}"
+                    aria-label="{{ 'Kaydedilenlerden kaldır' if p.bookmarked_by_me else 'Kaydet' }}">
+                {{ '🔖' if p.bookmarked_by_me else '📑' }}
+            </button>
             {% if me and p.user_id == me.id %}
                 <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
                     onsubmit="return confirm('Bu postu silmek istiyor musun?')">
@@ -105,4 +112,5 @@
 
 <script src="{{ url_for('static', filename='js/postModal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
 {% endblock %}

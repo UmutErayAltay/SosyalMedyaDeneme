@@ -61,6 +61,13 @@
     <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ post.id }}" aria-haspopup="dialog">
         📤 Gönder
     </button>
+    <button type="button"
+            class="btn btn-ghost bookmark-btn {{ 'bookmarked' if post.bookmarked_by_me }}"
+            data-bookmarked="{{ '1' if post.bookmarked_by_me else '0' }}"
+            data-bookmark-url="{{ url_for('social.toggle_bookmark', post_id=post.id) }}"
+            aria-label="{{ 'Kaydedilenlerden kaldır' if post.bookmarked_by_me else 'Kaydet' }}">
+        {{ '🔖' if post.bookmarked_by_me else '📑' }}
+    </button>
 </footer>
 </article>
 
@@ -162,5 +169,6 @@
     window.ME = {{ me|tojson if me else 'null' }};
 </script>
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
 <script src="{{ url_for('static', filename='js/comments.js') }}"></script>
 {% endblock %}

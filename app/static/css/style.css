@@ -254,6 +254,7 @@ textarea:focus-visible, select:focus-visible {
 .btn-ghost:hover { background: var(--border); color: var(--text); }
 .btn-ghost.danger:hover { background: var(--danger-bg); color: var(--danger); }
 .btn-ghost.liked { background: var(--border); }
+.btn-ghost.bookmarked { background: var(--border); }
 .reaction-icon { display: inline-block; }
 
 /* Emoji reaksiyon seçici popup (basılı tutunca açılır — likes.js) */

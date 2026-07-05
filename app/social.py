@@ -230,3 +230,37 @@ def toggle_follow(username):
         return jsonify(following=following, followers_count=followers_count)
 
     return redirect(url_for("routes.profile", username=username))
+
+
+# ----------------------- KAYDEDİLENLER (bookmarks) -----------------------
+# Beğeni/takip gibi herkese açık değil — sadece sahibi görebilir (kişisel
+# "sonra oku" listesi), bkz. sql/migration_bookmarks.sql RLS politikaları.
+
+@bp.route("/bookmark/<post_id>", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def toggle_bookmark(post_id):
+    sb = get_sb()
+    me = session["user"]["id"]
+
+    try:
+        existing = sb.table("bookmarks").select("post_id").eq(
+            "post_id", post_id
+        ).eq("user_id", me).execute()
+        if existing.data:
+            sb.table("bookmarks").delete().eq("post_id", post_id).eq("user_id", me).execute()
+            bookmarked = False
+        else:
+            sb.table("bookmarks").insert({"post_id": post_id, "user_id": me}).execute()
+            bookmarked = True
+    except Exception:
+        # sql/migration_bookmarks.sql henüz uygulanmamış — sayfayı kırmak yerine
+        # nazikçe "değişmedi" dön
+        if request.headers.get("X-Requested-With") == "fetch":
+            return jsonify(bookmarked=False, error="Kaydetme özelliği henüz aktif değil."), 503
+        flash("Kaydetme özelliği henüz aktif değil.", "error")
+        return redirect(request.referrer or url_for("routes.feed"))
+
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify(bookmarked=bookmarked)
+    return redirect(request.referrer or url_for("routes.feed"))
