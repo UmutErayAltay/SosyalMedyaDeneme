@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Şikayetler — Admin{% endblock %}
+{% block content %}
+<h1>🛠️ Admin Paneli</h1>
+
+<nav class="admin-nav">
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-ghost">Genel Bakış</a>
+    <a href="{{ url_for('admin.reports_list') }}" class="btn btn-ghost">Şikayetler</a>
+    <a href="{{ url_for('admin.users_list') }}" class="btn btn-ghost">Kullanıcılar</a>
+</nav>
+
+<div class="admin-filter-tabs">
+    {% for s, label in [('pending', 'Bekleyen'), ('reviewed', 'İncelendi'), ('dismissed', 'Reddedildi'), ('all', 'Tümü')] %}
+        <a href="{{ url_for('admin.reports_list', status=s) }}"
+           class="btn btn-ghost{{ ' active' if status == s }}">{{ label }}</a>
+    {% endfor %}
+</div>
+
+{% for r in reports %}
+<article class="card admin-report-card">
+    <header class="admin-report-header">
+        <span class="admin-report-type">{{ {'post': '📝 Post', 'comment': '💬 Yorum', 'user': '👤 Kullanıcı'}[r.target_type] }}</span>
+        <span class="muted">{{ r.created_at[:16]|replace('T',' ') }}</span>
+        <span class="admin-status-badge admin-status-{{ r.status }}">{{ r.status }}</span>
+    </header>
+
+    <p class="muted">
+        Raporlayan:
+        {% if r.reporter %}<a href="{{ url_for('routes.profile', username=r.reporter.username) }}">{{ r.reporter.username }}</a>{% else %}Bilinmeyen{% endif %}
+    </p>
+
+    {% if r.target_type == 'post' and r.target %}
+        <p class="post-content">"{{ (r.target.content or '(görsel/video)')[:150] }}"
+            — <a href="{{ url_for('routes.post_detail', post_id=r.target_id) }}">postu görüntüle</a>
+            {% if r.target.profiles %}(@{{ r.target.profiles.username }}){% endif %}
+        </p>
+    {% elif r.target_type == 'comment' and r.target %}
+        <p class="post-content">"{{ r.target.content[:150] }}"
+            — <a href="{{ url_for('routes.post_detail', post_id=r.target.post_id) }}">yorumun postuna git</a>
+            {% if r.target.profiles %}(@{{ r.target.profiles.username }}){% endif %}
+        </p>
+    {% elif r.target_type == 'user' and r.target %}
+        <p><a href="{{ url_for('routes.profile', username=r.target.username) }}">@{{ r.target.username }}</a></p>
+    {% else %}
+        <p class="muted">(Hedef içerik artık mevcut değil — muhtemelen silinmiş.)</p>
+    {% endif %}
+
+    {% if r.status == 'pending' %}
+    <footer class="post-actions">
+        <form action="{{ url_for('admin.resolve_report', report_id=r.id) }}" method="post" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="status" value="reviewed">
+            <input type="hidden" name="current_status" value="{{ status }}">
+            <button type="submit" class="btn btn-ghost">✓ İncelendi işaretle</button>
+        </form>
+        <form action="{{ url_for('admin.resolve_report', report_id=r.id) }}" method="post" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="status" value="dismissed">
+            <input type="hidden" name="current_status" value="{{ status }}">
+            <button type="submit" class="btn btn-ghost">✕ Reddet</button>
+        </form>
+        {% if r.target_type in ('post', 'comment') and r.target %}
+        <form action="{{ url_for('admin.delete_report_target', report_id=r.id) }}" method="post" class="inline"
+              onsubmit="return confirm('Bu içeriği kalıcı olarak silmek istiyor musun?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-ghost danger">🗑 İçeriği sil</button>
+        </form>
+        {% endif %}
+    </footer>
+    {% endif %}
+</article>
+{% else %}
+<p class="muted center">Bu filtrede şikayet yok.</p>
+{% endfor %}
+{% endblock %}

@@ -909,4 +909,22 @@ header[role="banner"] {
     width: 100%; aspect-ratio: 1; object-fit: cover;
     display: block; background: var(--bg);
 }
+
+/* Admin paneli */
+.admin-nav { display: flex; gap: 8px; margin: 16px 0; flex-wrap: wrap; }
+.admin-filter-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.admin-filter-tabs .btn.active { background: var(--border); }
+.admin-report-card { display: flex; flex-direction: column; gap: 6px; }
+.admin-report-header { display: flex; align-items: center; gap: 10px; }
+.admin-report-type { font-weight: 600; }
+.admin-status-badge {
+    font-size: 12px; padding: 2px 8px; border-radius: 999px;
+    background: var(--border); text-transform: uppercase; font-weight: 600;
+}
+.admin-status-reviewed { background: var(--danger-bg); color: var(--danger); }
+.admin-status-dismissed { color: var(--muted); }
+.admin-badge-admin { background: var(--primary); color: var(--bg); }
+.admin-badge-banned { background: var(--danger-bg); color: var(--danger); }
+.admin-user-row { justify-content: space-between; }
+.admin-user-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .post-images-1 .post-image-tile { aspect-ratio: 16/9; max-height: 500px; }

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Admin Paneli{% endblock %}
+{% block content %}
+<h1>🛠️ Admin Paneli</h1>
+
+<nav class="admin-nav">
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-ghost">Genel Bakış</a>
+    <a href="{{ url_for('admin.reports_list') }}" class="btn btn-ghost">Şikayetler{% if stats.pending_reports %} ({{ stats.pending_reports }}){% endif %}</a>
+    <a href="{{ url_for('admin.users_list') }}" class="btn btn-ghost">Kullanıcılar</a>
+</nav>
+
+<section class="card insights-summary">
+    <div><strong>{{ stats.users }}</strong><span class="muted">Kullanıcı</span></div>
+    <div><strong>{{ stats.posts }}</strong><span class="muted">Post</span></div>
+    <div><strong>{{ stats.comments }}</strong><span class="muted">Yorum</span></div>
+    <div><strong>{{ stats.pending_reports }}</strong><span class="muted">Bekleyen Şikayet</span></div>
+    <div><strong>{{ stats.banned_users }}</strong><span class="muted">Yasaklı Kullanıcı</span></div>
+</section>
+{% endblock %}

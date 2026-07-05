@@ -30,26 +30,42 @@ def _reset_rate_limited(ip: str) -> bool:
     return len(attempts) > _RESET_MAX_ATTEMPTS
 
 
-def _save_session(res) -> bool:
-    """sign_in cevabindan session bilgisini sakla (avatar_url dahil)."""
+def _save_session(res):
+    """sign_in cevabindan session bilgisini sakla (avatar_url, is_admin dahil).
+
+    Döndürülen değer: True (başarılı), False (session alınamadı) veya
+    "banned" (kimlik bilgileri doğru ama hesap askıya alınmış — bu durumda
+    session HİÇ kurulmaz, Supabase oturumu da hemen kapatılır).
+    """
     user = getattr(res, "user", None)
     s = getattr(res, "session", None)
     if user and s and getattr(s, "access_token", None):
+        # Profile'dan avatar_url/username/is_admin/is_banned'i session'dan
+        # ÖNCE çek — yasaklı bir hesap için session'ı hiç kurmayacağız.
+        try:
+            prof = get_sb().table("profiles").select(
+                "avatar_url, username, is_admin, is_banned"
+            ).eq("id", user.id).execute()
+            prof_data = prof.data[0] if prof.data else {}
+        except Exception:
+            prof_data = {}
+
+        if prof_data.get("is_banned"):
+            try:
+                get_auth().auth.sign_out()
+            except Exception:
+                pass
+            return "banned"
+
         session["user"] = {"id": user.id, "email": user.email}
         session["access_token"] = s.access_token
         session["refresh_token"] = getattr(s, "refresh_token", None)
         session.permanent = True
-
-        # Profile'dan avatar_url + username'i de session'a al (navbar için)
-        try:
-            prof = get_sb().table("profiles").select("avatar_url, username").eq(
-                "id", user.id
-            ).execute()
-            if prof.data:
-                session["user"]["avatar_url"] = prof.data[0].get("avatar_url")
-                session["user"]["username"] = prof.data[0].get("username")
-        except Exception:
-            pass
+        session["user"]["avatar_url"] = prof_data.get("avatar_url")
+        session["user"]["username"] = prof_data.get("username")
+        # is_admin SADECE navbar linkini göstermek için cache'lenir — gerçek
+        # yetki kontrolü (admin_required) her istekte DB'den taze okur.
+        session["user"]["is_admin"] = bool(prof_data.get("is_admin"))
 
         return True
     return False
@@ -125,7 +141,11 @@ def login():
                     "password": password,
                 })
             )
-            if not _save_session(res):
+            result = _save_session(res)
+            if result == "banned":
+                flash("Hesabın askıya alınmış. Bir yöneticiyle iletişime geç.", "error")
+                return redirect(url_for("auth.login"))
+            if not result:
                 flash("E-posta veya şifre hatalı.", "error")
                 return redirect(url_for("auth.login"))
             return redirect(url_for("routes.feed"))
