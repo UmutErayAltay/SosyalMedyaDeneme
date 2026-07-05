@@ -1,5 +1,5 @@
 """Ana rotalar: feed, post paylaşma, profil, post detayı."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
@@ -561,6 +561,67 @@ def profile_edit():
     if not prof.data:
         abort(404)
     return render_template("profile_edit.html", profile=prof.data[0], me=session["user"])
+
+
+def _daily_counts(rows: list, days: int) -> list[dict]:
+    """`rows` (her biri 'created_at' ISO string alanı olan) listesini son
+    `days` gün için günlük sayıma çevirir (en eski→en yeni, boş günler 0)."""
+    counts: dict = {}
+    for r in rows:
+        day = r["created_at"][:10]
+        counts[day] = counts.get(day, 0) + 1
+    today = datetime.now(timezone.utc).date()
+    return [
+        {"date": (today - timedelta(days=i)).isoformat(),
+         "count": counts.get((today - timedelta(days=i)).isoformat(), 0)}
+        for i in range(days - 1, -1, -1)
+    ]
+
+
+@bp.route("/insights")
+@login_required
+@retry_on_connection_error
+def insights():
+    """Kendi postlarının beğeni/yorum trendini gösteren basit bir sayfa —
+    yeni bir tablo gerekmez, mevcut likes/comments/posts üzerinden hesaplanır."""
+    sb = get_sb()
+    me = _my_id()
+
+    posts = sb.table("posts").select(
+        "id, content, created_at, likes(count), comments(count)"
+    ).eq("user_id", me).order("created_at", desc=True).execute().data
+    for p in posts:
+        p["like_count"] = p["likes"][0]["count"] if p.get("likes") else 0
+        p["comment_count"] = p["comments"][0]["count"] if p.get("comments") else 0
+        p["engagement"] = p["like_count"] + p["comment_count"]
+
+    total_posts = len(posts)
+    total_likes = sum(p["like_count"] for p in posts)
+    total_comments = sum(p["comment_count"] for p in posts)
+
+    post_ids = [p["id"] for p in posts]
+    days = 14
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days - 1)).isoformat()
+    likes_recent, comments_recent = [], []
+    if post_ids:
+        likes_recent = sb.table("likes").select("created_at").in_(
+            "post_id", post_ids
+        ).gte("created_at", cutoff).execute().data
+        comments_recent = sb.table("comments").select("created_at").in_(
+            "post_id", post_ids
+        ).gte("created_at", cutoff).execute().data
+
+    likes_by_day = _daily_counts(likes_recent, days)
+    comments_by_day = _daily_counts(comments_recent, days)
+    max_daily = max([d["count"] for d in likes_by_day + comments_by_day] + [1])
+
+    top_posts = sorted(posts, key=lambda p: p["engagement"], reverse=True)[:5]
+
+    return render_template("insights.html", me=session.get("user"),
+                           total_posts=total_posts, total_likes=total_likes,
+                           total_comments=total_comments, likes_by_day=likes_by_day,
+                           comments_by_day=comments_by_day, max_daily=max_daily,
+                           top_posts=top_posts)
 
 
 @bp.route("/search")

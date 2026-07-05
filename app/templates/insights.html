@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}İstatistikler{% endblock %}
+{% block content %}
+<h1>📊 İstatistiklerim</h1>
+
+<section class="card insights-summary">
+    <div><strong>{{ total_posts }}</strong><span class="muted">Post</span></div>
+    <div><strong>{{ total_likes }}</strong><span class="muted">Toplam Beğeni</span></div>
+    <div><strong>{{ total_comments }}</strong><span class="muted">Toplam Yorum</span></div>
+</section>
+
+<section class="card">
+    <h2>Son 14 gün — Beğeniler</h2>
+    <div class="insights-chart" role="img" aria-label="Son 14 günün günlük beğeni sayıları">
+        {% for d in likes_by_day %}
+        <div class="insights-bar-wrap" title="{{ d.date }}: {{ d.count }} beğeni">
+            <div class="insights-bar" style="height: {{ (d.count / max_daily * 100)|round|int }}%"></div>
+            <span class="insights-bar-label">{{ d.date[8:10] }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="card">
+    <h2>Son 14 gün — Yorumlar</h2>
+    <div class="insights-chart" role="img" aria-label="Son 14 günün günlük yorum sayıları">
+        {% for d in comments_by_day %}
+        <div class="insights-bar-wrap" title="{{ d.date }}: {{ d.count }} yorum">
+            <div class="insights-bar insights-bar-comments" style="height: {{ (d.count / max_daily * 100)|round|int }}%"></div>
+            <span class="insights-bar-label">{{ d.date[8:10] }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="card">
+    <h2>En çok etkileşim alan postların</h2>
+    {% for p in top_posts %}
+    <a href="{{ url_for('routes.post_detail', post_id=p.id) }}" class="insights-top-post">
+        <p class="post-content">{{ (p.content or 'Görsel/video gönderisi')[:80] }}</p>
+        <span class="muted">👍 {{ p.like_count }} · 💬 {{ p.comment_count }}</span>
+    </a>
+    {% else %}
+    <p class="muted">Henüz post yok.</p>
+    {% endfor %}
+</section>
+{% endblock %}

@@ -44,6 +44,7 @@
         <div class="profile-actions">
             {% if is_self %}
                 <a href="{{ url_for('routes.profile_edit') }}" class="btn btn-ghost">Profili düzenle</a>
+                <a href="{{ url_for('routes.insights') }}" class="btn btn-ghost">📊 İstatistikler</a>
             {% elif is_blocked_by_me %}
                 <form action="{{ url_for('blocks.toggle_block', username=profile.username) }}"
                       method="post" class="inline">
