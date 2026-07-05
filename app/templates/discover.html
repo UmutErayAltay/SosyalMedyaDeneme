@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% import "_post_card.html" as pc with context %}
+{% block title %}Keşfet{% endblock %}
+{% block description %}Takip etmediğin kişilerden popüler postlar{% endblock %}
+{% block content %}
+<h1>🧭 Keşfet</h1>
+<p class="muted">Son 7 günde, takip etmediğin kişilerin en popüler herkese açık postları.</p>
+
+<section class="post-list">
+    {% for p in posts %}
+        {{ pc.post_card(p, p.profiles.username if p.profiles else 'Bilinmeyen',
+                     p.profiles.avatar_url if p.profiles else none, false) }}
+    {% else %}
+        <p class="muted center">Şu an gösterilecek bir şey yok — belki herkesi zaten takip ediyorsun!</p>
+    {% endfor %}
+</section>
+
+<script src="{{ url_for('static', filename='js/likes.js') }}"></script>
+<script src="{{ url_for('static', filename='js/polls.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
+{% endblock %}

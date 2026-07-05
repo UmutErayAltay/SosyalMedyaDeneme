@@ -720,3 +720,42 @@ def search():
 
     return render_template("search.html", q=q, users=users, posts=posts, me=session.get("user"),
                            valid_usernames=get_valid_usernames(sb))
+
+
+@bp.route("/kesfet")
+@login_required
+@retry_on_connection_error
+def discover():
+    """Algoritmik keşfet: takip ETMEDİĞİN kişilerin son 7 gündeki HERKESE AÇIK
+    postlarından beğeni+yorum toplamına göre en popüler ~20'si. Gündem
+    (trending hashtag) sayfasının post versiyonu — burada da engelleme
+    ilişkileri viewer'a özel süzülür ama gündem/keşfet listesi kişiselleştirme
+    açısından basit tutuldu (takip grafiği dışında bir öneri algoritması yok)."""
+    sb = get_sb()
+    me = _my_id()
+
+    exclude_ids = followed_and_self_ids(sb, me)  # ben + zaten takip ettiklerim — hariç tutulur
+    blocked_ids = blocked_user_ids(sb, me)
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url), "
+                   "likes(count), comments(count)")
+    try:
+        posts = sb.table("posts").select(select_cols).gte(
+            "created_at", cutoff
+        ).eq("visibility", "public").eq("is_draft", False).execute().data
+    except Exception:
+        posts = sb.table("posts").select(select_cols).gte("created_at", cutoff).execute().data
+
+    posts = [p for p in posts if p["user_id"] not in exclude_ids]
+    posts = filter_not_blocked(posts, blocked_ids)
+    _attach_post_metrics(sb, posts, me)
+    attach_polls(sb, posts, me)
+
+    for p in posts:
+        p["_score"] = (p.get("like_count") or 0) + (p.get("comment_count") or 0)
+    posts.sort(key=lambda p: p["_score"], reverse=True)
+    posts = posts[:20]
+
+    return render_template("discover.html", posts=posts, me=session.get("user"),
+                           valid_usernames=get_valid_usernames(sb))

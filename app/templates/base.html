@@ -68,6 +68,7 @@
         <div class="nav-links" id="nav-links">
             <a href="{{ url_for('routes.feed') }}" aria-label="Akış">Akış</a>
             <a href="{{ url_for('hashtags.trending') }}" aria-label="Gündem">🔥 Gündem</a>
+            <a href="{{ url_for('routes.discover') }}" aria-label="Keşfet">🧭 Keşfet</a>
             <a href="{{ url_for('messaging.inbox') }}" aria-label="Mesajlar">Mesajlar</a>
             <a href="{{ url_for('notifications.list_notifications') }}" class="nav-bell" id="notif-bell"
                aria-label="Bildirimler{% if unread_notifications %}, {{ unread_notifications }} okunmamış{% endif %}"
