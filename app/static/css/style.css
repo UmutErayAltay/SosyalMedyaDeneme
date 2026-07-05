@@ -33,6 +33,7 @@
     --success-text: #2e7d32;
     --radius: 12px;
     --max-width: 640px;
+    --navbar-height: 73px; /* .navbar'ın gerçek render yüksekliği — sticky alt öğelerin top offseti bunu hesaba katmalı */
     --focus-ring: 0 0 0 3px rgba(45, 45, 45, 0.3);
     --primary-rgb: 45, 45, 45; /* --primary'nin (#2d2d2d) rgb() eşdeğeri, opacity karışımları için */
 }
@@ -328,6 +329,7 @@ label input { margin-top: 6px; }
 
 /* Anket (poll) */
 .poll-options-container { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
+.poll-options-container[hidden] { display: none; }
 .poll-options-actions { display: flex; gap: 8px; }
 .poll-widget { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .poll-option {
@@ -412,6 +414,7 @@ label input { margin-top: 6px; }
 .comment-actions { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .comment-like-btn.liked { color: var(--danger); }
 .reply-form { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.reply-form[hidden] { display: none; }
 .reply-form textarea { min-height: 60px; }
 .replies {
     margin-top: 12px; padding-left: 16px;
@@ -427,7 +430,10 @@ main.feed-page {
     display: grid; grid-template-columns: 1fr 280px; gap: 24px;
     align-items: start;
 }
-.feed-sidebar { position: sticky; top: 24px; }
+/* top: sadece 24px olsaydı navbar (73px) geri kayınca (yukarı scroll) kenar
+   çubuğunun üst kısmının üzerine biner (navbar z-index:10 ile daha üstte) —
+   navbar yüksekliği + boşluk olarak hesaplanmalı. */
+.feed-sidebar { position: sticky; top: calc(var(--navbar-height) + 16px); }
 .trending-sidebar-card h2 { font-size: 16px; margin-bottom: 12px; }
 .trending-tag-row {
     display: flex; justify-content: space-between; align-items: center;
@@ -511,7 +517,25 @@ main.feed-page {
    kutuda, her zaman TEK BİRİ görünür (bkz. chat.js). Manuel resize YOK,
    sadece içerik uzunluğuna göre otomatik büyür (chat.js, 120px tavanla). */
 .composer-input-area { flex: 1; min-width: 0; }
-#msg-input { resize: none; }
+#msg-input { resize: none; border-radius: 20px; }
+
+/* Composer ikon butonları (görsel/mikrofon/sil/gönder) — hepsi AYNI 40px
+   yuvarlak boyutta, tutarlı bir sıra oluşturur (öncesinde sadece Gönder
+   .btn ile stilliydi, diğerleri tarayıcı varsayılanıydı — asimetrik
+   görünüyordu). */
+.msg-icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; flex-shrink: 0;
+    border: none; border-radius: 50%; cursor: pointer;
+    background: var(--border); color: var(--text); font-size: 18px;
+    transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+.msg-icon-btn[hidden] { display: none; }
+.msg-icon-btn:hover { background: var(--muted); color: var(--card); }
+.msg-icon-btn:active { transform: scale(0.94); }
+.msg-send-btn { background: var(--primary); color: var(--bg); font-size: 16px; }
+.msg-send-btn:hover { background: var(--primary-hover); }
+.msg-discard-btn:hover { background: var(--danger-bg); color: var(--danger); }
 
 #voice-record-btn.recording { color: var(--danger); animation: pulse-rec 1.2s infinite; }
 @keyframes pulse-rec { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
@@ -697,8 +721,51 @@ main.feed-page {
 }
 
 /* =========================   POST PAYLAŞMA MODALI   ========================= */
-.composer-trigger { margin-bottom: 16px; }
 .btn-full { width: 100%; }
+
+/* Sağ-alt köşede yüzen "post paylaş" butonu (FAB) — akışın en üstündeki tam
+   genişlikte çubuğun yerini aldı. z-index navbar'ın (10) üzerinde ama
+   modal/lightbox'ın (100+) altında kalmalı. */
+.fab-post-btn {
+    position: fixed; bottom: 24px; right: 24px; z-index: 50;
+    width: 56px; height: 56px; border-radius: 50%; border: none;
+    background: var(--primary); color: var(--bg); font-size: 22px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.fab-post-btn:hover { transform: scale(1.08); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); }
+.fab-post-btn:active { transform: scale(0.96); }
+
+/* Ekle menüsü ("⋯") — görsel/video/anket seçenekleri artık her zaman görünen
+   3 ayrı buton yerine tek bir açılır menüde (postModal.js yönetir). */
+.composer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.attach-menu-wrap { position: relative; }
+.attach-menu-btn {
+    width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); font-size: 20px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+}
+.attach-menu-btn:hover, .attach-menu-btn[aria-expanded="true"] { background: var(--border); }
+.attach-menu {
+    position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 20;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    display: flex; flex-direction: column; min-width: 180px; padding: 6px;
+}
+.attach-menu[hidden] { display: none; }
+.attach-menu-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: 8px; cursor: pointer;
+    background: none; border: none; font-size: 14px; color: var(--text);
+    text-align: left; width: 100%;
+}
+.attach-menu-item:hover { background: var(--border); }
+/* .post-visibility-select bu toolbar İÇİNDE auto genişlikte (attach menü
+   butonunun yanında); post_edit.html'de AYNI class tam genişlikte kalmaya
+   devam ediyor (orada .composer-toolbar yok) — kasıtlı bağlam-özel override. */
+.composer-toolbar .post-visibility-select { width: auto; flex-shrink: 0; }
 .modal-overlay {    
     position: fixed; inset: 0;    
     background: rgba(0, 0, 0, 0.5);    

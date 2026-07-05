@@ -14,9 +14,17 @@
     var pollContainer = document.getElementById('poll-options-container');
     var pollAddOptionBtn = document.getElementById('poll-add-option-btn');
     var pollCancelBtn = document.getElementById('poll-cancel-btn');
+    var attachMenuBtn = document.getElementById('attach-menu-btn');
+    var attachMenu = document.getElementById('attach-menu');
     if (!modal || !openBtn) return;
 
     var lastFocused = null;
+
+    function closeAttachMenu() {
+        if (!attachMenu || attachMenu.hidden) return;
+        attachMenu.hidden = true;
+        if (attachMenuBtn) attachMenuBtn.setAttribute('aria-expanded', 'false');
+    }
 
     function open() {
         lastFocused = document.activeElement;
@@ -34,6 +42,37 @@
         document.body.style.overflow = '';
         if (lastFocused) lastFocused.focus();
         if (pollContainer && !pollContainer.hidden) resetPollUI();
+        closeAttachMenu();
+    }
+
+    // --- "Ekle" (⋯) menüsü: görsel/video/anket seçenekleri artık her zaman
+    // görünen 3 ayrı buton yerine tek bir açılır menüde toplanıyor. ---
+    if (attachMenuBtn && attachMenu) {
+        attachMenuBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (attachMenu.hidden) {
+                attachMenu.hidden = false;
+                attachMenuBtn.setAttribute('aria-expanded', 'true');
+            } else {
+                closeAttachMenu();
+            }
+        });
+
+        // Dışarıya tıklayınca kapat
+        document.addEventListener('click', function (e) {
+            if (!attachMenu.hidden && !attachMenu.contains(e.target) && e.target !== attachMenuBtn) {
+                closeAttachMenu();
+            }
+        });
+
+        // Bir seçeneğe tıklayınca (görsel/video seç, anket ekle) menü kapanır
+        attachMenu.addEventListener('click', function (e) {
+            if (e.target.closest('.attach-menu-item')) closeAttachMenu();
+        });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !attachMenu.hidden) closeAttachMenu();
+        });
     }
 
     openBtn.addEventListener('click', open);

@@ -55,11 +55,11 @@
 
     <form id="msg-form" class="composer-msg" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label class="msg-image-btn" aria-label="Görsel gönder" id="msg-image-label">
+        <label class="msg-icon-btn" aria-label="Görsel gönder" id="msg-image-label">
             📷
             <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" id="msg-image-input" hidden>
         </label>
-        <button type="button" id="voice-record-btn" class="msg-image-btn" aria-label="Sesli mesaj kaydet" hidden>🎤</button>
+        <button type="button" id="voice-record-btn" class="msg-icon-btn" aria-label="Sesli mesaj kaydet" hidden>🎤</button>
 
         {# Aynı kutu: normalde textarea, kayıt sırasında canlı süre, kayıt
            bitince ses önizlemesi gösterir — sesli mesaj bu yüzden AYRI bir
@@ -71,8 +71,8 @@
             <audio id="voice-preview-audio" class="voice-preview-audio" hidden controls></audio>
         </div>
 
-        <button type="button" id="voice-discard-btn" class="btn btn-ghost" aria-label="Ses kaydını sil" hidden>🗑</button>
-        <button type="submit" class="btn btn-primary" aria-label="Mesajı gönder">Gönder</button>
+        <button type="button" id="voice-discard-btn" class="msg-icon-btn msg-discard-btn" aria-label="Ses kaydını sil" hidden>🗑</button>
+        <button type="submit" class="msg-icon-btn msg-send-btn" aria-label="Mesajı gönder">➤</button>
     </form>
     <span id="msg-image-name" class="muted" aria-live="polite"></span>
     <p class="muted drop-hint sr-only" id="drop-hint" aria-live="polite"></p>
