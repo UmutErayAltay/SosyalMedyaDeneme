@@ -30,6 +30,9 @@
             }
             html += '</div>';
         }
+        if (msg.audio_url) {
+            html += '<audio src="' + escapeHtml(msg.audio_url) + '" class="msg-audio" controls></audio>';
+        }
         if (msg.content) {
             html += '<p>' + escapeHtml(msg.content) + '</p>';
         }
@@ -247,6 +250,121 @@
             stream.insertAdjacentHTML('beforeend', buildMessageHtml(msg, isMine, opts));
             scrollToBottom();
             return stream.lastElementChild;
+        }
+
+        // --- Sesli mesaj kaydı (MediaRecorder API) — SADECE tarayıcı destekliyorsa
+        // gösterilir (progressive enhancement, ör. Safari'de kısıtlı destek olabilir) ---
+        var voiceBtn = document.getElementById('voice-record-btn');
+        var voiceBar = document.getElementById('voice-recorder-bar');
+        var voiceStatus = document.getElementById('voice-recorder-status');
+        var voicePreviewAudio = document.getElementById('voice-preview-audio');
+        var voiceSendBtn = document.getElementById('voice-send-btn');
+        var voiceDiscardBtn = document.getElementById('voice-discard-btn');
+
+        if (voiceBtn && voiceBar && window.MediaRecorder && navigator.mediaDevices
+                && navigator.mediaDevices.getUserMedia) {
+            voiceBtn.hidden = false;
+
+            var mediaRecorder = null;
+            var recordedChunks = [];
+            var recordedBlob = null;
+            var mediaStream = null;
+            var recordingStartedAt = 0;
+            var recordingTimer = null;
+
+            function formatElapsed(ms) {
+                var totalSec = Math.floor(ms / 1000);
+                var m = Math.floor(totalSec / 60);
+                var s = totalSec % 60;
+                return m + ':' + (s < 10 ? '0' : '') + s;
+            }
+
+            function resetVoiceUI() {
+                voiceBar.hidden = true;
+                voiceStatus.textContent = '';
+                voicePreviewAudio.hidden = true;
+                voicePreviewAudio.removeAttribute('src');
+                voiceSendBtn.hidden = true;
+                voiceDiscardBtn.hidden = true;
+                voiceBtn.hidden = false;
+                voiceBtn.textContent = '🎤';
+                voiceBtn.classList.remove('recording');
+                recordedBlob = null;
+                recordedChunks = [];
+                if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
+            }
+
+            async function startRecording() {
+                try {
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                } catch (err) {
+                    alert('Mikrofon izni verilmedi.');
+                    return;
+                }
+                recordedChunks = [];
+                mediaRecorder = new MediaRecorder(mediaStream);
+                mediaRecorder.ondataavailable = function (e) {
+                    if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+                };
+                mediaRecorder.onstop = function () {
+                    recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+                    mediaStream.getTracks().forEach(function (t) { t.stop(); });
+                    voicePreviewAudio.src = URL.createObjectURL(recordedBlob);
+                    voicePreviewAudio.hidden = false;
+                    voiceSendBtn.hidden = false;
+                    voiceDiscardBtn.hidden = false;
+                    voiceStatus.textContent = 'Kayıt tamamlandı, gönderebilirsin.';
+                    voiceBtn.hidden = true;
+                    if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
+                };
+                mediaRecorder.start();
+                recordingStartedAt = Date.now();
+                voiceBar.hidden = false;
+                voiceBtn.textContent = '⏹';
+                voiceBtn.classList.add('recording');
+                voiceStatus.textContent = 'Kaydediliyor... 0:00';
+                recordingTimer = setInterval(function () {
+                    voiceStatus.textContent = 'Kaydediliyor... ' + formatElapsed(Date.now() - recordingStartedAt);
+                }, 500);
+            }
+
+            voiceBtn.addEventListener('click', function () {
+                if (mediaRecorder && mediaRecorder.state === 'recording') {
+                    mediaRecorder.stop();
+                } else {
+                    startRecording();
+                }
+            });
+
+            voiceDiscardBtn.addEventListener('click', resetVoiceUI);
+
+            voiceSendBtn.addEventListener('click', async function () {
+                if (!recordedBlob) return;
+                voiceSendBtn.disabled = true;
+                voiceSendBtn.textContent = 'Gönderiliyor...';
+                try {
+                    var formData = new FormData();
+                    formData.append('audio', recordedBlob, 'voice-message.webm');
+                    var csrfInput = form.querySelector('input[name="csrf_token"]');
+                    formData.append('csrf_token', csrfInput ? csrfInput.value : '');
+
+                    var res = await fetch(sendUrl, {
+                        method: 'POST',
+                        headers: { 'Accept': 'application/json' },
+                        body: formData,
+                    });
+                    if (!res.ok) throw new Error('İstek başarısız: ' + res.status);
+                    var saved = await res.json();
+                    appendMessage(saved, true);
+                } catch (err) {
+                    console.error('Sesli mesaj gönderilemedi:', err);
+                    alert('Sesli mesaj gönderilemedi.');
+                } finally {
+                    voiceSendBtn.disabled = false;
+                    voiceSendBtn.textContent = 'Gönder';
+                    resetVoiceUI();
+                }
+            });
         }
 
         // --- Form submit: AJAX + optimistic UI (görsel dahil) ---

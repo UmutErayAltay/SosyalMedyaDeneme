@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash, jsonify
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
-from .storage_helper import upload_image
+from .storage_helper import upload_image, upload_audio
 from .notifications import notify
 from .blocks import is_blocked_either_way, blocked_user_ids
 
@@ -222,6 +222,8 @@ def send_message(conversation_id):
     content = request.form.get("content", "").strip()
     image_file = request.files.get("image")
     has_image = image_file and image_file.filename
+    audio_file = request.files.get("audio")
+    has_audio = audio_file and audio_file.filename
     wants_json = "application/json" in request.headers.get("Accept", "")
 
     # Engelleme: konuşma bir engellemeden ÖNCE başlamış olabilir — her mesaj
@@ -235,7 +237,7 @@ def send_message(conversation_id):
         flash("Bu kullanıcıyla mesajlaşamazsın.", "error")
         return redirect(url_for("messaging.conversation", conversation_id=conversation_id))
 
-    if not content and not has_image:
+    if not content and not has_image and not has_audio:
         if wants_json:
             return jsonify({"error": "empty"}), 400
         return redirect(url_for("messaging.conversation", conversation_id=conversation_id))
@@ -249,12 +251,30 @@ def send_message(conversation_id):
             flash("Görsel yüklenemedi (geçersiz format veya 5MB'tan büyük).", "error")
             return redirect(url_for("messaging.conversation", conversation_id=conversation_id))
 
-    inserted = sb.table("messages").insert({
+    audio_url = None
+    if has_audio:
+        audio_url = upload_audio(audio_file, folder="messages")
+        if not audio_url:
+            if wants_json:
+                return jsonify({"error": "upload_failed"}), 400
+            flash("Sesli mesaj yüklenemedi (geçersiz format veya 10MB'tan büyük).", "error")
+            return redirect(url_for("messaging.conversation", conversation_id=conversation_id))
+
+    insert_data = {
         "conversation_id": conversation_id,
         "sender_id": me,
         "content": content,
         "image_url": image_url,
-    }).execute()
+    }
+    try:
+        # sql/migration_voice_messages.sql henüz uygulanmamışsa 'audio_url'
+        # kolonu yok — mesaj gönderimi bundan etkilenmesin diye kolonsuz dene
+        data = dict(insert_data)
+        if audio_url:
+            data["audio_url"] = audio_url
+        inserted = sb.table("messages").insert(data).execute()
+    except Exception:
+        inserted = sb.table("messages").insert(insert_data).execute()
     _notify_conversation(sb, conversation_id, me)
 
     if wants_json:

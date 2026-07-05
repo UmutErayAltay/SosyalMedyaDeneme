@@ -436,6 +436,15 @@ label input { margin-top: 6px; }
 .composer-msg { display: flex; gap: 8px; }
 .composer-msg input { flex: 1; }
 
+#voice-record-btn.recording { color: var(--danger); animation: pulse-rec 1.2s infinite; }
+@keyframes pulse-rec { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.voice-recorder-bar {
+    display: flex; align-items: center; gap: 8px; margin-top: 6px;
+    padding: 6px 8px; border-radius: 8px; background: var(--border);
+}
+.voice-recorder-bar audio { max-width: 220px; height: 32px; }
+.msg-audio { display: block; max-width: 240px; margin-bottom: 4px; }
+
 /* Sürükle-bırak görsel geri bildirimi (WCAG: tıklanabilir dosya seçici her zaman mevcut,
    sürükleme sadece ek bir kolaylık) */
 .messages-panel.drag-over {

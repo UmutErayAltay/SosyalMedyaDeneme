@@ -22,6 +22,17 @@ ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
 ALLOWED_VIDEO_MIMES = {"video/mp4", "video/webm", "video/quicktime"}
 MAX_VIDEO_SIZE = 25 * 1024 * 1024  # 25 MB
 
+# Sesli mesaj — tarayıcının MediaRecorder API'si genelde .webm (Opus codec)
+# üretir; küçük limit yeterli (kısa DM sesli mesajları, dakikalarca kayıt değil).
+ALLOWED_AUDIO_EXTENSIONS = {".webm", ".ogg", ".mp3", ".m4a", ".wav"}
+# "video/webm" da dahil: WebM konteyneri sadece ses içerse bile bazı
+# tarayıcılar/işletim sistemleri bu MIME'ı üretebiliyor (dosya hâlâ .webm
+# uzantılı ve gerçekte ses verisi).
+ALLOWED_AUDIO_MIMES = {
+    "audio/webm", "video/webm", "audio/ogg", "audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav",
+}
+MAX_AUDIO_SIZE = 10 * 1024 * 1024  # 10 MB
+
 
 def _get_extension(filename: str) -> str:
     """Dosya adından uzantıyı döndürür (örn 'photo.PNG' -> '.png')."""
@@ -117,6 +128,47 @@ def upload_video(file_storage, folder: str = "posts") -> str | None:
         )
     except Exception as e:
         current_app.logger.error(f"Video storage upload hatası: {e}")
+        return None
+
+    return get_sb().storage.from_(BUCKET_NAME).get_public_url(path)
+
+
+def upload_audio(file_storage, folder: str = "messages") -> str | None:
+    """Flask FileStorage nesnesini (sesli mesaj) Supabase Storage'a yükler.
+
+    upload_image/upload_video ile aynı akış, kendi izin listesi/limitiyle
+    (bkz. ALLOWED_AUDIO_*) — tarayıcı MediaRecorder API'sinden gelen kayıtlar
+    genelde .webm olur.
+    """
+    if not file_storage or not file_storage.filename:
+        return None
+
+    filename = file_storage.filename
+    ext = _get_extension(filename)
+    if ext not in ALLOWED_AUDIO_EXTENSIONS:
+        return None
+
+    mime = file_storage.mimetype or ""
+    if mime not in ALLOWED_AUDIO_MIMES:
+        return None
+
+    file_storage.stream.seek(0, 2)
+    size = file_storage.stream.tell()
+    file_storage.stream.seek(0)
+    if size > MAX_AUDIO_SIZE:
+        return None
+
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+    path = f"{folder}/{unique_name}"
+    file_bytes = file_storage.read()
+
+    from .supabase_client import get_sb
+    try:
+        get_sb().storage.from_(BUCKET_NAME).upload(
+            path, file_bytes, {"content-type": mime}
+        )
+    except Exception as e:
+        current_app.logger.error(f"Ses storage upload hatası: {e}")
         return None
 
     return get_sb().storage.from_(BUCKET_NAME).get_public_url(path)

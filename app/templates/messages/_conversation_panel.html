@@ -29,6 +29,9 @@
             {% if m.image_url %}
                 <img src="{{ m.image_url }}" class="msg-image" alt="Görsel mesaj" loading="lazy">
             {% endif %}
+            {% if m.audio_url %}
+                <audio src="{{ m.audio_url }}" class="msg-audio" controls></audio>
+            {% endif %}
             {% if m.content %}
                 <p>{{ m.content }}</p>
             {% endif %}
@@ -56,10 +59,19 @@
             📷
             <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" id="msg-image-input" hidden>
         </label>
+        <button type="button" id="voice-record-btn" class="msg-image-btn" aria-label="Sesli mesaj kaydet" hidden>🎤</button>
         <textarea name="content" id="msg-input" placeholder="Mesaj yaz..." rows="1"
                   aria-label="Mesaj içeriği"></textarea>
         <button type="submit" class="btn btn-primary" aria-label="Mesajı gönder">Gönder</button>
     </form>
     <span id="msg-image-name" class="muted" aria-live="polite"></span>
     <p class="muted drop-hint sr-only" id="drop-hint" aria-live="polite"></p>
+
+    {# Sesli mesaj kayıt/önizleme çubuğu — voiceRecorder.js tarafından yönetilir #}
+    <div id="voice-recorder-bar" class="voice-recorder-bar" hidden>
+        <span id="voice-recorder-status" class="muted" aria-live="polite"></span>
+        <audio id="voice-preview-audio" hidden controls></audio>
+        <button type="button" id="voice-send-btn" class="btn btn-primary small" hidden>Gönder</button>
+        <button type="button" id="voice-discard-btn" class="btn btn-ghost small" hidden>Sil</button>
+    </div>
 </div>
