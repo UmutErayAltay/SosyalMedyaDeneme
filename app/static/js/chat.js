@@ -253,43 +253,44 @@
         }
 
         // --- Sesli mesaj kaydı (MediaRecorder API) — SADECE tarayıcı destekliyorsa
-        // gösterilir (progressive enhancement, ör. Safari'de kısıtlı destek olabilir) ---
+        // gösterilir (progressive enhancement). Kayıt/önizleme AYRI bir çubukta
+        // değil, doğrudan mesaj yazma kutusunun yerinde görünür; gönderme TEK
+        // "Gönder" butonuyla olur (submit handler'ı aşağıda, recordedBlob'a bakar);
+        // "Sil" butonu SADECE bir kayıt hazırken Gönder'in yanında belirir.
         var voiceBtn = document.getElementById('voice-record-btn');
-        var voiceBar = document.getElementById('voice-recorder-bar');
-        var voiceStatus = document.getElementById('voice-recorder-status');
-        var voicePreviewAudio = document.getElementById('voice-preview-audio');
-        var voiceSendBtn = document.getElementById('voice-send-btn');
         var voiceDiscardBtn = document.getElementById('voice-discard-btn');
+        var voiceRecordingStatus = document.getElementById('voice-recording-status');
+        var voicePreviewAudio = document.getElementById('voice-preview-audio');
+        var recordedVoiceBlob = null;
 
-        if (voiceBtn && voiceBar && window.MediaRecorder && navigator.mediaDevices
-                && navigator.mediaDevices.getUserMedia) {
+        function formatElapsed(ms) {
+            var totalSec = Math.floor(ms / 1000);
+            var m = Math.floor(totalSec / 60);
+            var s = totalSec % 60;
+            return m + ':' + (s < 10 ? '0' : '') + s;
+        }
+
+        if (voiceBtn && voiceRecordingStatus && voicePreviewAudio
+                && window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             voiceBtn.hidden = false;
 
             var mediaRecorder = null;
             var recordedChunks = [];
-            var recordedBlob = null;
             var mediaStream = null;
             var recordingStartedAt = 0;
             var recordingTimer = null;
 
-            function formatElapsed(ms) {
-                var totalSec = Math.floor(ms / 1000);
-                var m = Math.floor(totalSec / 60);
-                var s = totalSec % 60;
-                return m + ':' + (s < 10 ? '0' : '') + s;
-            }
-
             function resetVoiceUI() {
-                voiceBar.hidden = true;
-                voiceStatus.textContent = '';
+                input.hidden = false;
+                voiceRecordingStatus.hidden = true;
+                voiceRecordingStatus.textContent = '';
                 voicePreviewAudio.hidden = true;
                 voicePreviewAudio.removeAttribute('src');
-                voiceSendBtn.hidden = true;
                 voiceDiscardBtn.hidden = true;
                 voiceBtn.hidden = false;
                 voiceBtn.textContent = '🎤';
                 voiceBtn.classList.remove('recording');
-                recordedBlob = null;
+                recordedVoiceBlob = null;
                 recordedChunks = [];
                 if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
             }
@@ -307,24 +308,24 @@
                     if (e.data && e.data.size > 0) recordedChunks.push(e.data);
                 };
                 mediaRecorder.onstop = function () {
-                    recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+                    recordedVoiceBlob = new Blob(recordedChunks, { type: 'audio/webm' });
                     mediaStream.getTracks().forEach(function (t) { t.stop(); });
-                    voicePreviewAudio.src = URL.createObjectURL(recordedBlob);
+                    voiceRecordingStatus.hidden = true;
+                    voicePreviewAudio.src = URL.createObjectURL(recordedVoiceBlob);
                     voicePreviewAudio.hidden = false;
-                    voiceSendBtn.hidden = false;
                     voiceDiscardBtn.hidden = false;
-                    voiceStatus.textContent = 'Kayıt tamamlandı, gönderebilirsin.';
                     voiceBtn.hidden = true;
                     if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
                 };
                 mediaRecorder.start();
                 recordingStartedAt = Date.now();
-                voiceBar.hidden = false;
+                input.hidden = true;
+                voiceRecordingStatus.hidden = false;
+                voiceRecordingStatus.textContent = '🔴 Kaydediliyor... 0:00';
                 voiceBtn.textContent = '⏹';
                 voiceBtn.classList.add('recording');
-                voiceStatus.textContent = 'Kaydediliyor... 0:00';
                 recordingTimer = setInterval(function () {
-                    voiceStatus.textContent = 'Kaydediliyor... ' + formatElapsed(Date.now() - recordingStartedAt);
+                    voiceRecordingStatus.textContent = '🔴 Kaydediliyor... ' + formatElapsed(Date.now() - recordingStartedAt);
                 }, 500);
             }
 
@@ -337,39 +338,45 @@
             });
 
             voiceDiscardBtn.addEventListener('click', resetVoiceUI);
+        }
 
-            voiceSendBtn.addEventListener('click', async function () {
-                if (!recordedBlob) return;
-                voiceSendBtn.disabled = true;
-                voiceSendBtn.textContent = 'Gönderiliyor...';
+        // --- Form submit: AJAX + optimistic UI (görsel VEYA sesli kayıt) ---
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            // Bekleyen bir ses kaydı varsa (Sil butonu görünürken) TEK Gönder
+            // butonu onu gönderir — metin/görsel akışından tamamen ayrı bir yol.
+            if (recordedVoiceBlob) {
+                var blobToSend = recordedVoiceBlob;
+                var submitBtnVoice = form.querySelector('button[type="submit"]');
+                submitBtnVoice.disabled = true;
+                if (voiceDiscardBtn) voiceDiscardBtn.disabled = true;
                 try {
-                    var formData = new FormData();
-                    formData.append('audio', recordedBlob, 'voice-message.webm');
+                    var voiceFormData = new FormData();
+                    voiceFormData.append('audio', blobToSend, 'voice-message.webm');
                     var csrfInput = form.querySelector('input[name="csrf_token"]');
-                    formData.append('csrf_token', csrfInput ? csrfInput.value : '');
+                    voiceFormData.append('csrf_token', csrfInput ? csrfInput.value : '');
 
-                    var res = await fetch(sendUrl, {
+                    var voiceRes = await fetch(sendUrl, {
                         method: 'POST',
                         headers: { 'Accept': 'application/json' },
-                        body: formData,
+                        body: voiceFormData,
                     });
-                    if (!res.ok) throw new Error('İstek başarısız: ' + res.status);
-                    var saved = await res.json();
-                    appendMessage(saved, true);
+                    if (!voiceRes.ok) throw new Error('İstek başarısız: ' + voiceRes.status);
+                    var savedVoice = await voiceRes.json();
+                    appendMessage(savedVoice, true);
                 } catch (err) {
                     console.error('Sesli mesaj gönderilemedi:', err);
                     alert('Sesli mesaj gönderilemedi.');
                 } finally {
-                    voiceSendBtn.disabled = false;
-                    voiceSendBtn.textContent = 'Gönder';
-                    resetVoiceUI();
+                    submitBtnVoice.disabled = false;
+                    if (voiceDiscardBtn) voiceDiscardBtn.disabled = false;
+                    if (typeof resetVoiceUI === 'function') resetVoiceUI();
+                    input.focus();
                 }
-            });
-        }
+                return;
+            }
 
-        // --- Form submit: AJAX + optimistic UI (görsel dahil) ---
-        form.addEventListener('submit', async function (e) {
-            e.preventDefault();
             var content = input.value.trim();
             var hasImage = imageInput && imageInput.files.length > 0;
             if (!content && !hasImage) return;

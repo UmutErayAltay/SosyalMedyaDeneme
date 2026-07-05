@@ -6,7 +6,7 @@ from ._common import _my_id, _attach_post_metrics, PAGE_SIZE
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..storage_helper import upload_images, upload_video
-from ..hashtags import sync_post_hashtags
+from ..hashtags import sync_post_hashtags, _trending_hashtags
 from ..mentions import notify_mentions, get_valid_usernames, extract_mentions
 from ..visibility import visible_or_filter
 from ..blocks import blocked_user_ids, is_blocked_either_way
@@ -47,8 +47,12 @@ def feed():
     _attach_post_metrics(sb, posts, me)
     attach_polls(sb, posts, me)
 
+    # Twitter tarzı sağ kenar çubuğu: gündemdeki hashtag'ler (ayrı bir
+    # "Gündem" sekmesi yerine doğrudan ana sayfada) — bkz. CLAUDE.md/active_context.
+    trending_tags = _trending_hashtags(sb, hours=24, limit=10)
+
     return render_template("feed.html", posts=posts, me=session.get("user"),
-                           page=page, has_next=has_next,
+                           page=page, has_next=has_next, trending_tags=trending_tags,
                            valid_usernames=get_valid_usernames(sb))
 
 

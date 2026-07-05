@@ -55,23 +55,25 @@
 
     <form id="msg-form" class="composer-msg" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label class="msg-image-btn" aria-label="Görsel gönder">
+        <label class="msg-image-btn" aria-label="Görsel gönder" id="msg-image-label">
             📷
             <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" id="msg-image-input" hidden>
         </label>
         <button type="button" id="voice-record-btn" class="msg-image-btn" aria-label="Sesli mesaj kaydet" hidden>🎤</button>
-        <textarea name="content" id="msg-input" placeholder="Mesaj yaz..." rows="1"
-                  aria-label="Mesaj içeriği"></textarea>
+
+        {# Aynı kutu: normalde textarea, kayıt sırasında canlı süre, kayıt
+           bitince ses önizlemesi gösterir — sesli mesaj bu yüzden AYRI bir
+           çubukta değil, doğrudan mesaj yazma alanında görünür. #}
+        <div class="composer-input-area" id="composer-input-area">
+            <textarea name="content" id="msg-input" placeholder="Mesaj yaz..." rows="1"
+                      aria-label="Mesaj içeriği"></textarea>
+            <div id="voice-recording-status" class="voice-recording-status" aria-live="polite" hidden></div>
+            <audio id="voice-preview-audio" class="voice-preview-audio" hidden controls></audio>
+        </div>
+
+        <button type="button" id="voice-discard-btn" class="btn btn-ghost" aria-label="Ses kaydını sil" hidden>🗑</button>
         <button type="submit" class="btn btn-primary" aria-label="Mesajı gönder">Gönder</button>
     </form>
     <span id="msg-image-name" class="muted" aria-live="polite"></span>
     <p class="muted drop-hint sr-only" id="drop-hint" aria-live="polite"></p>
-
-    {# Sesli mesaj kayıt/önizleme çubuğu — voiceRecorder.js tarafından yönetilir #}
-    <div id="voice-recorder-bar" class="voice-recorder-bar" hidden>
-        <span id="voice-recorder-status" class="muted" aria-live="polite"></span>
-        <audio id="voice-preview-audio" hidden controls></audio>
-        <button type="button" id="voice-send-btn" class="btn btn-primary small" hidden>Gönder</button>
-        <button type="button" id="voice-discard-btn" class="btn btn-ghost small" hidden>Sil</button>
-    </div>
 </div>

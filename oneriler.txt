@@ -1,0 +1,49 @@
+KULLANICI ÖNERİLERİ — 2026-07-06
+(umut tarafından istendi, bir sonraki oturumlarda referans için)
+
+1) MESAJLAŞMA COMPOSER'I — TAMAMLANDI (2026-07-06)
+   - Gönder ve Sil butonları composer'ın altında ayrı bir çubukta değildi
+     olması isteniyordu -> tek satıra taşındı.
+   - Sesli mesaj kaydı artık AYRI bir çubukta değil, doğrudan mesaj yazma
+     kutusunun yerinde gösteriliyor (kayıt durumu / ses önizlemesi textarea'nın
+     yerinde).
+   - TEK bir "Gönder" butonu var; hem metin/görsel hem de kaydedilmiş sesli
+     mesaj bu tek butonla gönderiliyor.
+   - "Sil" (kaydı sil) butonu SADECE bir ses kaydı hazırken Gönder'in yanında
+     beliriyor.
+
+2) BRAVE TARAYICISINDA MİKROFON İKONU ÇIKMIYOR — AÇIKLANDI, KOD İLE
+   ÇÖZÜLEMEZ (2026-07-06)
+   - Sebep: getUserMedia (mikrofon erişimi) tarayıcılar tarafından SADECE
+     "secure context"ta çalışır -> https:// VEYA localhost/127.0.0.1.
+     LAN IP üzerinden (ör. http://192.168.1.176:5000) düz HTTP ile erişince
+     TÜM tarayıcılarda (Brave dahil, Chromium tabanlı) navigator.mediaDevices
+     tanımsız kalır, bu yüzden mikrofon butonu kod tarafında bilinçli olarak
+     gizleniyor (progressive enhancement).
+   - Çözüm (kullanıcı tarafında, kod değişikliği DEĞİL):
+     a) Brave'de: chrome://flags/#unsafely-treat-insecure-origin-as-secure
+        adresine git, "Insecure origins treated as secure" ayarına
+        http://192.168.1.176:5000 (kendi LAN IP'nizi) ekleyin, tarayıcıyı
+        yeniden başlatın. SADECE geliştirme/test amaçlı, güvenlik riski
+        taşır.
+     b) Ya da sunucuya localhost/127.0.0.1 üzerinden erişin (LAN'daki diğer
+        cihazlar için işe yaramaz).
+     c) Kalıcı asıl çözüm: uygulamaya HTTPS eklemek (reverse proxy + sertifika)
+        — bu ayrı, daha büyük bir altyapı işi, bu oturumda yapılmadı.
+
+3) MESAJ YAZMA KUTUSU BÜYÜKLÜĞÜ — TAMAMLANDI (2026-07-06)
+   - Manuel resize (tarayıcının sağ-alt köşe sürükleme tutamacı) KAPATILDI
+     (CSS resize:none).
+   - Otomatik büyüme zaten vardı (chat.js, input event) — mesaj uzunluğuna
+     göre büyüyor, 120px'te tavan var (aşırı büyümüyor).
+
+4) ANA SAYFADA GÜNDEM (TWITTER TARZI) — TAMAMLANDI (2026-07-06)
+   - Ayrı "Gündem" sekmesi/sayfası (/gundem) KALDIRILDI.
+   - Bunun yerine ana sayfanın (akış) SAĞ tarafında gündemdeki hashtag'leri
+     gösteren sabit (sticky) bir kenar çubuğu eklendi.
+   - Her hashtag'e tıklayınca ilgili /hashtag/<tag> sayfasına gidiyor.
+   - Mobilde (900px altı) kenar çubuğu gizleniyor, tek sütuna dönüyor.
+
+NOT: Bu dosya .context/ klasöründeki mimari dokümantasyondan FARKLI —
+orası Claude'un kendi bakımını yaptığı teknik dokümantasyon, bu dosya ise
+kullanıcının doğrudan istediği bir öneri/talep kaydı.

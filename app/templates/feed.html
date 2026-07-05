@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_post_card.html" as pc %}
 {% block title %}Akış{% endblock %}
+{% block container_class %}feed-page{% endblock %}
 {% block content %}
 <div class="feed-layout">
     <section class="composer-trigger">
@@ -105,6 +106,22 @@
     </nav>
     {% endif %}
 </div>
+
+{# Twitter tarzı sağ kenar çubuğu: ayrı bir "Gündem" sekmesi yerine
+   doğrudan ana sayfada — tıklanınca ilgili hashtag sayfasına gider. #}
+<aside class="feed-sidebar" aria-label="Gündemdeki etiketler">
+    <div class="card trending-sidebar-card">
+        <h2>🔥 Gündemde</h2>
+        {% for t in trending_tags %}
+            <a href="{{ url_for('hashtags.hashtag_posts', tag=t.tag) }}" class="trending-tag-row">
+                <span class="trending-tag">#{{ t.tag }}</span>
+                <span class="muted">{{ t.count }} post</span>
+            </a>
+        {% else %}
+            <p class="muted">Son 24 saatte gündemde bir şey yok.</p>
+        {% endfor %}
+    </div>
+</aside>
 
 {# --- Post Paylaşma Modalı --- #}
 <div class="modal-overlay" id="post-modal" role="dialog" aria-modal="true" aria-labelledby="post-modal-title" hidden>

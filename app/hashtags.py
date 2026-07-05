@@ -159,12 +159,3 @@ def _trending_hashtags(sb, hours: int = 24, limit: int = 10) -> list[dict]:
         ]
     except Exception:
         return []  # migration_hashtags.sql veya migration_post_visibility.sql henüz uygulanmamış olabilir
-
-
-@bp.route("/gundem")
-@login_required
-@retry_on_connection_error
-def trending():
-    sb = get_sb()
-    trending_tags = _trending_hashtags(sb, hours=24, limit=10)
-    return render_template("trending.html", trending_tags=trending_tags, me=session.get("user"))

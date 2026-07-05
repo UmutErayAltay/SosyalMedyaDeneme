@@ -2,6 +2,9 @@
 .env
 .context/
 
+# Playwright MCP test artefaktları (snapshot/screenshot çıktıları)
+.playwright-mcp/
+
 # Python
 __pycache__/
 *.py[cod]

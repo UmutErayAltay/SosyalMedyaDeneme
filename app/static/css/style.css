@@ -248,6 +248,7 @@ textarea:focus-visible, select:focus-visible {
     transition: all 0.15s;
     display: inline-block;
 }
+.btn[hidden] { display: none; }
 .btn-primary { background: var(--primary); color: var(--bg); }
 .btn-primary:hover { background: var(--primary-hover); }
 .btn-ghost { background: transparent; color: var(--muted); }
@@ -418,6 +419,25 @@ label input { margin-top: 6px; }
 /* Mesajlaşma — iki panelli düzen (sol: konuşma listesi, sağ: aktif konuşma) */
 .container-wide { max-width: 960px; }
 
+/* Ana sayfa — Twitter tarzı sağ kenar çubuğu (gündemdeki hashtag'ler) */
+main.feed-page {
+    max-width: 920px;
+    display: grid; grid-template-columns: 1fr 280px; gap: 24px;
+    align-items: start;
+}
+.feed-sidebar { position: sticky; top: 24px; }
+.trending-sidebar-card h2 { font-size: 16px; margin-bottom: 12px; }
+.trending-tag-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.trending-tag-row:last-child { border-bottom: none; }
+.trending-tag { font-weight: 600; color: var(--primary); }
+@media (max-width: 900px) {
+    main.feed-page { grid-template-columns: 1fr; max-width: var(--max-width); }
+    .feed-sidebar { display: none; }
+}
+
 .messages-layout {
     display: flex; gap: 20px;
     height: calc(100vh - 130px);
@@ -482,16 +502,24 @@ label input { margin-top: 6px; }
     padding: 0 4px 6px;
 }
 
-.composer-msg { display: flex; gap: 8px; }
+.composer-msg { display: flex; gap: 8px; align-items: flex-end; }
 .composer-msg input { flex: 1; }
+
+/* Tek satırlık girdi kutusu — textarea/kayıt-durumu/ses-önizleme aynı
+   kutuda, her zaman TEK BİRİ görünür (bkz. chat.js). Manuel resize YOK,
+   sadece içerik uzunluğuna göre otomatik büyür (chat.js, 120px tavanla). */
+.composer-input-area { flex: 1; min-width: 0; }
+#msg-input { resize: none; }
 
 #voice-record-btn.recording { color: var(--danger); animation: pulse-rec 1.2s infinite; }
 @keyframes pulse-rec { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-.voice-recorder-bar {
-    display: flex; align-items: center; gap: 8px; margin-top: 6px;
-    padding: 6px 8px; border-radius: 8px; background: var(--border);
+.voice-recording-status {
+    display: flex; align-items: center; height: 40px; padding: 0 12px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--card);
+    color: var(--danger); font-size: 14px;
 }
-.voice-recorder-bar audio { max-width: 220px; height: 32px; }
+.voice-recording-status[hidden] { display: none; }
+.voice-preview-audio { width: 100%; height: 40px; }
 .msg-audio { display: block; max-width: 240px; margin-bottom: 4px; }
 
 /* Sürükle-bırak görsel geri bildirimi (WCAG: tıklanabilir dosya seçici her zaman mevcut,
