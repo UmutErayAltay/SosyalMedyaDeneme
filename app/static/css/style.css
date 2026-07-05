@@ -34,6 +34,7 @@
     --radius: 12px;
     --max-width: 640px;
     --focus-ring: 0 0 0 3px rgba(45, 45, 45, 0.3);
+    --primary-rgb: 45, 45, 45; /* --primary'nin (#2d2d2d) rgb() eşdeğeri, opacity karışımları için */
 }
 
 /* Koyu tema — saf siyah yerine #121212 (halation önleme) */
@@ -50,6 +51,7 @@
     --success-bg: #1c3a1c;
     --success-text: #6ee7b7;
     --focus-ring: 0 0 0 3px rgba(224, 224, 224, 0.4);
+    --primary-rgb: 224, 224, 224; /* --primary'nin (#e0e0e0) rgb() eşdeğeri */
 }
 
 body {
@@ -535,7 +537,10 @@ main.feed-page {
     display: block; border: 1px solid var(--border); border-radius: 12px;
     overflow: hidden; text-decoration: none; color: inherit;
 }
-.shared-card-img { width: 100%; display: block; max-height: 280px; object-fit: cover; }
+.shared-card-img {
+    width: 100%; display: block; max-height: 280px; object-fit: cover;
+    border-radius: 10px; margin-bottom: 10px;
+}
 .shared-card-body { padding: 12px; }
 .shared-card-header { padding: 12px; font-weight: 600; border-bottom: 1px solid var(--border); }
 .shared-card-btn { display: inline-block; margin-top: 10px; color: var(--primary); font-weight: 600; }
@@ -625,16 +630,21 @@ main.feed-page {
     flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* Post görseli */
+/* Post görseli — aspect-ratio bir YER TUTUCUDUR (CLS önleme): görsel henüz
+   yüklenmeden tarayıcı bu oranda yer ayırır, gerçek görsel decode edilince
+   kendi intrinsic oranı bunu ezer (CSS aspect-ratio replaced element'lerde
+   sadece intrinsic oran bilinmediğinde kullanılır). Sabit width/height HTML
+   attribute'u için görsel boyutunun upload anında DB'ye yazılması gerekirdi
+   — bu daha büyük bir değişiklik, şimdilik CSS-only yaklaşım tercih edildi. */
 .post-image {
     width: 100%; border-radius: 8px; margin: 8px 0 12px;
-    display: block; max-height: 600px; object-fit: contain;
+    display: block; max-height: 600px; aspect-ratio: 4 / 3; object-fit: contain;
     background: var(--bg); cursor: zoom-in;
 }
 .post-image-tile { cursor: zoom-in; }
 .post-video {
     width: 100%; border-radius: 8px; margin: 8px 0 12px;
-    display: block; max-height: 600px; background: #000;
+    display: block; max-height: 600px; aspect-ratio: 16 / 9; background: #000;
 }
 .post-video-preview {
     width: 100%; border-radius: 8px; margin-top: 8px; max-height: 300px; background: #000;
@@ -761,9 +771,12 @@ main.feed-page {
 }
 .media-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* Lightbox (medya büyütme) */
-.lightbox-overlay { background: rgba(0, 0, 0, 0.85); }
-.lightbox-img { max-width: 90vw; max-height: 78vh; object-fit: contain; border-radius: 8px; }
+/* Lightbox (medya büyütme, prev/next/goto navigasyonlu galeri) — .lightbox-img
+   sınıfı ".lightbox-overlay" ile birlikte hedeflenir: ".lightbox-overlay img"
+   (yukarıdaki, chat.js'in tek-görsel lightbox'ı için) daha yüksek özgüllüğe
+   sahip olduğundan onu ezmesi gerekiyor, aksi halde 78vh sınırı hiç
+   uygulanmaz ve görsel alttaki nav butonlarının üzerine taşabilir. */
+.lightbox-overlay .lightbox-img { max-width: 90vw; max-height: 78vh; object-fit: contain; border-radius: 8px; }
 .lightbox-close, .lightbox-nav {
     position: absolute; background: rgba(255, 255, 255, 0.15); color: #fff;
     border: none; cursor: pointer; border-radius: 50%;
@@ -837,7 +850,7 @@ header[role="banner"] {
     padding: 8px 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    background: var(--background);
+    background: var(--bg);
     color: var(--text);
 }
 
@@ -872,7 +885,7 @@ header[role="banner"] {
 }
 
 .share-target-item.selected {
-    background: rgba(var(--primary-rgb, 59, 130, 246), 0.1); /* --primary rengine göre alpha ayarı */
+    background: rgba(var(--primary-rgb), 0.1);
 }
 
 .share-target-item .avatar {
@@ -915,14 +928,7 @@ header[role="banner"] {
     font-size: 12px;
     font-weight: bold;
 }
-.shared-card-img{
-    width:100%;
-    max-height:280px;
-    object-fit:cover;
-    display:block;
-    border-radius:10px;
-    margin-bottom:10px;
-}
+
 /* =========================
    POST GÖRSEL GRID (çoklu)
    ========================= */
