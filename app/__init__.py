@@ -1,6 +1,6 @@
 """Uygulama fabrikası."""
 import secrets
-from flask import Flask, session, request, abort
+from flask import Flask, session, request, abort, send_from_directory
 from .config import Config
 
 
@@ -29,6 +29,15 @@ def create_app() -> Flask:
 
     # Şablonlarda {{ csrf_token() }} olarak kullanılabilir
     app.jinja_env.globals["csrf_token"] = _csrf_token
+
+    # PWA: servis çalışanı KÖK dizinden (/sw.js) sunulur — /static/sw.js olsaydı
+    # varsayılan scope'u sadece /static/ ile sınırlı kalır, tüm siteyi kontrol edemezdi.
+    @app.route("/sw.js")
+    def service_worker():
+        response = send_from_directory(app.static_folder, "sw.js")
+        response.headers["Content-Type"] = "application/javascript"
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
     # Navbar zil rozeti: her sayfada okunmamış bildirim sayısını enjekte eder.
     # Supabase geçici olarak erişilemezse rozet sessizce 0 gösterir — sayfa

@@ -18,6 +18,16 @@
     <meta name="twitter:title" content="{{ self.og_title() }}">
     <meta name="twitter:description" content="{{ self.description() }}">
 
+    {# --- PWA: manifest + ikonlar + tema rengi (açık/koyu moda göre) --- #}
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}">
+    <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Sosyal">
+
     {# --- Dark mode: FOUC önleyici (render öncesi çalışır) --- #}
     <script>
         (function () {
@@ -149,6 +159,17 @@
     <script src="{{ url_for('static', filename='js/lightbox.js') }}"></script>
     <script src="{{ url_for('static', filename='js/postClick.js') }}"></script>
     {% if me %}<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>{% endif %}
+
+    {# --- PWA: servis çalışanı kaydı (kök dizinden /sw.js — bkz. app/__init__.py) --- #}
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('/sw.js').catch(function (err) {
+                    console.warn('Servis çalışanı kaydı başarısız:', err);
+                });
+            });
+        }
+    </script>
 
     {% block scripts %}{% endblock %}
 </body>
