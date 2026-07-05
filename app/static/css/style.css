@@ -314,6 +314,7 @@ label input { margin-top: 6px; }
 .username { font-weight: 600; }
 .time { color: var(--muted); font-size: 12px; margin-left: auto; }
 .visibility-badge { font-size: 12px; margin-left: 6px; cursor: help; }
+.pinned-badge { font-size: 12px; margin-left: 6px; color: var(--muted); font-weight: 600; }
 .post-visibility-label { font-size: 13px; color: var(--muted); margin-top: 8px; display: block; }
 .post-visibility-select {
     width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border);

@@ -220,6 +220,39 @@ def delete_post(post_id):
     return redirect(url_for("routes.feed"))
 
 
+@bp.route("/post/<post_id>/pin", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def toggle_pin(post_id):
+    """Profilde en üstte gösterilecek 1 post seç/kaldır. profiles.pinned_post_id
+    TEK bir kolon olduğu için "en fazla 1 sabit post" kısıtı otomatik sağlanır —
+    yeni bir post sabitlemek eskisinin yerini alır."""
+    sb = get_sb()
+    me = _my_id()
+
+    post = sb.table("posts").select("user_id").eq("id", post_id).execute().data
+    if not post or post[0]["user_id"] != me:
+        abort(403)
+
+    try:
+        prof = sb.table("profiles").select("pinned_post_id, username").eq("id", me).execute().data
+        current = prof[0].get("pinned_post_id") if prof else None
+        if current == post_id:
+            sb.table("profiles").update({"pinned_post_id": None}).eq("id", me).execute()
+            flash("Sabitleme kaldırıldı.", "success")
+        else:
+            sb.table("profiles").update({"pinned_post_id": post_id}).eq("id", me).execute()
+            flash("Post profilinin en üstüne sabitlendi.", "success")
+        username = prof[0]["username"] if prof else None
+    except Exception:
+        flash("Sabitleme özelliği henüz aktif değil (migration uygulanmamış).", "error")
+        username = None
+
+    if username:
+        return redirect(url_for("routes.profile", username=username))
+    return redirect(request.referrer or url_for("routes.feed"))
+
+
 @bp.route("/u/<username>")
 @login_required
 @retry_on_connection_error
@@ -253,6 +286,11 @@ def profile(username):
     ).eq("user_id", prof["id"]).order("created_at", desc=True).execute().data
     posts = filter_visible(posts, visible_author_ids)
     posts = filter_not_blocked(posts, blocked_ids)
+    # Sabitlenmiş post en üste taşınır (görünür değilse zaten listede yok,
+    # bu durumda pinned_post_id eşleşmesi olmaz — sessizce yok sayılır)
+    pinned_id = prof.get("pinned_post_id")
+    if pinned_id:
+        posts.sort(key=lambda p: 0 if p["id"] == pinned_id else 1)
     _attach_post_metrics(sb, posts, me)
 
     # Medya sekmesi: görsel içeren postlar (ek sorgu yok, mevcut listeden süzülür)
