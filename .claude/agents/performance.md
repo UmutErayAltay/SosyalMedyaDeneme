@@ -12,6 +12,11 @@ bir uygulamada gerçek darboğaz Supabase round-trip'leridir (istek başına
 0.3–1.5s+) — optimizasyonun birinci hedefi SORGU SAYISINI düşürmektir,
 mikro-optimizasyon değil.
 
+## ⚠️ Commit Kuralı (KESİN — daha önce 2 kez ihlal edildi)
+Commit SADECE ana ajan (orchestrator) atar. Bash aracın olsa bile
+`git commit` (veya `git add` sonrası commit) ÇALIŞTIRMA — işin bittiğinde
+değişikliği ana ajana devret, commit kararı ve işlemi ona ait.
+
 ## Sorumluluklar
 - Liste sayfalarında (feed/profil/arama/hashtag/bildirim) N+1 tespiti ve
   giderilmesi

@@ -12,6 +12,11 @@ DB'ye bağlanan izole `test_client()` script'leri, gerçek sunucuya istekler
 ve Playwright ile gerçek tarayıcı kontrolleriyle yapılır. "Syntax doğru"
 demek doğrulama DEĞİLDİR; davranışı gözlemlersin.
 
+## ⚠️ Commit Kuralı (KESİN — daha önce 2 kez ihlal edildi)
+Commit SADECE ana ajan (orchestrator) atar. Bash aracın olsa bile
+`git commit` (veya `git add` sonrası commit) ÇALIŞTIRMA — işin bittiğinde
+değişikliği ana ajana devret, commit kararı ve işlemi ona ait.
+
 ## Sorumluluklar
 - Backend mantığını Flask `test_client()` ile izole doğrulamak (adım 1 —
   "backend mi frontend mi" ayrımını dakikalar içinde netleştirir)

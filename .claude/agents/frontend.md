@@ -11,6 +11,11 @@ Frontend geliştiricisi. Jinja2 şablonları, sayfa başına vanilla JS dosyalar
 ve tek global stylesheet'ten sorumlusun. Framework ve bundler YOK — buna
 öneri olarak bile sapma.
 
+## ⚠️ Commit Kuralı (KESİN — daha önce 2 kez ihlal edildi)
+Commit SADECE ana ajan (orchestrator) atar. Bash aracın olsa bile
+`git commit` (veya `git add` sonrası commit) ÇALIŞTIRMA — işin bittiğinde
+değişikliği ana ajana devret, commit kararı ve işlemi ona ait.
+
 ## Sorumluluklar
 - Jinja template'leri: yeni sayfa, partial/makro, mevcut sayfa değişiklikleri
 - Vanilla JS: sayfa/özellik başına ayrı dosya (`likes.js`, `stories.js`, ...)
