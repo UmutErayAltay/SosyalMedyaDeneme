@@ -1,6 +1,6 @@
 """Arama ve algoritmik keşfet."""
 from datetime import datetime, timedelta, timezone
-from flask import render_template, request, session
+from flask import render_template, request, session, redirect, url_for
 from . import bp
 from ._common import _my_id, _attach_post_metrics
 from ..decorators import login_required
@@ -11,40 +11,116 @@ from ..blocks import blocked_user_ids, filter_not_blocked
 from ..polls import attach_polls
 
 
+def _recent_searches(sb, me):
+    """Son aramalar — search_history migration'ı henüz uygulanmamışsa boş liste
+    döner, sayfa render'ı kırılmaz."""
+    try:
+        return sb.table("search_history").select("*").eq(
+            "user_id", me
+        ).order("created_at", desc=True).limit(10).execute().data
+    except Exception:
+        return []
+
+
 @bp.route("/search")
 @login_required
 @retry_on_connection_error
 def search():
     q = request.args.get("q", "").strip()
+    search_type = request.args.get("type", "all")
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
     sb = get_sb()
-    if len(q) < 2:
-        return render_template("search.html", q=q, users=[], posts=[], me=session.get("user"),
-                               valid_usernames=get_valid_usernames(sb))
-
     me = _my_id()
+
+    if len(q) < 2:
+        return render_template(
+            "search.html", q=q, users=[], posts=[], hashtags=[],
+            search_type=search_type, date_from=date_from, date_to=date_to,
+            recent_searches=_recent_searches(sb, me), me=session.get("user"),
+            valid_usernames=get_valid_usernames(sb),
+        )
+
     blocked_ids = blocked_user_ids(sb, me)
 
-    # Kullanıcı ara (username ILIKE)
-    users = sb.table("profiles").select(
-        "id, username, full_name, avatar_url"
-    ).ilike("username", f"%{q}%").limit(20).execute().data
-    users = [u for u in users if u["id"] not in blocked_ids]
+    # type filtresine göre gereksiz sorgu atlanır.
+    users = []
+    if search_type in ("all", "users"):
+        # Kullanıcı ara (username ILIKE)
+        users = sb.table("profiles").select(
+            "id, username, full_name, avatar_url"
+        ).ilike("username", f"%{q}%").limit(20).execute().data
+        users = [u for u in users if u["id"] not in blocked_ids]
 
-    # Post ara (content ILIKE) — beğeni/yorum sayıları feed ile aynı desende.
-    # "*" kullanılıyor (açık kolon listesi değil) çünkü visibility/video_url
-    # gibi opsiyonel kolonlar henüz migration'ı çalıştırılmamışsa bile PostgREST
-    # hata vermez — açık isimle istenen var olmayan bir kolon HATA verirdi.
-    posts = sb.table("posts").select(
-        "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
-    ).ilike("content", f"%{q}%").order("created_at", desc=True).limit(50).execute().data
-    posts = [p for p in posts if not p.get("is_draft")]  # taslaklar aramada görünmez
-    posts = filter_visible(posts, followed_and_self_ids(sb, me))
-    posts = filter_not_blocked(posts, blocked_ids)
-    _attach_post_metrics(sb, posts, me)
-    attach_polls(sb, posts, me)
+    posts = []
+    if search_type in ("all", "posts"):
+        # Post ara (content ILIKE) — beğeni/yorum sayıları feed ile aynı desende.
+        # "*" kullanılıyor (açık kolon listesi değil) çünkü visibility/video_url
+        # gibi opsiyonel kolonlar henüz migration'ı çalıştırılmamışsa bile PostgREST
+        # hata vermez — açık isimle istenen var olmayan bir kolon HATA verirdi.
+        posts_query = sb.table("posts").select(
+            "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+        ).ilike("content", f"%{q}%")
+        if date_from:
+            posts_query = posts_query.gte("created_at", date_from)
+        if date_to:
+            # gün sonu dahil edilsin diye 23:59:59'a kadar genişletilir
+            posts_query = posts_query.lte("created_at", f"{date_to}T23:59:59")
+        posts = posts_query.order("created_at", desc=True).limit(50).execute().data
+        posts = [p for p in posts if not p.get("is_draft")]  # taslaklar aramada görünmez
+        posts = filter_visible(posts, followed_and_self_ids(sb, me))
+        posts = filter_not_blocked(posts, blocked_ids)
+        _attach_post_metrics(sb, posts, me)
+        attach_polls(sb, posts, me)
 
-    return render_template("search.html", q=q, users=users, posts=posts, me=session.get("user"),
-                           valid_usernames=get_valid_usernames(sb))
+    hashtags = []
+    if search_type in ("all", "hashtags"):
+        try:
+            tag_q = q[1:] if q.startswith("#") else q
+            tag_rows = sb.table("hashtags").select("id, tag").ilike(
+                "tag", f"%{tag_q}%"
+            ).limit(20).execute().data
+            for h in tag_rows:
+                count = sb.table("post_hashtags").select(
+                    "post_id", count="exact", head=True
+                ).eq("hashtag_id", h["id"]).execute().count or 0
+                hashtags.append({"tag": h["tag"], "count": count})
+        except Exception:
+            hashtags = []  # migration_hashtags.sql henüz uygulanmamışsa boş liste
+
+    # Arama geçmişine kaydet: aynı sorgu varsa eskisi silinir (tekilleşip
+    # en üste taşınsın diye), migration henüz uygulanmamışsa sessizce atlanır.
+    try:
+        sb.table("search_history").delete().eq("user_id", me).eq("query", q).execute()
+        sb.table("search_history").insert({"user_id": me, "query": q}).execute()
+    except Exception:
+        pass
+
+    return render_template(
+        "search.html", q=q, users=users, posts=posts, hashtags=hashtags,
+        search_type=search_type, date_from=date_from, date_to=date_to,
+        recent_searches=_recent_searches(sb, me), me=session.get("user"),
+        valid_usernames=get_valid_usernames(sb),
+    )
+
+
+@bp.route("/search/history/<item_id>/delete", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def delete_search_history_item(item_id):
+    me = _my_id()
+    # Uygulama katmanı sahiplik kontrolü: sadece kendi geçmiş satırını sil
+    get_sb().table("search_history").delete().eq("id", item_id).eq("user_id", me).execute()
+    return redirect(url_for("routes.search", q=request.form.get("q", "")))
+
+
+@bp.route("/search/history/clear", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def clear_search_history():
+    me = _my_id()
+    get_sb().table("search_history").delete().eq("user_id", me).execute()
+    return redirect(url_for("routes.search", q=request.form.get("q", "")))
 
 
 @bp.route("/kesfet")

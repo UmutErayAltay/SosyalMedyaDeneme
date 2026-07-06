@@ -749,6 +749,43 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
 .trending-tag { font-weight: 600; color: var(--primary); flex: 1; }
 .trending-count { font-size: 13px; }
 
+/* Filtre formu (tip seçici + tarih aralığı) — mevcut arama kutusuyla aynı
+   satırda, dar ekranda alt alta sarar (bundler yok, flex-wrap yeterli). */
+.search-filter-form {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    margin-bottom: 20px; padding: 14px; background: var(--card);
+    border: 1px solid var(--border); border-radius: var(--radius);
+}
+.search-filter-input {
+    flex: 1 1 200px; min-width: 140px; padding: 8px 12px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text); font-size: 14px;
+}
+.search-filter-select, .search-filter-date {
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text); font-size: 14px;
+}
+.search-filter-date-label {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 12px; color: var(--muted);
+}
+
+/* Arama geçmişi — chip listesi, her chip'in yanında mini "×" silme formu */
+.search-history-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.search-history-chip {
+    display: flex; align-items: center; gap: 4px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 6px 6px 14px;
+}
+.search-history-chip a { color: var(--text); text-decoration: none; font-size: 14px; }
+.search-history-chip a:hover { color: var(--primary); }
+.search-history-delete-form { display: inline-flex; }
+.search-history-delete-btn {
+    border: none; background: none; color: var(--muted); cursor: pointer;
+    font-size: 16px; line-height: 1; padding: 4px 8px; border-radius: 50%;
+}
+.search-history-delete-btn:hover { background: var(--bg); color: var(--text); }
+
 /* Takipçi/Takip listesi (follow_list.html) — search-user'ı satır olarak paylaşır,
    sağda takip butonu için justify-content ekler */
 .follow-list { display: flex; flex-direction: column; gap: 8px; }

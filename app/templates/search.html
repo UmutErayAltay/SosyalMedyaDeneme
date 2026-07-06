@@ -3,15 +3,56 @@
 {% block title %}Arama{% endblock %}
 {% block content %}
 <div class="search-page">
+    <form method="get" action="{{ url_for('routes.search') }}" class="search-filter-form">
+        <input type="text" name="q" value="{{ q }}" placeholder="Ara..." class="search-filter-input" minlength="2">
+        <select name="type" class="search-filter-select">
+            <option value="all" {{ 'selected' if search_type == 'all' }}>Tümü</option>
+            <option value="users" {{ 'selected' if search_type == 'users' }}>Kullanıcılar</option>
+            <option value="posts" {{ 'selected' if search_type == 'posts' }}>Postlar</option>
+            <option value="hashtags" {{ 'selected' if search_type == 'hashtags' }}>Hashtagler</option>
+        </select>
+        <label class="search-filter-date-label">
+            Başlangıç
+            <input type="date" name="date_from" value="{{ date_from }}" class="search-filter-date">
+        </label>
+        <label class="search-filter-date-label">
+            Bitiş
+            <input type="date" name="date_to" value="{{ date_to }}" class="search-filter-date">
+        </label>
+        <button type="submit" class="btn btn-primary">Ara</button>
+    </form>
+
     {% if q %}
     <h2>"{{ q }}" için sonuçlar</h2>
     {% else %}
     <h2>Arama</h2>
     <p class="muted">Aramak için en az 2 karakter yaz.</p>
+
+    {% if recent_searches %}
+    <section class="search-section search-history-section">
+        <h3>Son aramalar</h3>
+        <div class="search-history-list">
+            {% for h in recent_searches %}
+            <div class="search-history-chip">
+                <a href="{{ url_for('routes.search', q=h.query) }}">{{ h.query }}</a>
+                <form method="post" action="{{ url_for('routes.delete_search_history_item', item_id=h.id) }}" class="search-history-delete-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="search-history-delete-btn" aria-label="Bu aramayı geçmişten sil" title="Sil">×</button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+        <form method="post" action="{{ url_for('routes.clear_search_history') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-ghost">Tümünü temizle</button>
+        </form>
+    </section>
+    {% endif %}
     {% endif %}
 
     {% if q %}
 
+    {% if search_type in ("all", "users") %}
     <section class="search-section">
         <h3>Kullanıcılar ({{ users|length }})</h3>
         {% for u in users %}
@@ -30,7 +71,9 @@
         <p class="muted">Kullanıcı bulunamadı.</p>
         {% endfor %}
     </section>
+    {% endif %}
 
+    {% if search_type in ("all", "posts") %}
     <section class="search-section">
         <h3>Postlar ({{ posts|length }})</h3>
         {% for p in posts %}
@@ -96,6 +139,23 @@
         <p class="muted">Post bulunamadı.</p>
         {% endfor %}
     </section>
+    {% endif %}
+
+    {% if search_type in ("all", "hashtags") %}
+    <section class="search-section">
+        <h3>Hashtagler ({{ hashtags|length }})</h3>
+        <div class="card trending-list">
+            {% for h in hashtags %}
+            <a href="{{ url_for('hashtags.hashtag_posts', tag=h.tag) }}" class="trending-item">
+                <span class="trending-tag">#{{ h.tag }}</span>
+                <span class="trending-count muted">{{ h.count }} post</span>
+            </a>
+            {% else %}
+            <p class="muted">Hashtag bulunamadı.</p>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
 
     {% endif %}
 </div>
