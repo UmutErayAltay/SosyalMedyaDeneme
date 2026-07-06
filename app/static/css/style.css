@@ -610,7 +610,7 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
     background: var(--card); border: 1px solid var(--border);
     border-radius: var(--radius); margin-bottom: 12px;
 }
-.msg { max-width: 70%; margin-bottom: 10px; padding: 8px 12px; border-radius: var(--radius); }
+.msg { max-width: 70%; margin-bottom: 10px; padding: 8px 12px; border-radius: var(--radius); word-wrap: break-word; overflow-wrap: break-word; }
 .msg p { font-size: 14px; }
 .msg .time { display: block; font-size: 11px; margin: 2px 0 0; }
 .msg.mine {
