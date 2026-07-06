@@ -102,9 +102,36 @@
     {% endif %}
 </div>
 
-{# Twitter tarzı sağ kenar çubuğu: ayrı bir "Gündem" sekmesi yerine
-   doğrudan ana sayfada — tıklanınca ilgili hashtag sayfasına gider. #}
-<aside class="feed-sidebar" aria-label="Gündemdeki etiketler">
+{# Twitter tarzı sağ kenar çubuğu: gündem + "kimi takip etmeli" önerisi —
+   ayrı bir sekme yerine doğrudan ana sayfada. #}
+<aside class="feed-sidebar" aria-label="Önerilen kişiler ve gündemdeki etiketler">
+    {% if suggested_users %}
+    <div class="card suggested-users-card">
+        <h2>👥 Kimi takip etmeli?</h2>
+        {% for u in suggested_users %}
+            <div class="suggested-user-row">
+                <a href="{{ url_for('routes.profile', username=u.username) }}" class="suggested-user-link">
+                    {% if u.avatar_url %}
+                        <img src="{{ u.avatar_url }}" class="avatar avatar-sm" alt="">
+                    {% else %}
+                        <div class="avatar avatar-sm avatar-placeholder" aria-hidden="true"></div>
+                    {% endif %}
+                    <span class="suggested-user-info">
+                        <strong>{{ u.username }}</strong>
+                        {% if u.full_name %}<span class="muted">{{ u.full_name }}</span>{% endif %}
+                    </span>
+                </a>
+                <button type="button" class="btn btn-primary small follow-btn"
+                        data-following="0"
+                        data-username="{{ u.username }}"
+                        data-follow-url="{{ url_for('social.toggle_follow', username=u.username) }}"
+                        aria-label="{{ u.username }} kullanıcısını takip et">
+                    Takip et
+                </button>
+            </div>
+        {% endfor %}
+    </div>
+    {% endif %}
     <div class="card trending-sidebar-card">
         <h2>🔥 Gündemde</h2>
         {% for t in trending_tags %}
@@ -188,4 +215,5 @@
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 <script src="{{ url_for('static', filename='js/polls.js') }}"></script>
 <script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
+<script src="{{ url_for('static', filename='js/follow.js') }}"></script>
 {% endblock %}

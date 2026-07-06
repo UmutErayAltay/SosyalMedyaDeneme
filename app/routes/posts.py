@@ -51,8 +51,19 @@ def feed():
     # "Gündem" sekmesi yerine doğrudan ana sayfada) — bkz. CLAUDE.md/active_context.
     trending_tags = _trending_hashtags(sb, hours=24, limit=10)
 
+    # "Kimi takip etmeli" önerisi: zaten takip edilen, ben, engellenen ve
+    # banlı kullanıcılar hariç en yeni katılan 5 kişi — sağ kenar çubuğu boş
+    # kalmasın diye (kullanıcı isteğiyle eklendi).
+    following_ids = {f["following_id"] for f in sb.table("follows").select("following_id")
+                     .eq("follower_id", me).execute().data}
+    exclude_ids = following_ids | blocked_ids | {me}
+    candidates = sb.table("profiles").select("id, username, avatar_url, full_name") \
+        .eq("is_banned", False).order("created_at", desc=True).limit(30).execute().data
+    suggested_users = [u for u in candidates if u["id"] not in exclude_ids][:5]
+
     return render_template("feed.html", posts=posts, me=session.get("user"),
                            page=page, has_next=has_next, trending_tags=trending_tags,
+                           suggested_users=suggested_users,
                            valid_usernames=get_valid_usernames(sb))
 
 

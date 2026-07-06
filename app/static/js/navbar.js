@@ -40,14 +40,19 @@
 
     var HIDE_THRESHOLD = 60; // Sayfa en üstteyken gizlenmeyi engellemek için eşik
     
+    // body'ye de aynı class eklenir: .feed-sidebar gibi sabit (sticky) öğeler
+    // navbar gizlenince/gelince üstteki boşluğa göre kendi top offset'lerini
+    // ayarlayabilsin diye (bkz. style.css .feed-sidebar / body.navbar-hidden).
     function showNavbar() {
         navbar.classList.remove('navbar-hidden');
+        document.body.classList.remove('navbar-hidden');
     }
 
     function hideNavbar() {
         var currentScroll = window.scrollY || document.documentElement.scrollTop;
         if (currentScroll > HIDE_THRESHOLD) {
             navbar.classList.add('navbar-hidden');
+            document.body.classList.add('navbar-hidden');
         }
     }
 
