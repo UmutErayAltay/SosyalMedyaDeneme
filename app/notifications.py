@@ -5,11 +5,25 @@ kendine bildirim gönderilmez (recipient_id == actor_id ise sessizce atlanır).
 """
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, render_template, request, session, jsonify, url_for
+from flask import Blueprint, flash, redirect, render_template, request, session, jsonify, url_for
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 
 bp = Blueprint("notifications", __name__)
+
+# (type_key, db_column, başlık, açıklama) — hem notify() filtrelemesi hem
+# ayarlar sayfası bu listeden üretilir, iki yerde ayrı ayrı tanımlanmasın.
+NOTIFICATION_TYPES = [
+    ("like", "notify_like", "Beğeniler", "Gönderini biri beğendiğinde"),
+    ("comment", "notify_comment", "Yorumlar", "Gönderine biri yorum yaptığında"),
+    ("reply", "notify_reply", "Yanıtlar", "Yorumuna biri yanıt verdiğinde"),
+    ("comment_like", "notify_comment_like", "Yorum beğenileri", "Yorumunu biri beğendiğinde"),
+    ("follow", "notify_follow", "Takipçiler", "Biri seni takip etmeye başladığında"),
+    ("message", "notify_message", "Mesajlar", "Sana mesaj geldiğinde"),
+    ("mention", "notify_mention", "Etiketlenmeler", "Bir gönderide etiketlendiğinde"),
+    ("hashtag_post", "notify_hashtag_post", "Takip edilen etiketler", "Takip ettiğin bir etikette yeni paylaşım olduğunda"),
+]
+_TYPE_TO_COLUMN = {t[0]: t[1] for t in NOTIFICATION_TYPES}
 
 PAGE_SIZE = 20
 
@@ -55,6 +69,21 @@ def notify(sb, *, recipient_id: str, actor_id: str, type_: str,
     """Bir kullanıcıya bildirim oluşturur. Kendine bildirim oluşturulmaz."""
     if recipient_id == actor_id:
         return
+
+    # Alıcı bu bildirim türünü kapatmış olabilir (opt-out, #40). Tercih satırı
+    # yoksa varsayılan açık (fail-open); migration henüz uygulanmamışsa tablo
+    # hiç yoktur — hata yutulup normal gönderim davranışına düşülür.
+    try:
+        column = _TYPE_TO_COLUMN.get(type_)
+        if column:
+            pref = sb.table("notification_preferences").select(column).eq(
+                "user_id", recipient_id
+            ).execute().data
+            if pref and pref[0].get(column) is False:
+                return
+    except Exception:
+        pass
+
     sb.table("notifications").insert({
         "recipient_id": recipient_id,
         "actor_id": actor_id,
@@ -183,6 +212,46 @@ def panel():
         "created_at": n["created_at"],
         "is_read": n["is_read"],
     } for n in rows])
+
+
+@bp.route("/preferences", methods=["GET", "POST"])
+@login_required
+@retry_on_connection_error
+def preferences():
+    """Bildirim türü bazlı opt-out ayarları (#40)."""
+    sb = get_sb()
+    me = session["user"]["id"]
+    columns = [t[1] for t in NOTIFICATION_TYPES]
+
+    if request.method == "POST":
+        try:
+            # İşaretli checkbox'lar request.form'da bulunur, işaretsizler hiç
+            # bulunmaz (HTML checkbox davranışı) — bu yüzden yokluk == False.
+            payload = {col: (request.form.get(col) == "on") for col in columns}
+            payload["user_id"] = me
+            payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+            sb.table("notification_preferences").upsert(
+                payload, on_conflict="user_id"
+            ).execute()
+            flash("Bildirim tercihlerin kaydedildi.", "success")
+        except Exception:
+            flash("Bildirim tercihleri henüz kullanılamıyor, daha sonra tekrar dene.", "error")
+        return redirect(url_for("notifications.preferences"))
+
+    try:
+        rows = sb.table("notification_preferences").select("*").eq(
+            "user_id", me
+        ).execute().data
+        prefs = rows[0] if rows else {col: True for col in columns}
+    except Exception:
+        prefs = {col: True for col in columns}
+
+    return render_template(
+        "notifications/preferences.html",
+        notification_types=NOTIFICATION_TYPES,
+        prefs=prefs,
+        me=session["user"],
+    )
 
 
 @bp.route("/unread-count")

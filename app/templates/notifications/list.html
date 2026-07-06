@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Bildirimler{% endblock %}
 {% block content %}
-<h1>Bildirimler</h1>
+<div class="page-header">
+    <h1>Bildirimler</h1>
+    <a href="{{ url_for('notifications.preferences') }}" class="muted">⚙️ Tercihler</a>
+</div>
 
 <section class="notif-list" aria-label="Bildirimler">
     {% for n in notifications %}

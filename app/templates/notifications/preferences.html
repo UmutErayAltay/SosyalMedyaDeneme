@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Bildirim Tercihleri{% endblock %}
+{% block content %}
+<h1>Bildirim Tercihleri</h1>
+
+<form method="post" action="{{ url_for('notifications.preferences') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <section class="card pref-list" aria-label="Bildirim tercihleri">
+        {% for type_key, db_column, baslik, aciklama in notification_types %}
+        <label class="pref-row" for="pref-{{ db_column }}">
+            <span class="pref-text">
+                <span class="pref-label">{{ baslik }}</span>
+                <span class="pref-desc muted">{{ aciklama }}</span>
+            </span>
+            <input type="checkbox" id="pref-{{ db_column }}" name="{{ db_column }}" {{ 'checked' if prefs[db_column] }}>
+        </label>
+        {% endfor %}
+    </section>
+    <button type="submit" class="btn btn-primary">Kaydet</button>
+</form>
+{% endblock %}

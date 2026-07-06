@@ -173,6 +173,24 @@ textarea:focus-visible, select:focus-visible {
 .notif-item.unread { background: var(--border); }
 .notif-text { flex: 1; font-size: 14px; }
 
+/* Başlık + yanında ikincil bir aksiyon linki (örn. Bildirimler / Tercihler) */
+.page-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 4px;
+}
+
+/* BİLDİRİM TERCİHLERİ: ayarlar sayfasındaki checkbox satırları */
+.pref-list { display: flex; flex-direction: column; gap: 4px; }
+.pref-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border);
+    cursor: pointer;
+}
+.pref-row:last-child { border-bottom: none; }
+.pref-text { display: flex; flex-direction: column; gap: 2px; }
+.pref-label { font-size: 14px; font-weight: 500; }
+.pref-desc { font-size: 12px; }
+
 /* Theme toggle butonu */
 .theme-toggle {
     background: none; border: 1px solid var(--border);
