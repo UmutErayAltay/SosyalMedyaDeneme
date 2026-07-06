@@ -6,7 +6,8 @@ from ._common import _my_id, _attach_post_metrics, PAGE_SIZE
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..storage_helper import upload_images, upload_video
-from ..hashtags import sync_post_hashtags, _trending_hashtags
+from ..hashtags import sync_post_hashtags, _trending_hashtags, notify_hashtag_followers, extract_hashtags
+from ..stories import active_stories_bar
 from ..mentions import notify_mentions, get_valid_usernames, extract_mentions
 from ..visibility import visible_or_filter
 from ..blocks import blocked_user_ids, is_blocked_either_way
@@ -61,9 +62,12 @@ def feed():
         .eq("is_banned", False).order("created_at", desc=True).limit(30).execute().data
     suggested_users = [u for u in candidates if u["id"] not in exclude_ids][:5]
 
+    # Hikaye çubuğu: 24 saatte kaybolan ephemeral paylaşımlar (bkz. app/stories.py).
+    stories_bar = active_stories_bar(sb, me, blocked_ids)
+
     return render_template("feed.html", posts=posts, me=session.get("user"),
                            page=page, has_next=has_next, trending_tags=trending_tags,
-                           suggested_users=suggested_users,
+                           suggested_users=suggested_users, stories_bar=stories_bar,
                            valid_usernames=get_valid_usernames(sb))
 
 
@@ -139,6 +143,7 @@ def create_post():
     if post_id and content and not is_draft:
         sync_post_hashtags(sb, post_id, content)
         notify_mentions(sb, actor_id=_my_id(), content=content, post_id=post_id)
+        notify_hashtag_followers(sb, actor_id=_my_id(), post_id=post_id, tags=extract_hashtags(content))
     if post_id and has_poll:
         create_poll(sb, post_id, poll_options)
 

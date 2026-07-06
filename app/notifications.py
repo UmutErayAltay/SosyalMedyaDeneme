@@ -34,6 +34,7 @@ _TARGET_BUILDERS = {
     "follow": lambda n: url_for("routes.profile", username=n["actor"]["username"]),
     "message": lambda n: url_for("messaging.conversation", conversation_id=n["conversation_id"]),
     "mention": lambda n: url_for("routes.post_detail", post_id=n["post_id"]),
+    "hashtag_post": lambda n: url_for("routes.post_detail", post_id=n["post_id"]),
 }
 
 _TEXT = {
@@ -44,12 +45,13 @@ _TEXT = {
     "follow": "seni takip etmeye başladı",
     "message": "sana mesaj gönderdi",
     "mention": "seni bir gönderide etiketledi",
+    "hashtag_post": "takip ettiğin bir etikette yeni post paylaştı",
 }
 
 
 def notify(sb, *, recipient_id: str, actor_id: str, type_: str,
            post_id: str | None = None, comment_id: str | None = None,
-           conversation_id: str | None = None) -> None:
+           conversation_id: str | None = None, hashtag_id: str | None = None) -> None:
     """Bir kullanıcıya bildirim oluşturur. Kendine bildirim oluşturulmaz."""
     if recipient_id == actor_id:
         return
@@ -60,12 +62,15 @@ def notify(sb, *, recipient_id: str, actor_id: str, type_: str,
         "post_id": post_id,
         "comment_id": comment_id,
         "conversation_id": conversation_id,
+        "hashtag_id": hashtag_id,
     }).execute()
 
 
 def _annotate(n: dict) -> dict:
     """Bildirime metin + hedef URL ekler (liste sayfası ve slide-in panel ortak kullanır)."""
     n["text"] = _TEXT.get(n["type"], "")
+    if n["type"] == "hashtag_post" and n.get("hashtag"):
+        n["text"] = f"#{n['hashtag']['tag']} etiketinde yeni post paylaştı"
     builder = _TARGET_BUILDERS.get(n["type"])
     n["target_url"] = builder(n) if builder else url_for("routes.feed")
     return n
@@ -121,7 +126,7 @@ def _group_notifications(rows: list[dict]) -> list[dict]:
 def _fetch_and_mark_read(sb, me: str, limit: int, offset: int = 0) -> tuple[list[dict], bool]:
     """Bildirimleri çeker, hedef URL/metin ekler, gruplar ve görüntülenenleri okundu işaretler."""
     rows = sb.table("notifications").select(
-        "*, actor:profiles!notifications_actor_id_fkey(username, avatar_url)"
+        "*, actor:profiles!notifications_actor_id_fkey(username, avatar_url), hashtag:hashtags(tag)"
     ).eq("recipient_id", me).order(
         "created_at", desc=True
     ).range(offset, offset + limit).execute().data

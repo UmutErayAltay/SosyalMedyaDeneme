@@ -274,3 +274,73 @@ def toggle_bookmark(post_id):
     if request.headers.get("X-Requested-With") == "fetch":
         return jsonify(bookmarked=bookmarked)
     return redirect(request.referrer or url_for("routes.feed"))
+
+
+# ------------------- KAYDEDİLENLER KLASÖRLERİ (collections) -------------------
+# Bookmarks'a ait, isteğe bağlı gruplama — bkz. sql/migration_bookmark_collections.sql.
+# collection_id NULL = "Genel" (klasörsüz), ayrı bir "Genel" satırı YOK.
+
+@bp.route("/collections/new", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def create_collection():
+    sb = get_sb()
+    me = session["user"]["id"]
+    name = request.form.get("name", "").strip()[:40]
+    is_fetch = request.headers.get("X-Requested-With") == "fetch"
+
+    if not name:
+        if is_fetch:
+            return jsonify(error="Klasör adı boş olamaz."), 400
+        flash("Klasör adı boş olamaz.", "error")
+        return redirect(request.referrer or url_for("routes.feed"))
+
+    try:
+        col = sb.table("bookmark_collections").insert({"user_id": me, "name": name}).execute().data[0]
+    except Exception:
+        if is_fetch:
+            return jsonify(error="Klasör oluşturulamadı (özellik henüz aktif değil)."), 503
+        flash("Klasör oluşturulamadı (özellik henüz aktif değil).", "error")
+        return redirect(request.referrer or url_for("routes.feed"))
+
+    if is_fetch:
+        return jsonify(id=col["id"], name=col["name"])
+    return redirect(request.referrer or url_for("routes.feed"))
+
+
+@bp.route("/collections/<collection_id>/delete", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def delete_collection(collection_id):
+    sb = get_sb()
+    me = session["user"]["id"]
+    # .eq("user_id", me) yetkisiz silmeyi engeller (RLS zaten aynısını yapar,
+    # ama service-role client RLS'i bypass ettiği için burada da kontrol şart).
+    sb.table("bookmark_collections").delete().eq("id", collection_id).eq("user_id", me).execute()
+
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify(ok=True)
+    return redirect(request.referrer or url_for("routes.feed"))
+
+
+@bp.route("/bookmark/<post_id>/collection", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def set_bookmark_collection(post_id):
+    sb = get_sb()
+    me = session["user"]["id"]
+    collection_id = request.form.get("collection_id") or None
+    is_fetch = request.headers.get("X-Requested-With") == "fetch"
+
+    try:
+        sb.table("bookmarks").update({"collection_id": collection_id}).eq(
+            "post_id", post_id).eq("user_id", me).execute()
+    except Exception:
+        if is_fetch:
+            return jsonify(error="Taşınamadı."), 503
+        flash("Taşınamadı (özellik henüz aktif değil).", "error")
+        return redirect(request.referrer or url_for("routes.feed"))
+
+    if is_fetch:
+        return jsonify(ok=True)
+    return redirect(request.referrer or url_for("routes.feed"))

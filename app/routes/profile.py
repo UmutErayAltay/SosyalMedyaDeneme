@@ -78,12 +78,20 @@ def profile(username):
     # Kaydedilenler sekmesi: sadece kendi profilini görüntülerken (kişisel liste,
     # bkz. sql/migration_bookmarks.sql RLS — başkasının kaydettikleri görünmez)
     bookmarked_posts = []
+    bookmark_collections = []
     if is_self:
         try:
-            bm_rows = sb.table("bookmarks").select("post_id").eq(
+            bookmark_collections = sb.table("bookmark_collections").select("id, name").eq(
+                "user_id", me
+            ).order("created_at").execute().data
+        except Exception:
+            pass  # sql/migration_bookmark_collections.sql henüz uygulanmamış olabilir
+        try:
+            bm_rows = sb.table("bookmarks").select("post_id, collection_id").eq(
                 "user_id", me
             ).order("created_at", desc=True).execute().data
             bm_ids = [b["post_id"] for b in bm_rows]
+            collection_by_post = {b["post_id"]: b.get("collection_id") for b in bm_rows}
             if bm_ids:
                 bookmarked_posts = sb.table("posts").select(
                     "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
@@ -94,6 +102,8 @@ def profile(username):
                 attach_polls(sb, bookmarked_posts, me)
                 bm_order = {pid: i for i, pid in enumerate(bm_ids)}
                 bookmarked_posts.sort(key=lambda p: bm_order.get(p["id"], 0))
+                for p in bookmarked_posts:
+                    p["bookmark_collection_id"] = collection_by_post.get(p["id"])
         except Exception:
             pass  # migration henüz uygulanmamışsa sekme boş görünür, sayfa kırılmaz
 
@@ -119,6 +129,7 @@ def profile(username):
     return render_template("profile.html", profile=prof, posts=posts,
                            media_posts=media_posts, liked_posts=liked_posts,
                            bookmarked_posts=bookmarked_posts,
+                           bookmark_collections=bookmark_collections,
                            is_self=is_self, is_following=is_following,
                            is_blocked_by_me=is_blocked_by_me, me=session.get("user"),
                            valid_usernames=get_valid_usernames(sb),

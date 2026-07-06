@@ -8,10 +8,11 @@ güvenli sıralama).
 """
 import re
 from datetime import datetime, timedelta, timezone
-from flask import Blueprint, render_template, session, url_for
+from flask import Blueprint, render_template, request, session, jsonify, redirect, url_for
 from markupsafe import Markup, escape
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
+from .notifications import notify
 
 bp = Blueprint("hashtags", __name__)
 
@@ -104,11 +105,13 @@ def hashtag_posts(tag):
     tag = tag.lower()
 
     posts = []
+    is_following = False
     try:
         ht = sb.table("hashtags").select("id").eq("tag", tag).execute().data
         if ht:
+            hashtag_id = ht[0]["id"]
             rows = sb.table("post_hashtags").select("post_id").eq(
-                "hashtag_id", ht[0]["id"]
+                "hashtag_id", hashtag_id
             ).execute().data
             post_ids = [r["post_id"] for r in rows]
             if post_ids:
@@ -119,11 +122,67 @@ def hashtag_posts(tag):
                 posts = filter_not_blocked(posts, blocked_user_ids(sb, me))
                 _attach_post_metrics(sb, posts, me)
                 attach_polls(sb, posts, me)
+            is_following = bool(sb.table("hashtag_follows").select("user_id")
+                                 .eq("user_id", me).eq("hashtag_id", hashtag_id).execute().data)
     except Exception:
         pass  # sql/migration_hashtags.sql henüz uygulanmamışsa boş liste gösterilir
 
-    return render_template("hashtag.html", tag=tag, posts=posts, me=session.get("user"),
-                           valid_usernames=get_valid_usernames(sb))
+    return render_template("hashtag.html", tag=tag, posts=posts, is_following=is_following,
+                           me=session.get("user"), valid_usernames=get_valid_usernames(sb))
+
+
+@bp.route("/hashtag/<tag>/follow", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def toggle_hashtag_follow(tag):
+    """Bir etiketi takip et/bırak — takip edilen etikette yeni post paylaşılınca
+    bildirim gider (bkz. notify_hashtag_followers, routes/posts.py create_post()'tan
+    çağrılır)."""
+    sb = get_sb()
+    me = session["user"]["id"]
+    tag = tag.lower()
+
+    existing_tag = sb.table("hashtags").select("id").eq("tag", tag).execute().data
+    hashtag_id = existing_tag[0]["id"] if existing_tag else (
+        sb.table("hashtags").insert({"tag": tag}).execute().data[0]["id"]
+    )
+
+    existing = sb.table("hashtag_follows").select("user_id").eq(
+        "user_id", me).eq("hashtag_id", hashtag_id).execute().data
+    if existing:
+        sb.table("hashtag_follows").delete().eq("user_id", me).eq("hashtag_id", hashtag_id).execute()
+        following = False
+    else:
+        sb.table("hashtag_follows").insert({"user_id": me, "hashtag_id": hashtag_id}).execute()
+        following = True
+
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify(following=following)
+    return redirect(url_for("hashtags.hashtag_posts", tag=tag))
+
+
+def notify_hashtag_followers(sb, actor_id: str, post_id: str, tags: list[str]) -> None:
+    """Yeni paylaşılan bir posttaki etiketleri takip eden kullanıcılara bildirim
+    gönderir. SADECE post OLUŞTURULUNCA çağrılır (edit_post() çağırmaz) —
+    mention bildirimlerindeki "sadece yeni eklenenler" ayrımı burada yok,
+    basitlik için: bir postu düzenleyip etiket eklemek ekstra bildirim
+    üretmez (küçük ölçekli bir arkadaş grubu uygulamasında kabul edilebilir
+    bir sınır)."""
+    if not tags:
+        return
+    try:
+        hashtag_rows = sb.table("hashtags").select("id").in_("tag", tags).execute().data
+    except Exception:
+        return
+    for h in hashtag_rows:
+        try:
+            followers = sb.table("hashtag_follows").select("user_id").eq(
+                "hashtag_id", h["id"]).execute().data
+        except Exception:
+            continue
+        for f in followers:
+            notify(sb, recipient_id=f["user_id"], actor_id=actor_id, type_="hashtag_post",
+                   post_id=post_id, hashtag_id=h["id"])
 
 
 def _trending_hashtags(sb, hours: int = 24, limit: int = 10) -> list[dict]:

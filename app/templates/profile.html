@@ -141,9 +141,45 @@
     {% if is_self %}
     <section id="panel-bookmarks" role="tabpanel" aria-labelledby="tab-bookmarks" class="tabpanel" hidden>
         <h2 class="sr-only">Kaydedilenler</h2>
+
+        {% if bookmarked_posts %}
+        {# Klasör filtreleme tamamen client-side (collections.js) — sunucuya
+           ek istek atmadan .bookmark-item'ları data-collection-id'ye göre
+           gösterip gizler, aynı profileTabs.js'in sekme deseni gibi. #}
+        <div class="collection-bar">
+            <button type="button" class="collection-chip active" data-collection-filter="">Tümü</button>
+            <button type="button" class="collection-chip" data-collection-filter="none">Genel</button>
+            {% for col in bookmark_collections %}
+                <span class="collection-chip-wrap">
+                    <button type="button" class="collection-chip" data-collection-filter="{{ col.id }}">{{ col.name }}</button>
+                    <button type="button" class="collection-delete-btn" data-collection-id="{{ col.id }}"
+                            data-delete-url="{{ url_for('social.delete_collection', collection_id=col.id) }}"
+                            aria-label="{{ col.name }} klasörünü sil" title="Klasörü sil">×</button>
+                </span>
+            {% endfor %}
+            <form class="new-collection-form" id="new-collection-form"
+                  action="{{ url_for('social.create_collection') }}" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="name" placeholder="+ Yeni klasör" maxlength="40" class="new-collection-input">
+            </form>
+        </div>
+        {% endif %}
+
         {% for p in bookmarked_posts %}
-            {{ pc.post_card(p, p.profiles.username if p.profiles else 'Bilinmeyen',
-                         p.profiles.avatar_url if p.profiles else none, false) }}
+            <div class="bookmark-item" data-collection-id="{{ p.bookmark_collection_id or '' }}">
+                {{ pc.post_card(p, p.profiles.username if p.profiles else 'Bilinmeyen',
+                             p.profiles.avatar_url if p.profiles else none, false) }}
+                <label class="bookmark-move-label">
+                    Klasör:
+                    <select class="bookmark-move-select" data-post-id="{{ p.id }}"
+                            data-move-url="{{ url_for('social.set_bookmark_collection', post_id=p.id) }}">
+                        <option value="" {{ 'selected' if not p.bookmark_collection_id }}>Genel</option>
+                        {% for col in bookmark_collections %}
+                            <option value="{{ col.id }}" {{ 'selected' if p.bookmark_collection_id == col.id }}>{{ col.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
         {% else %}
             <p class="muted">Henüz kaydedilen post yok.</p>
         {% endfor %}
@@ -155,5 +191,6 @@
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 <script src="{{ url_for('static', filename='js/polls.js') }}"></script>
 <script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
+<script src="{{ url_for('static', filename='js/collections.js') }}"></script>
 <script src="{{ url_for('static', filename='js/profileTabs.js') }}"></script>
 {% endblock %}

@@ -3,8 +3,23 @@
 {% block title %}#{{ tag }}{% endblock %}
 {% block description %}#{{ tag }} etiketli postlar{% endblock %}
 {% block content %}
-<h1>#{{ tag }}</h1>
-<p class="muted">{{ posts|length }} post</p>
+<div class="hashtag-header">
+    <div>
+        <h1>#{{ tag }}</h1>
+        <p class="muted">{{ posts|length }} post</p>
+    </div>
+    {# Etiket takibi: yeni bir post bu etikette paylaşılınca bildirim alınır
+       (bkz. app/hashtags.py notify_hashtag_followers). Mevcut follow.js'in
+       genel click-delegation'ı aynen kullanıcı takibinde olduğu gibi burada
+       da işliyor — yeni JS yazılmadı. #}
+    <button type="button"
+            class="btn follow-btn {{ 'btn-ghost' if is_following else 'btn-primary' }}"
+            data-following="{{ '1' if is_following else '0' }}"
+            data-follow-url="{{ url_for('hashtags.toggle_hashtag_follow', tag=tag) }}"
+            aria-label="{{ ('#' + tag + ' etiketini takipten çık') if is_following else ('#' + tag + ' etiketini takip et') }}">
+        {{ 'Takipten çık' if is_following else 'Takip et' }}
+    </button>
+</div>
 
 <section class="post-list">
     {% for p in posts %}
@@ -19,4 +34,5 @@
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 <script src="{{ url_for('static', filename='js/polls.js') }}"></script>
 <script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
+<script src="{{ url_for('static', filename='js/follow.js') }}"></script>
 {% endblock %}

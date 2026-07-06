@@ -3,6 +3,34 @@
 {% block title %}Akış{% endblock %}
 {% block container_class %}feed-page{% endblock %}
 {% block content %}
+{# Hikaye çubuğu: 24 saatte kaybolan ephemeral paylaşımlar — sadece
+   görüntüleme + kendi hikayeni ekleme/silme, yorum/beğeni/"kim gördü"
+   YOK (kapsam bilinçli olarak dar tutuldu, bkz. app/stories.py). #}
+<div class="stories-bar" id="stories-bar" aria-label="Hikayeler">
+    <button type="button" class="story-avatar-btn" id="add-story-btn" aria-label="Hikaye ekle">
+        {% if me and me.avatar_url %}
+            <img src="{{ me.avatar_url }}" class="avatar" alt="">
+        {% else %}
+            <div class="avatar avatar-placeholder" aria-hidden="true"></div>
+        {% endif %}
+        <span class="story-add-badge" aria-hidden="true">+</span>
+        <span class="story-username">Ekle</span>
+    </button>
+    {% for s in stories_bar %}
+        <button type="button"
+                class="story-avatar-btn {{ 'story-seen' if s.all_seen else 'story-unseen' }}"
+                data-user-id="{{ s.user_id }}"
+                aria-label="{{ 'Senin hikayen' if s.user_id == me.id else s.username + ' hikayesi' }}">
+            {% if s.avatar_url %}
+                <img src="{{ s.avatar_url }}" class="avatar" alt="">
+            {% else %}
+                <div class="avatar avatar-placeholder" aria-hidden="true"></div>
+            {% endif %}
+            <span class="story-username">{{ 'Sen' if s.user_id == me.id else s.username }}</span>
+        </button>
+    {% endfor %}
+</div>
+
 <div class="feed-layout">
     <section class="post-list">
         {% for p in posts %}
@@ -211,9 +239,58 @@
     </div>
 </div>
 
+{# --- Hikaye Paylaşma Modalı --- #}
+<div class="modal-overlay" id="story-modal" role="dialog" aria-modal="true" aria-labelledby="story-modal-title" hidden>
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="story-modal-title">Hikaye Paylaş</h2>
+            <button type="button" class="modal-close" id="close-story-modal" aria-label="Kapat">×</button>
+        </div>
+        <form action="{{ url_for('stories.create_story') }}" method="post" enctype="multipart/form-data" class="modal-body">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <textarea name="caption" placeholder="Bir şey yaz (opsiyonel)..." rows="2" aria-label="Hikaye altyazısı"></textarea>
+
+            <div id="story-image-preview" class="image-preview-grid" aria-live="polite"></div>
+            <video id="story-video-preview" class="post-video-preview" controls style="display:none"></video>
+
+            <div class="story-attach-row">
+                <label class="story-attach-label" for="story-image-input">📷 Görsel</label>
+                <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" hidden id="story-image-input">
+                <label class="story-attach-label" for="story-video-input">🎥 Video</label>
+                <input type="file" name="video" accept="video/mp4,video/webm,video/quicktime" hidden id="story-video-input">
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-full">Paylaş</button>
+        </form>
+    </div>
+</div>
+
+{# --- Hikaye Görüntüleyici --- #}
+<div class="modal-overlay story-viewer-overlay" id="story-viewer-modal" role="dialog" aria-modal="true"
+     aria-labelledby="story-viewer-username" hidden>
+    <div class="story-viewer">
+        <div class="story-progress-row" id="story-progress-row"></div>
+        <header class="story-viewer-header">
+            <img class="avatar avatar-sm" id="story-viewer-avatar" src="" alt="" hidden>
+            <span id="story-viewer-username"></span>
+            <span class="time" id="story-viewer-time"></span>
+            <button type="button" class="story-delete-btn" id="story-delete-btn" hidden aria-label="Hikayeyi sil">🗑️</button>
+            <button type="button" class="modal-close" id="story-viewer-close" aria-label="Kapat">×</button>
+        </header>
+        <div class="story-media-area" id="story-media-area">
+            <div class="story-nav-zone story-nav-prev" id="story-nav-prev"></div>
+            <div class="story-nav-zone story-nav-next" id="story-nav-next"></div>
+            <img id="story-viewer-image" alt="" hidden>
+            <video id="story-viewer-video" hidden playsinline></video>
+            <p class="story-caption" id="story-viewer-caption" hidden></p>
+        </div>
+    </div>
+</div>
+
 <script src="{{ url_for('static', filename='js/postModal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 <script src="{{ url_for('static', filename='js/polls.js') }}"></script>
 <script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
 <script src="{{ url_for('static', filename='js/follow.js') }}"></script>
+<script src="{{ url_for('static', filename='js/stories.js') }}"></script>
 {% endblock %}
