@@ -3,9 +3,15 @@
 // bu uygulamadaki içerik kullanıcıya özel ve sürekli değişiyor (feed, mesajlar,
 // bildirimler) — sayfa önbelleklenirse bayat veri veya (paylaşılan bir cihazda)
 // kullanıcılar arası veri sızıntısı riski doğar. Statik varlıklar için
-// stale-while-revalidate: önce önbellekten hızlıca göster, arka planda ağdan
-// tazesini çekip önbelleği güncelle.
-
+// NETWORK-FIRST: önce ağdan taze halini çek, sadece ağ ERİŞİLEMEZSE (offline)
+// önbelleğe düş. Önceden stale-while-revalidate kullanılıyordu (önce önbellek,
+// arka planda güncelle) — bu, her CSS/JS deploy'undan sonra kullanıcının
+// düzeltmeyi görebilmesi için sayfayı İKİ KEZ yenilemesi gerektiği anlamına
+// geliyordu (ilk yenileme sadece arka planda önbelleği günceller, düzeltme
+// ancak İKİNCİ yenilemede görünür) — bu yüzden gerçek bir kullanıcı, kodu
+// düzeltilmiş olsa bile "değişiklik olmamış" sanabiliyordu (bkz. navbar/
+// feed-sidebar senkron kayma bug raporu, tek yenilemeden sonra hâlâ eski
+// halin görünmesiyle fark edildi).
 const CACHE_NAME = 'sosyal-static-v1';
 const STATIC_ASSETS = ['/static/css/style.css'];
 
@@ -38,19 +44,16 @@ self.addEventListener('fetch', function (event) {
     }
 
     event.respondWith(
-        caches.match(event.request).then(function (cached) {
-            var networkFetch = fetch(event.request).then(function (response) {
-                if (response.ok) {
-                    var clone = response.clone();
-                    caches.open(CACHE_NAME).then(function (cache) {
-                        cache.put(event.request, clone);
-                    });
-                }
-                return response;
-            }).catch(function () {
-                return cached;
-            });
-            return cached || networkFetch;
+        fetch(event.request).then(function (response) {
+            if (response.ok) {
+                var clone = response.clone();
+                caches.open(CACHE_NAME).then(function (cache) {
+                    cache.put(event.request, clone);
+                });
+            }
+            return response;
+        }).catch(function () {
+            return caches.match(event.request);
         })
     );
 });
