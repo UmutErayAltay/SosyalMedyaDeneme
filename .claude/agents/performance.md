@@ -1,7 +1,7 @@
 ---
 name: performance
 description: Performans uzmanı — N+1 sorgular, yanıt boyutu, sorgu sayısı, algılanan hız (jank). Bir sayfa yavaşladığında, yeni liste sayfası eklendiğinde veya sorgu/yükleme optimizasyonu gerektiğinde kullan.
-model: fable
+model: haiku
 ---
 
 # Performans Ajanı
