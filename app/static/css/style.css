@@ -21,45 +21,57 @@
 :root {
     /* === TİER 1: PRİMİTİVE TOKEN'LAR (Ham Renk Paleti, Tema-Bağımsız) === */
 
-    /* Gri Spektrumu (nötr tonlar) */
-    --color-gray-50: #fafafa;
-    --color-gray-100: #e8e8e8;
-    --color-gray-200: #e4e4e4;
-    --color-gray-200-alt: #e0e0e0;  /* koyu tema primary için */
-    --color-gray-300: #cccccc;
-    --color-gray-400: #a0a0a0;
-    --color-gray-600: #6b6b6b;
-    --color-gray-650: #999999;
-    --color-gray-700: #333333;
-    --color-gray-800: #2d2d2d;
-    --color-gray-850: #1e1e1e;
-    --color-gray-900: #1a1a1a;
-    --color-gray-950: #121212;
+    /* Sıcak Nötr Spektrumu (önceki gri spektrumu) */
+    --color-warm-bg: #FBF8F4;        /* açık tema zemin */
+    --color-white: #FFFFFF;
+    --color-charcoal-900: #2B2420;   /* açık tema metin */
+    --color-taupe-600: #8A7F73;      /* muted metin */
+    --color-sand-200: #EDE6DC;       /* border */
+
+    /* Koyu tema için sıcak nötrler */
+    --color-charcoal-950: #1C1815;   /* koyu tema zemin */
+    --color-charcoal-850: #2A241F;   /* koyu tema kart */
+    --color-cream-100: #F0EBE3;      /* koyu tema metin */
+    --color-taupe-400: #9C8F80;      /* koyu tema muted */
+    --color-charcoal-700: #3D352C;   /* koyu tema border */
 
     /* Açık ve Koyu Uçlar */
-    --color-white: #ffffff;
     --color-black: #000000;
 
-    /* Kırmızı Spektrumu (uyarı, hata, tehlike) */
+    /* Mercan-Somon Spektrumu (primary) */
+    --color-coral-700: #B03D26;      /* açık tema primary (koyu/solid) — WCAG AA kontrast @4.5:1 ile */
+    --color-coral-500: #E8604C;      /* dekoratif (gradyan) */
+    --color-coral-400: #FF7A5C;      /* koyu tema primary */
+
+    /* Koyu Çam Yeşili Spektrumu (ikincil vurgu) */
+    --color-teal-700: #1F6F5C;       /* açık tema success/ikincil */
+    --color-teal-500: #2D9B7F;       /* dekoratif (gradyan) */
+    --color-teal-400: #3FA98A;       /* koyu tema ikincil */
+
+    /* Kırmızı Spektrumu (uyarı, hata, tehlike) — DEĞİŞMEDİ */
     --color-red-50: #fdecea;
     --color-red-500: #dd3333;
     --color-red-400: #ff6b6b;
     --color-red-950: #3a1c1c;
 
-    /* Yeşil Spektrumu (başarı, onay) */
+    /* Yeşil Spektrumu (başarı, onay) — DEĞİŞMEDİ */
     --color-green-50: #e8f5e9;
     --color-green-700: #2e7d32;
     --color-green-300: #6ee7b7;
     --color-green-950: #1c3a1c;
 
-    /* Mavi Spektrumu (bilgi, okundu bildirimi) */
+    /* Mavi Spektrumu (bilgi, okundu bildirimi) — DEĞİŞMEDİ */
     --color-blue-400: #6db3f2;
 
-    /* === TİER 1.5: ARAÇ OVERLAY'LERİ (Opacity ile Renk) === */
-    --overlay-dark-strong: rgba(0, 0, 0, 0.85);
-    --overlay-dark: rgba(0, 0, 0, 0.5);
-    --overlay-dark-light: rgba(0, 0, 0, 0.03);
-    --overlay-dark-hint: rgba(0, 0, 0, 0.15);
+    /* Eski Gri Spektrumu (placeholder gradient'leri için) — sıcak tonlu eşdeğerler */
+    --color-gray-300: #D4C7BA;      /* hafif nötr gri eşdeğeri */
+    --color-gray-650: #9C8F80;      /* orta nötr gri eşdeğeri */
+
+    /* === TİER 1.5: ARAÇ OVERLAY'LERİ (Opacity ile Renk — sıcak tonlu) === */
+    --overlay-dark-strong: rgba(43, 36, 32, 0.85);
+    --overlay-dark: rgba(43, 36, 32, 0.5);
+    --overlay-dark-light: rgba(43, 36, 32, 0.03);
+    --overlay-dark-hint: rgba(43, 36, 32, 0.15);
     --overlay-light-hint: rgba(255, 255, 255, 0.15);
     --overlay-light: rgba(255, 255, 255, 0.3);
     --overlay-light-half: rgba(255, 255, 255, 0.4);
@@ -78,23 +90,27 @@
     --radius-lg: 12px;
     --radius-full: 999px;
 
+    /* === TİER 1.7: TİPOGRAFİ === */
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
     /* === TİER 2: SEMANTİK TOKEN'LAR (Tema-Spesifik, Açık Tema) === */
-    --bg: var(--color-gray-50);
+    --bg: var(--color-warm-bg);
     --card: var(--color-white);
-    --text: var(--color-gray-900);
-    --muted: var(--color-gray-600);
-    --border: var(--color-gray-200);
-    --primary: var(--color-gray-800);
-    --primary-hover: var(--color-black);
+    --text: var(--color-charcoal-900);
+    --muted: var(--color-taupe-600);
+    --border: var(--color-sand-200);
+    --primary: var(--color-coral-700);
+    --primary-hover: var(--color-coral-500);
     --danger: var(--color-red-500);
     --danger-bg: var(--color-red-50);
     --success-bg: var(--color-green-50);
-    --success-text: var(--color-green-700);
+    --success-text: var(--color-teal-700);
     --radius: var(--radius-lg);
     --max-width: 640px;
-    --navbar-height: 73px; /* .navbar'ın gerçek render yüksekliği — sticky alt öğelerin top offseti bunu hesaba katmalı */
-    --focus-ring: 0 0 0 3px rgba(45, 45, 45, 0.3);
-    --primary-rgb: 45, 45, 45; /* --primary'nin (#2d2d2d) rgb() eşdeğeri, opacity karışımları için */
+    --navbar-height: 73px;
+    --focus-ring: 0 0 0 3px rgba(176, 61, 38, 0.3);
+    --primary-rgb: 176, 61, 38; /* --primary coral-700'ün (#B03D26) rgb() eşdeğeri */
 
     /* === TİER 3: COMPONENT TOKEN'LAR (.btn, .card, .modal) === */
     --btn-padding-y: var(--space-2);
@@ -111,25 +127,25 @@
     --modal-max-width: 500px;
 }
 
-/* Koyu tema — saf siyah yerine #121212 (halation önleme), Tier 2 semantic'lerin koyu tema varyantları */
+/* Koyu tema — sıcak nötr + coral primary */
 [data-theme="dark"] {
-    --bg: var(--color-gray-950);
-    --card: var(--color-gray-850);
-    --text: var(--color-gray-100);
-    --muted: var(--color-gray-400);
-    --border: var(--color-gray-700);
-    --primary: var(--color-gray-200-alt);
+    --bg: var(--color-charcoal-950);
+    --card: var(--color-charcoal-850);
+    --text: var(--color-cream-100);
+    --muted: var(--color-taupe-400);
+    --border: var(--color-charcoal-700);
+    --primary: var(--color-coral-400);
     --primary-hover: var(--color-white);
     --danger: var(--color-red-400);
     --danger-bg: var(--color-red-950);
     --success-bg: var(--color-green-950);
-    --success-text: var(--color-green-300);
-    --focus-ring: 0 0 0 3px rgba(224, 224, 224, 0.4);
-    --primary-rgb: 224, 224, 224; /* --primary'nin (#e0e0e0) rgb() eşdeğeri */
+    --success-text: var(--color-teal-400);
+    --focus-ring: 0 0 0 3px rgba(255, 122, 92, 0.4);
+    --primary-rgb: 255, 122, 92; /* --primary coral-400'ün rgb() eşdeğeri */
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: var(--font-body);
     background: var(--bg);
     color: var(--text);
     line-height: 1.5;
@@ -147,6 +163,8 @@ body {
 }
 
 a { color: inherit; text-decoration: none; }
+
+h1 { font-family: var(--font-display); font-weight: 600; }
 
 .muted { color: var(--muted); font-size: 13px; }
 .center { text-align: center; }
@@ -195,7 +213,13 @@ textarea:focus-visible, select:focus-visible {
     gap: 16px;
     position: sticky; top: 0; z-index: 10;
 }
-.brand { font-weight: 700; font-size: 18px; letter-spacing: -0.5px; white-space: nowrap; }
+.brand {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: -0.5px;
+    white-space: nowrap;
+}
 
 .nav-search { flex: 1; max-width: 320px; }
 .nav-search input {
@@ -360,7 +384,7 @@ textarea:focus-visible, select:focus-visible {
     display: flex; gap: 4px;
     background: var(--card); border: 1px solid var(--border);
     border-radius: 24px; padding: 6px 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 16px rgba(43, 36, 32, 0.15);
 }
 .reaction-picker[hidden] { display: none; }
 .reaction-option {
@@ -411,7 +435,7 @@ label input { margin-top: 6px; }
 
 /* Postlar */
 .post-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.username { font-weight: 600; }
+.username { font-family: var(--font-display); font-weight: 600; }
 .time { color: var(--muted); font-size: 12px; margin-left: auto; }
 .visibility-badge { font-size: 12px; margin-left: 6px; cursor: help; }
 .pinned-badge { font-size: 12px; margin-left: 6px; color: var(--muted); font-weight: 600; }
@@ -503,7 +527,18 @@ label input { margin-top: 6px; }
     text-decoration: none; color: inherit;
 }
 .memory-item:last-child { border-bottom: none; }
-.memory-thumb { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+.memory-thumb {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex-shrink: 0;
+    border: 3px solid var(--card);
+    box-shadow: 0 2px 8px rgba(43, 36, 32, 0.15);
+    transform: rotate(-2deg);
+    transition: transform 0.2s;
+}
+.memory-item:hover .memory-thumb { transform: rotate(0deg) scale(1.05); }
 .memory-text { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .memory-text p { margin: 0; font-size: 14px; }
 .memory-text .muted { font-size: 13px; }
@@ -825,7 +860,7 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
     max-width: 90vw;
     max-height: 90vh;
     border-radius: 8px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 10px 40px rgba(43, 36, 32, 0.5);
 }
 
 .lightbox-overlay.hidden {
@@ -962,11 +997,11 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
     position: fixed; bottom: 24px; right: 24px; z-index: 50;
     width: 56px; height: 56px; border-radius: 50%; border: none;
     background: var(--primary); color: var(--bg); font-size: 22px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25); cursor: pointer;
+    box-shadow: 0 4px 16px rgba(43, 36, 32, 0.25); cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     transition: transform 0.15s, box-shadow 0.15s;
 }
-.fab-post-btn:hover { transform: scale(1.08); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); }
+.fab-post-btn:hover { transform: scale(1.08); box-shadow: 0 6px 20px rgba(43, 36, 32, 0.3); }
 .fab-post-btn:active { transform: scale(0.96); }
 
 /* Ekle menüsü ("⋯") — görsel/video/anket seçenekleri artık her zaman görünen
@@ -983,7 +1018,7 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
 .attach-menu {
     position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 20;
     background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 16px rgba(43, 36, 32, 0.15);
     display: flex; flex-direction: column; min-width: 180px; padding: 6px;
 }
 .attach-menu[hidden] { display: none; }
@@ -1000,7 +1035,7 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
 .composer-toolbar .post-visibility-select { width: auto; flex-shrink: 0; }
 .modal-overlay {    
     position: fixed; inset: 0;    
-    background: rgba(0, 0, 0, 0.5);    
+    background: rgba(43, 36, 32, 0.5);    
     display: flex; align-items: center; justify-content: center;    
     z-index: 100; padding: 16px;
 }
@@ -1010,7 +1045,7 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
     border-radius: var(--modal-radius);
     width: 100%; max-width: var(--modal-max-width);
     max-height: 90vh; overflow-y: auto;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    box-shadow: 0 8px 32px rgba(43, 36, 32, 0.2);
 }
 .modal.drag-over {
     outline: 2px dashed var(--primary);
@@ -1042,7 +1077,11 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
     padding: 0;
 }
 .story-avatar-btn .avatar { width: 56px; height: 56px; box-sizing: border-box; }
-.story-avatar-btn.story-unseen .avatar { border: 3px solid var(--primary); padding: 2px; }
+.story-avatar-btn.story-unseen .avatar {
+    border: 3px solid transparent;
+    border-image: linear-gradient(135deg, var(--color-coral-500), var(--color-teal-500)) 1;
+    padding: 2px;
+}
 .story-avatar-btn.story-seen .avatar { border: 3px solid var(--border); padding: 2px; }
 .story-username {
     font-size: 11px; color: var(--muted); max-width: 64px; overflow: hidden;
@@ -1103,7 +1142,7 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
 .story-caption {
     position: absolute; bottom: 16px; left: 16px; right: 16px;
     color: var(--color-white); text-align: center; font-size: 14px;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    text-shadow: 0 1px 3px rgba(43, 36, 32, 0.6);
 }
 
 /* Öne çıkanlar çubuğu (profil, bio'nun altı) — .stories-bar/.story-avatar-btn
@@ -1259,13 +1298,13 @@ header[role="banner"] {
 
 /* Bildirim slide-in paneli */
 .notif-panel-backdrop {
-    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 150;
+    position: fixed; inset: 0; background: rgba(43, 36, 32, 0.4); z-index: 150;
 }
 .notif-panel-backdrop[hidden] { display: none; }
 .notif-panel {
     position: fixed; top: 0; right: 0; bottom: 0; z-index: 151;
     width: 100%; max-width: 380px;
-    background: var(--card); box-shadow: -8px 0 32px rgba(0, 0, 0, 0.2);
+    background: var(--card); box-shadow: -8px 0 32px rgba(43, 36, 32, 0.2);
     display: flex; flex-direction: column;
     transform: translateX(0);
     animation: notif-panel-in 0.25s ease;
