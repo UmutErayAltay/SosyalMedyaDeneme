@@ -50,7 +50,10 @@
     if (!bell || !panel) return;
 
     function timeAgo(iso) {
-        var diffMs = Date.now() - new Date(iso + 'Z').getTime();
+        // Supabase created_at zaten +00:00 ofsetiyle geliyor — sonuna 'Z' eklemek
+        // "...+00:00Z" gibi GEÇERSİZ bir ISO string üretip Date'i NaN yapıyordu
+        // ("NaNg" olarak görünüyordu), bkz. Sprint 36 kullanıcı raporu.
+        var diffMs = Date.now() - new Date(iso).getTime();
         var mins = Math.floor(diffMs / 60000);
         if (mins < 1) return 'şimdi';
         if (mins < 60) return mins + 'dk';
@@ -107,8 +110,6 @@
             data.notifications.forEach(function (n) {
                 list.appendChild(renderItem(n));
             });
-            // Panel açıldığında sunucu bunları okundu işaretledi — rozeti sıfırla
-            updateBadge(0);
         } catch (err) {
             list.innerHTML = '<p class="muted center">Bildirimler yüklenemedi.</p>';
         }
@@ -121,6 +122,15 @@
         backdrop.hidden = false;
         document.body.style.overflow = 'hidden';
         closeBtn.focus();
+        // Rozet HEMEN sıfırlanır (sunucu isteğinin bitmesini beklemeden) —
+        // önceden sadece /notifications/panel fetch'i BAŞARIYLA tamamlanınca
+        // temizleniyordu; ağ yavaş/geçici olarak başarısız olursa rozet takılı
+        // kalıyordu, bu yüzden kullanıcı sadece tam sayfa "Tümünü gör"e
+        // gidince (normal sayfa yüklemesi, JS'e bağımlı değil) bildirimlerin
+        // "gittiğini" görüyordu (bkz. Sprint 36 kullanıcı raporu). Zil'e
+        // tıklamak zaten "gördüm" niyetini gösterir; sunucu isteği arka planda
+        // gerçek okunma durumunu kalıcı hale getirir.
+        updateBadge(0);
         loadPanel();
     }
 
