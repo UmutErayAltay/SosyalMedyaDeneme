@@ -66,12 +66,15 @@ def feed():
     # "Kimi takip etmeli" önerisi: zaten takip edilen, ben, engellenen ve
     # banlı kullanıcılar hariç en yeni katılan 5 kişi — sağ kenar çubuğu boş
     # kalmasın diye (kullanıcı isteğiyle eklendi).
+    # Optimizasyon: filtre SQL seviyesine taşındı (.not_.in_) — 30 satırı 5'e indir.
     following_ids = {f["following_id"] for f in sb.table("follows").select("following_id")
                      .eq("follower_id", me).execute().data}
     exclude_ids = following_ids | blocked_ids | {me}
-    candidates = sb.table("profiles").select("id, username, avatar_url, full_name") \
-        .eq("is_banned", False).order("created_at", desc=True).limit(30).execute().data
-    suggested_users = [u for u in candidates if u["id"] not in exclude_ids][:5]
+    query = sb.table("profiles").select("id, username, avatar_url, full_name") \
+        .eq("is_banned", False)
+    if exclude_ids:
+        query = query.not_.in_("id", list(exclude_ids))
+    suggested_users = query.order("created_at", desc=True).limit(5).execute().data
 
     # Hikaye çubuğu: 24 saatte kaybolan ephemeral paylaşımlar (bkz. app/stories.py).
     stories_bar = active_stories_bar(sb, me, blocked_ids)
