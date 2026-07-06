@@ -290,6 +290,9 @@ textarea:focus-visible, select:focus-visible {
     display: flex; justify-content: space-between; gap: 8px;
     margin: 16px 0;
 }
+/* explicit display, [hidden]'ı ezer — infiniteScroll.js nav'ı hidden ile
+   gizliyor (bkz. CLAUDE.md'deki tekrarlayan [hidden] tuzağı kuralı) */
+.pagination[hidden] { display: none; }
 .pagination .btn { border: 1px solid var(--border); }
 
 /* Formlar */

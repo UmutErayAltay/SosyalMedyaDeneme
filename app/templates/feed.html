@@ -49,10 +49,14 @@
     <div id="feed-sentinel" class="feed-sentinel" aria-hidden="true"></div>
     <p class="muted center feed-loading" id="feed-loading" hidden>Yükleniyor...</p>
 
-    {# --- Sayfalama: JS yoksa/başarısızsa fallback — infiniteScroll.js aktif
-       olunca bu nav'ı gizler, "Daha eski" yerine kaydırdıkça yüklenir. --- #}
+    {# --- Sayfalama: SADECE fallback — baştan hidden gelir (sonsuz kaydırma
+       varken hiç görünmemeli, "Yükleniyor..." ile yan yana buton olmasın).
+       infiniteScroll.js devreye GİREMEZSE (IntersectionObserver yok, akışın
+       sonu, veya 3 kez üst üste yükleme hatası) nav'ı geri gösterir; JS
+       tamamen kapalıysa noscript style'ı zorla görünür yapar. --- #}
     {% if page > 1 or has_next %}
-    <nav class="pagination" aria-label="Sayfalama" id="feed-pagination">
+    <noscript><style>#feed-pagination { display: flex !important; }</style></noscript>
+    <nav class="pagination" aria-label="Sayfalama" id="feed-pagination" hidden>
         {% if page > 1 %}
             <a href="{{ url_for('routes.feed', page=page-1) }}" class="btn btn-ghost">← Daha yeni</a>
         {% endif %}

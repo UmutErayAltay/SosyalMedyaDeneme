@@ -18,7 +18,18 @@
     var sentinel = document.getElementById('feed-sentinel');
     var loading = document.getElementById('feed-loading');
     var pagination = document.getElementById('feed-pagination');
-    if (!list || !sentinel || !('IntersectionObserver' in window)) return;
+
+    // Nav template'te BAŞTAN hidden geliyor (buton "Yükleniyor..." ile asla
+    // yan yana görünmesin diye) — sonsuz kaydırma devreye giremeyen HER
+    // yolda fallback olarak geri gösterilmeli.
+    function showPagination() {
+        if (pagination) pagination.hidden = false;
+    }
+
+    if (!list || !sentinel || !('IntersectionObserver' in window)) {
+        showPagination();
+        return;
+    }
 
     var hasNext = list.dataset.hasNext === '1';
     var nextPage = parseInt(list.dataset.nextPage, 10) || 2;
@@ -26,9 +37,12 @@
     var busy = false;
     var failCount = 0;
 
-    if (!hasNext) return;
-    // JS aktif: buton yerine kaydırdıkça yükleme devrede
-    if (pagination) pagination.hidden = true;
+    if (!hasNext) {
+        // Akışın son sayfasındayız (örn. ?page=N'e doğrudan gelindi) —
+        // yüklenecek bir şey yok ama "← Daha yeni" linki erişilebilir kalmalı.
+        showPagination();
+        return;
+    }
 
     async function loadNext() {
         if (busy || !hasNext) return;
@@ -51,7 +65,7 @@
             failCount += 1;
             if (failCount >= 3) {
                 observer.disconnect();
-                if (pagination) pagination.hidden = false;
+                showPagination();
             }
         } finally {
             busy = false;
