@@ -10,6 +10,7 @@ from ..mentions import get_valid_usernames
 from ..visibility import followed_and_self_ids, filter_visible
 from ..blocks import blocked_user_ids, filter_not_blocked, has_blocked
 from ..polls import attach_polls
+from ..stories import _get_highlights
 
 
 @bp.route("/u/<username>")
@@ -133,6 +134,7 @@ def profile(username):
                            is_self=is_self, is_following=is_following,
                            is_blocked_by_me=is_blocked_by_me, me=session.get("user"),
                            valid_usernames=get_valid_usernames(sb),
+                           highlights=_get_highlights(sb, prof["id"]),
                            stats={
                                "posts": len(posts),
                                "followers": followers_count,

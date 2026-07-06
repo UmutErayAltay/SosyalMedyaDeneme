@@ -89,6 +89,7 @@
     var viewerAvatar = document.getElementById('story-viewer-avatar');
     var viewerUsername = document.getElementById('story-viewer-username');
     var viewerTime = document.getElementById('story-viewer-time');
+    var highlightBtn = document.getElementById('story-highlight-btn');
     var deleteBtn = document.getElementById('story-delete-btn');
     var viewerCloseBtn = document.getElementById('story-viewer-close');
     var viewerImage = document.getElementById('story-viewer-image');
@@ -181,6 +182,7 @@
             if (data.avatar_url) { viewerAvatar.src = data.avatar_url; viewerAvatar.hidden = false; }
             else { viewerAvatar.hidden = true; }
             deleteBtn.hidden = !data.is_mine;
+            highlightBtn.hidden = !data.is_mine;
 
             buildProgressBars();
             viewerModal.hidden = false;
@@ -214,6 +216,17 @@
     if (viewerCloseBtn) viewerCloseBtn.addEventListener('click', closeViewer);
     if (navPrev) navPrev.addEventListener('click', function () { showStory(currentIndex - 1); });
     if (navNext) navNext.addEventListener('click', function () { showStory(currentIndex + 1); });
+
+    // storyHighlights.js bu event'i dinler — stories.js picker'ın kendisini
+    // BİLMEMELİ (gevşek bağlama), sadece hangi hikayenin öne çıkarılacağını fırlatır.
+    if (highlightBtn) {
+        highlightBtn.addEventListener('click', function () {
+            if (!currentStories.length) return;
+            document.dispatchEvent(new CustomEvent('open-highlight-picker', {
+                detail: { storyId: currentStories[currentIndex].id }
+            }));
+        });
+    }
 
     if (deleteBtn) {
         deleteBtn.addEventListener('click', async function () {

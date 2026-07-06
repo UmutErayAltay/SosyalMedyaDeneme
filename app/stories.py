@@ -167,3 +167,118 @@ def delete_story(story_id):
     if request.headers.get("X-Requested-With") == "fetch":
         return jsonify(ok=True)
     return redirect(url_for("routes.feed"))
+
+
+def _get_highlights(sb, user_id: str) -> list[dict]:
+    """Bir kullanıcının highlight'larını (id, title, cover_url, item_count) döner.
+
+    Profil sayfası server-render'ı ve JS'teki "mevcut highlight'a ekle"
+    picker'ı bu helper'ı ortak kullanır."""
+    try:
+        rows = sb.table("story_highlights").select(
+            "id, title, cover_url, story_highlight_items(count)"
+        ).eq("user_id", user_id).order("created_at").execute().data
+    except Exception:
+        return []  # migration henüz uygulanmamışsa boş liste, sayfa kırılmaz
+    for r in rows:
+        counts = r.pop("story_highlight_items", None)
+        r["item_count"] = counts[0]["count"] if counts else 0
+    return rows
+
+
+@bp.route("/stories/<story_id>/save-highlight", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def save_highlight(story_id):
+    """Bir hikayeyi mevcut bir highlight'a ekler veya yeni highlight
+    oluşturup ekler. Body: {"highlight_id": ...} XOR {"new_title": ...}."""
+    sb = get_sb()
+    me = session["user"]["id"]
+    body = request.get_json(silent=True) or {}
+    highlight_id = body.get("highlight_id")
+    new_title = body.get("new_title")
+
+    if not highlight_id and not new_title:
+        return jsonify(error="highlight_id veya new_title gerekli."), 400
+    if new_title is not None and not new_title.strip():
+        return jsonify(error="Başlık boş olamaz."), 400
+
+    story = sb.table("stories").select(
+        "image_url, video_url, caption, created_at, user_id"
+    ).eq("id", story_id).execute().data
+    if not story:
+        return jsonify(error="Hikaye bulunamadı."), 404
+    story = story[0]
+    if story["user_id"] != me:
+        return jsonify(error="Sadece kendi hikayeni öne çıkarabilirsin."), 403
+
+    try:
+        if highlight_id:
+            hl = sb.table("story_highlights").select("id, user_id").eq(
+                "id", highlight_id
+            ).execute().data
+            if not hl:
+                return jsonify(error="Highlight bulunamadı."), 404
+            if hl[0]["user_id"] != me:
+                return jsonify(error="Başkasının highlight'ına ekleyemezsin."), 403
+        else:
+            created = sb.table("story_highlights").insert({
+                "user_id": me, "title": new_title.strip(), "cover_url": story["image_url"],
+            }).execute().data
+            highlight_id = created[0]["id"]
+
+        # Hikayenin medyasını KOPYALA — orijinal hikaye (24 saatte) silinse
+        # bile highlight kalıcı kalmalı, bu yüzden stories.id'ye FK verilmez.
+        sb.table("story_highlight_items").insert({
+            "highlight_id": highlight_id,
+            "image_url": story["image_url"],
+            "video_url": story["video_url"],
+            "caption": story["caption"],
+            "original_created_at": story["created_at"],
+        }).execute()
+    except Exception:
+        return jsonify(error="Öne çıkanlar özelliği henüz aktif değil."), 503
+
+    return jsonify(ok=True, highlight_id=highlight_id)
+
+
+@bp.route("/stories/highlights/<user_id>")
+@login_required
+@retry_on_connection_error
+def get_highlights(user_id):
+    sb = get_sb()
+    return jsonify(highlights=_get_highlights(sb, user_id))
+
+
+@bp.route("/stories/highlights/<highlight_id>/view")
+@login_required
+@retry_on_connection_error
+def view_highlight(highlight_id):
+    sb = get_sb()
+    me = session["user"]["id"]
+    try:
+        hl = sb.table("story_highlights").select("id, user_id, title").eq(
+            "id", highlight_id
+        ).execute().data
+        if not hl:
+            return jsonify(error="Highlight bulunamadı."), 404
+        items = sb.table("story_highlight_items").select(
+            "id, image_url, video_url, caption, original_created_at"
+        ).eq("highlight_id", highlight_id).order("added_at").execute().data
+    except Exception:
+        return jsonify(error="Öne çıkanlar özelliği henüz aktif değil."), 503
+
+    return jsonify(title=hl[0]["title"], is_mine=(hl[0]["user_id"] == me), items=items)
+
+
+@bp.route("/stories/highlights/<highlight_id>/delete", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def delete_highlight(highlight_id):
+    sb = get_sb()
+    me = session["user"]["id"]
+    try:
+        sb.table("story_highlights").delete().eq("id", highlight_id).eq("user_id", me).execute()
+    except Exception:
+        return jsonify(error="Öne çıkanlar özelliği henüz aktif değil."), 503
+    return jsonify(ok=True)

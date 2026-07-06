@@ -84,6 +84,24 @@
     </div>
 </header>
 
+{# Öne çıkanlar çubuğu: hikayelerden feed'deki görüntüleyicide "⭐ Öne çıkar"
+   ile eklenen kalıcı koleksiyonlar. Boşsa hiç render edilmez (dar kapsam). #}
+{% if highlights %}
+<div class="highlight-bar" aria-label="Öne çıkanlar">
+    {% for h in highlights %}
+        <button type="button" class="highlight-item" data-highlight-id="{{ h.id }}"
+                aria-label="{{ h.title }} öne çıkanını görüntüle">
+            {% if h.cover_url %}
+                <img src="{{ h.cover_url }}" class="highlight-cover" alt="" loading="lazy">
+            {% else %}
+                <div class="highlight-cover avatar-placeholder" aria-hidden="true"></div>
+            {% endif %}
+            <span class="highlight-title">{{ h.title }}</span>
+        </button>
+    {% endfor %}
+</div>
+{% endif %}
+
 <div class="profile-tabs">
     <div role="tablist" aria-label="Profil içerikleri" class="tablist">
         <button type="button" role="tab" id="tab-posts" aria-selected="true"
@@ -187,10 +205,33 @@
     {% endif %}
 </div>
 
+{# --- Öne Çıkan Görüntüleyici — story-viewer ile aynı CSS class'larını
+   paylaşır (.story-viewer/.story-viewer-header/.story-media-area/...),
+   sadece ilerleme çubuğu yok: highlight kalıcı içerik, otomatik ilerlemeye
+   gerek yok, manuel gezinme yeterli (bkz. storyHighlights.js). --- #}
+<div class="modal-overlay story-viewer-overlay" id="highlight-viewer-modal" role="dialog" aria-modal="true"
+     aria-labelledby="highlight-viewer-title" hidden>
+    <div class="story-viewer">
+        <header class="story-viewer-header">
+            <span id="highlight-viewer-title"></span>
+            <button type="button" class="story-delete-btn" id="highlight-delete-btn" hidden aria-label="Öne çıkanı sil">🗑️</button>
+            <button type="button" class="modal-close" id="highlight-viewer-close" aria-label="Kapat">×</button>
+        </header>
+        <div class="story-media-area" id="highlight-media-area">
+            <div class="story-nav-zone story-nav-prev" id="highlight-nav-prev"></div>
+            <div class="story-nav-zone story-nav-next" id="highlight-nav-next"></div>
+            <img id="highlight-viewer-image" alt="" hidden>
+            <video id="highlight-viewer-video" hidden playsinline controls></video>
+            <p class="story-caption" id="highlight-viewer-caption" hidden></p>
+        </div>
+    </div>
+</div>
+
 <script src="{{ url_for('static', filename='js/follow.js') }}"></script>
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 <script src="{{ url_for('static', filename='js/polls.js') }}"></script>
 <script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
 <script src="{{ url_for('static', filename='js/collections.js') }}"></script>
 <script src="{{ url_for('static', filename='js/profileTabs.js') }}"></script>
+<script src="{{ url_for('static', filename='js/storyHighlights.js') }}"></script>
 {% endblock %}

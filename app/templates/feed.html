@@ -6,7 +6,7 @@
 {# Hikaye çubuğu: 24 saatte kaybolan ephemeral paylaşımlar — sadece
    görüntüleme + kendi hikayeni ekleme/silme, yorum/beğeni/"kim gördü"
    YOK (kapsam bilinçli olarak dar tutuldu, bkz. app/stories.py). #}
-<div class="stories-bar" id="stories-bar" aria-label="Hikayeler">
+<div class="stories-bar" id="stories-bar" aria-label="Hikayeler" data-my-user-id="{{ me.id }}">
     <button type="button" class="story-avatar-btn" id="add-story-btn" aria-label="Hikaye ekle">
         {% if me and me.avatar_url %}
             <img src="{{ me.avatar_url }}" class="avatar" alt="">
@@ -211,6 +211,7 @@
             <img class="avatar avatar-sm" id="story-viewer-avatar" src="" alt="" hidden>
             <span id="story-viewer-username"></span>
             <span class="time" id="story-viewer-time"></span>
+            <button type="button" class="story-highlight-btn" id="story-highlight-btn" hidden aria-label="Öne çıkar">⭐</button>
             <button type="button" class="story-delete-btn" id="story-delete-btn" hidden aria-label="Hikayeyi sil">🗑️</button>
             <button type="button" class="modal-close" id="story-viewer-close" aria-label="Kapat">×</button>
         </header>
@@ -224,11 +225,32 @@
     </div>
 </div>
 
+{# --- Öne Çıkanlara Ekleme Picker'ı — feed'deki hikaye görüntüleyiciden
+   "⭐ Öne çıkar" ile açılır (bkz. storyHighlights.js, custom event
+   'open-highlight-picker' ile stories.js'ten gevşek bağlanır). --- #}
+<div class="modal-overlay" id="highlight-picker-modal" role="dialog" aria-modal="true"
+     aria-labelledby="highlight-picker-title" hidden>
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="highlight-picker-title">Öne Çıkanlara Ekle</h2>
+            <button type="button" class="modal-close" id="highlight-picker-close" aria-label="Kapat">×</button>
+        </div>
+        <div class="modal-body">
+            <div id="highlight-picker-list" aria-live="polite"></div>
+            <div class="highlight-create-row">
+                <input type="text" id="highlight-new-title-input" placeholder="Yeni öne çıkan adı..." maxlength="40">
+                <button type="button" class="btn btn-primary small" id="highlight-create-btn">Oluştur</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="{{ url_for('static', filename='js/postModal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 <script src="{{ url_for('static', filename='js/polls.js') }}"></script>
 <script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
 <script src="{{ url_for('static', filename='js/follow.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stories.js') }}"></script>
+<script src="{{ url_for('static', filename='js/storyHighlights.js') }}"></script>
 <script src="{{ url_for('static', filename='js/infiniteScroll.js') }}"></script>
 {% endblock %}
