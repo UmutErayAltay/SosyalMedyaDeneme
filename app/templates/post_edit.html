@@ -12,7 +12,8 @@
         </div>
     {% elif post.image_url %}
         <img src="{{ post.image_url }}" class="post-image" alt="Post görseli" loading="lazy">
-    {% elif post.video_url %}
+    {% endif %}
+    {% if post.video_url %}
         <video src="{{ post.video_url }}" class="post-video" controls preload="metadata"></video>
     {% endif %}
     {% if post.image_urls or post.image_url or post.video_url %}

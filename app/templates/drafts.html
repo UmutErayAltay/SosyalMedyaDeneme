@@ -15,7 +15,8 @@
         </div>
     {% elif p.image_url %}
         <img src="{{ p.image_url }}" class="post-image" alt="Post görseli" loading="lazy">
-    {% elif p.video_url %}
+    {% endif %}
+    {% if p.video_url %}
         <video src="{{ p.video_url }}" class="post-video" controls preload="metadata"></video>
     {% endif %}
     <footer class="post-actions">

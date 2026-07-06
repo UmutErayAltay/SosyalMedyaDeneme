@@ -102,7 +102,7 @@
         {# --- Flash mesajları: aria-live ile ekran okuyucu duyurusu --- #}
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-                <div aria-live="polite" aria-atomic="true">
+                <div class="flash-container" aria-live="polite" aria-atomic="true">
                 {% for category, msg in messages %}
                     <div class="flash flash-{{ category }}" role="status">{{ msg }}</div>
                 {% endfor %}

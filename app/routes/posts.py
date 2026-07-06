@@ -65,17 +65,13 @@ def create_post():
     video_file = request.files.get("video")
     has_video = bool(video_file and video_file.filename)
 
-    # Anket seçenekleri (en az 2 dolu olmalı) — anket de video/görsel gibi
-    # TEK "ek içerik" türü/post kuralına tabi, en yüksek önceliğe sahip
-    # (anket varsa görsel/video yok sayılır).
+    # Görsel, video ve anket artık AYNI postta birlikte eklenebilir (kullanıcı
+    # isteğiyle mutual-exclusive kısıtlama kaldırıldı, ör. görsel + anket).
     poll_options_raw = [request.form.get(f"poll_option_{i}", "").strip() for i in range(1, 5)]
     poll_options = [o for o in poll_options_raw if o]
     has_poll = len(poll_options) >= 2
 
-    # Video ve görsel BİRLİKTE desteklenmiyor (tek medya türü/post) — video
-    # veya anket varsa görseller yok sayılır (form zaten JS ile bunu engelliyor,
-    # bkz. postModal.js, ama backend de aynı kuralı uygular).
-    valid_files = [] if (has_video or has_poll) else [f for f in image_files if f and f.filename]
+    valid_files = [f for f in image_files if f and f.filename]
 
     if has_poll and not content:
         flash("Anket için bir soru yazmalısın.", "error")
@@ -87,18 +83,16 @@ def create_post():
 
     image_urls = []
     video_url = None
-    if has_poll:
-        pass  # görsel/video yok sayılır, aşağıda create_poll() ile anket eklenir
-    elif has_video:
-        video_url = upload_video(video_file, folder="posts")
-        if not video_url:
-            flash("Video yüklenemedi (geçersiz format veya 25MB'tan büyük).", "error")
-            return redirect(url_for("routes.feed"))
-    elif valid_files:
+    if valid_files:
         # Çoklu görsel yükle (maksimum 4)
         image_urls = upload_images(valid_files, folder="posts", max_count=4)
         if not image_urls:
             flash("Görsel yüklenemedi (geçersiz format veya 5MB'tan büyük).", "error")
+            return redirect(url_for("routes.feed"))
+    if has_video:
+        video_url = upload_video(video_file, folder="posts")
+        if not video_url:
+            flash("Video yüklenemedi (geçersiz format veya 25MB'tan büyük).", "error")
             return redirect(url_for("routes.feed"))
 
     # Geriye dönük uyumluluk: image_url (ilk görsel) + image_urls (array)

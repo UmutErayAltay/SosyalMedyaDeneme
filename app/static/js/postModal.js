@@ -131,8 +131,9 @@
         });
     }
 
-    // --- Video ekle: görsel ile video AYNI POSTTA birlikte desteklenmiyor,
-    // biri seçilince diğeri temizlenir (backend de aynı kuralı uygular). ---
+    // --- Video ekle: görsel, video ve anket artık AYNI postta birlikte
+    // eklenebilir (kullanıcı isteğiyle mutual-exclusive kısıtlama kaldırıldı,
+    // backend de aynı şekilde routes.create_post()'ta güncellendi). ---
     if (videoInput && videoPreview) {
         videoInput.addEventListener('change', function (e) {
             var file = e.target.files[0];
@@ -141,24 +142,12 @@
                 videoPreview.removeAttribute('src');
                 return;
             }
-            if (fileInput) fileInput.value = '';
-            if (previewGrid) previewGrid.innerHTML = '';
             videoPreview.src = URL.createObjectURL(file);
             videoPreview.style.display = 'block';
         });
     }
-    if (fileInput && videoInput) {
-        fileInput.addEventListener('change', function () {
-            if (fileInput.files.length && videoInput.files.length) {
-                videoInput.value = '';
-                videoPreview.style.display = 'none';
-                videoPreview.removeAttribute('src');
-            }
-        });
-    }
 
-    // --- Anket ekle: görsel/video ile AYNI POSTTA birlikte desteklenmiyor
-    // (backend de aynı kuralı uygular, bkz. routes.create_post()) ---
+    // --- Anket ekle ---
     function resetPollUI() {
         if (!pollContainer) return;
         pollContainer.hidden = true;
@@ -174,11 +163,6 @@
         pollToggleBtn.addEventListener('click', function () {
             pollContainer.hidden = false;
             pollToggleBtn.hidden = true;
-            // Anket seçilince görsel/video temizlenir
-            if (fileInput) fileInput.value = '';
-            if (previewGrid) previewGrid.innerHTML = '';
-            if (videoInput) videoInput.value = '';
-            if (videoPreview) { videoPreview.style.display = 'none'; videoPreview.removeAttribute('src'); }
             var firstInput = pollContainer.querySelector('input');
             if (firstInput) firstInput.focus();
         });
@@ -197,14 +181,6 @@
     if (pollCancelBtn) {
         pollCancelBtn.addEventListener('click', resetPollUI);
     }
-
-    // Görsel/video seçilince anket temizlenir (ters yön)
-    [fileInput, videoInput].forEach(function (inp) {
-        if (!inp) return;
-        inp.addEventListener('change', function () {
-            if (inp.files.length && pollContainer && !pollContainer.hidden) resetPollUI();
-        });
-    });
 
     // --- Sürükle-bırak görsel yükleme (tıklanabilir "Görsel Ekle" her zaman
     // alternatif olarak duruyor — WCAG 2.5.7 tek-imleçli alternatif) ---

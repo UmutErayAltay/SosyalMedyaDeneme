@@ -430,6 +430,14 @@ main.feed-page {
     display: grid; grid-template-columns: 1fr 280px; gap: 24px;
     align-items: start;
 }
+/* .feed-page bir GRID — flash mesajı (varsa) DOM'da .feed-layout'tan ÖNCE
+   gelir ve auto-placement'a bırakılırsa grid'in 1. hücresini kapar, tüm
+   akışı sağa/alta kaydırır (kullanıcı raporu: post paylaşınca/silince akış
+   kayıyordu). Üç kural birlikte bunu KÖKTEN önler: flash tüm satırı kaplar,
+   feed-layout/sidebar'ın kolonu DOM sırasından bağımsız olarak sabittir. */
+.flash-container { grid-column: 1 / -1; }
+main.feed-page .feed-layout { grid-column: 1; }
+main.feed-page .feed-sidebar { grid-column: 2; }
 /* top: sadece 24px olsaydı navbar (73px) geri kayınca (yukarı scroll) kenar
    çubuğunun üst kısmının üzerine biner (navbar z-index:10 ile daha üstte) —
    navbar yüksekliği + boşluk olarak hesaplanmalı. */
@@ -525,7 +533,7 @@ main.feed-page {
    görünüyordu). */
 .msg-icon-btn {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 40px; height: 40px; flex-shrink: 0;
+    width: 43px; height: 43px; flex-shrink: 0; margin: 0; margin-bottom: 5px;
     border: none; border-radius: 50%; cursor: pointer;
     background: var(--border); color: var(--text); font-size: 18px;
     transition: background 0.15s, color 0.15s, transform 0.1s;
