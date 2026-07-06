@@ -14,6 +14,12 @@
         {% if is_group %}
             <h2>👥 {{ group_name or 'Grup' }}</h2>
             <span class="muted conv-member-count">{{ group_members|length + 1 }} kişi</span>
+            {# Buton herkese açık kalmalı: modal içindeki "Gruptan Ayrıl" tek erişim
+               yolu bu buton — admin'e kapatılırsa non-admin üyeler gruptan ayrılamaz
+               hale gelir. Sadece etiket role'e göre değişir, admin-only aksiyonlar
+               zaten modal içinde {% if my_is_admin %} ile korunuyor. #}
+            <button type="button" class="btn btn-ghost small conv-manage-btn" id="open-group-manage-modal"
+                    data-conversation-id="{{ conversation_id }}">{{ '⚙️ Yönet' if my_is_admin else '👥 Üyeler' }}</button>
         {% else %}
             <h2>{{ other_user.username if other_user else 'Bilinmeyen' }}</h2>
         {% endif %}
@@ -77,3 +83,79 @@
     <span id="msg-image-name" class="muted" aria-live="polite"></span>
     <p class="muted drop-hint sr-only" id="drop-hint" aria-live="polite"></p>
 </div>
+
+{% if is_group %}
+{# Grup yönetim modalı — panel her AJAX yüklemesinde bu markup'la birlikte
+   yeniden oluşur, bu yüzden groupAdmin.js document-level delegation kullanır
+   (bkz. groupAdmin.js, doğrudan addEventListener stale kalırdı). #}
+<div class="modal-overlay" id="group-manage-modal" role="dialog" aria-modal="true"
+     aria-labelledby="group-manage-modal-title" data-conversation-id="{{ conversation_id }}" hidden>
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="group-manage-modal-title">Grubu Yönet</h2>
+            <button type="button" class="modal-close" id="close-group-manage-modal" aria-label="Kapat">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="group-manage-section">
+                <h3 class="group-manage-label">Grup adı</h3>
+                {% if my_is_admin %}
+                <div class="group-rename-row">
+                    <input type="text" id="group-rename-input" maxlength="60" value="{{ group_name or '' }}" aria-label="Grup adı">
+                    <button type="button" class="btn btn-primary small" id="group-rename-save-btn">Kaydet</button>
+                </div>
+                {% else %}
+                <p>{{ group_name or 'Grup' }}</p>
+                {% endif %}
+            </div>
+
+            <div class="group-manage-section">
+                <h3 class="group-manage-label">Üyeler</h3>
+                <div class="group-member-list" id="group-member-list">
+                    {# Ben her zaman ilk sırada, üstümde aksiyon butonu yok #}
+                    <div class="group-member-row">
+                        {% if me.avatar_url %}
+                            <img src="{{ me.avatar_url }}" class="avatar" alt="" loading="lazy">
+                        {% else %}
+                            <div class="avatar avatar-placeholder" aria-hidden="true"></div>
+                        {% endif %}
+                        <span class="username">{{ me.username }} (sen)</span>
+                        {% if my_is_admin %}<span class="admin-badge">👑 Yönetici</span>{% endif %}
+                    </div>
+                    {% for mmb in group_members %}
+                    <div class="group-member-row" data-user-id="{{ mmb.id }}">
+                        {% if mmb.avatar_url %}
+                            <img src="{{ mmb.avatar_url }}" class="avatar" alt="" loading="lazy">
+                        {% else %}
+                            <div class="avatar avatar-placeholder" aria-hidden="true"></div>
+                        {% endif %}
+                        <span class="username">{{ mmb.username }}</span>
+                        {% if mmb.is_admin %}<span class="admin-badge">👑 Yönetici</span>{% endif %}
+                        {% if my_is_admin %}
+                        <div class="group-member-actions">
+                            <button type="button" class="btn btn-ghost small group-toggle-admin-btn"
+                                    data-user-id="{{ mmb.id }}" data-is-admin="{{ '1' if mmb.is_admin else '0' }}">
+                                {{ 'Yöneticilikten al' if mmb.is_admin else 'Yönetici yap' }}
+                            </button>
+                            <button type="button" class="btn btn-ghost small danger group-remove-member-btn"
+                                    data-user-id="{{ mmb.id }}">Çıkar</button>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            {% if my_is_admin %}
+            <div class="group-manage-section">
+                <h3 class="group-manage-label">+ Üye Ekle</h3>
+                <input type="search" id="group-add-search-input" placeholder="Kişi ara..." autocomplete="off" aria-label="Kişi ara">
+                <div id="group-add-user-list" class="share-user-list" aria-live="polite"></div>
+                <button type="button" class="btn btn-primary btn-full" id="group-add-submit-btn" disabled>Ekle</button>
+            </div>
+            {% endif %}
+
+            <button type="button" class="btn btn-danger btn-full" id="group-leave-btn">Gruptan Ayrıl</button>
+        </div>
+    </div>
+</div>
+{% endif %}

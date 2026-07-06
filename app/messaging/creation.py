@@ -65,10 +65,12 @@ def create_group():
         return jsonify(error="Grup sohbeti özelliği henüz aktif değil (migration uygulanmamış)."), 503
     cid = conv.data[0]["id"]
 
-    all_members = [me] + user_ids
-    sb.table("conversation_participants").insert([
-        {"conversation_id": cid, "user_id": uid} for uid in all_members
-    ]).execute()
+    # Grubu oluşturan kişi otomatik yönetici olur, davet edilenler değil
+    # (bkz. sql/migration_group_chat_admin.sql — created_by ile tutarlı).
+    sb.table("conversation_participants").insert(
+        [{"conversation_id": cid, "user_id": me, "is_admin": True}]
+        + [{"conversation_id": cid, "user_id": uid, "is_admin": False} for uid in user_ids]
+    ).execute()
 
     for uid in user_ids:
         notify(sb, recipient_id=uid, actor_id=me, type_="message", conversation_id=cid)

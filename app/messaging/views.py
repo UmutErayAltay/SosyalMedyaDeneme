@@ -37,6 +37,8 @@ def conversation(conversation_id):
     ).eq("user_id", me).execute()
     if not part.data:
         abort(403)
+    # is_admin migration uygulanmamışsa kolon dict'te yok — güvenli varsayılan False
+    my_is_admin = bool(part.data[0].get("is_admin"))
 
     # Grup meta bilgisi (is_group/name) — migration henüz uygulanmamışsa 1:1 gibi davranılır
     is_group = False
@@ -51,9 +53,13 @@ def conversation(conversation_id):
 
     # Diğer katılımcı(lar) — grupta birden fazla olabilir
     others = sb.table("conversation_participants").select(
-        "user_id, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
+        "user_id, is_admin, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
     ).neq("user_id", me).eq("conversation_id", conversation_id).execute().data
-    other_profiles = [o["profiles"] for o in others if o.get("profiles")]
+    other_profiles = []
+    for o in others:
+        p = o.get("profiles")
+        if p:
+            other_profiles.append({**p, "is_admin": bool(o.get("is_admin"))})
     other_user = None if is_group else (other_profiles[0] if other_profiles else None)
     # Supabase Realtime INSERT payload'ı sadece ham satırı verir (join yok) —
     # grup sohbetinde yeni mesajın kimden geldiğini göstermek için client-side
@@ -69,7 +75,8 @@ def conversation(conversation_id):
 
     ctx = dict(messages=messages, other_user=other_user, is_group=is_group,
                group_name=group_name, group_members=other_profiles, member_map=member_map,
-               conversation_id=conversation_id, me=session["user"])
+               conversation_id=conversation_id, me=session["user"],
+               my_is_admin=my_is_admin if is_group else False)
 
     if request.headers.get("X-Requested-With") == "fetch":
         return render_template("messages/_conversation_panel.html", **ctx)

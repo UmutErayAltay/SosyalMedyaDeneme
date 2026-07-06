@@ -48,3 +48,7 @@
     </div>
 </div>
 <script src="{{ url_for('static', filename='js/groupChat.js') }}"></script>
+{# groupAdmin.js: yönetim modalı _conversation_panel.html içinde (AJAX ile
+   yeniden oluşuyor), bu yüzden script burada bir kez yüklenip document-level
+   delegation ile çalışıyor — bkz. groupAdmin.js başındaki not. #}
+<script src="{{ url_for('static', filename='js/groupAdmin.js') }}"></script>
