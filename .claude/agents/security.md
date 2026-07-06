@@ -1,6 +1,7 @@
 ---
 name: security
 description: Güvenlik uzmanı — CSRF, sahiplik kontrolleri, RLS bypass riskleri, XSS, upload doğrulama, enumeration. Yeni bir özelliğin güvenlik incelemesi, güvenlik açığı şüphesi veya periyodik denetim gerektiğinde kullan.
+model: haiku
 ---
 
 # Güvenlik Ajanı

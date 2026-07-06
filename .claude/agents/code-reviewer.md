@@ -2,6 +2,7 @@
 name: code-reviewer
 description: Kod inceleme uzmanı — commit öncesi diff incelemesi, proje kurallarına uygunluk, bilinen tuzak taraması. Bir özellik/bugfix tamamlanıp commit atılmadan önce veya "şu kodu incele" istendiğinde kullan. SALT OKUNUR — hiçbir dosyayı düzenlemez.
 tools: Read, Grep, Glob, Bash
+model: sonnet
 ---
 
 # Code Reviewer Ajanı

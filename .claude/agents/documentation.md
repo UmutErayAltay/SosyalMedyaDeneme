@@ -1,6 +1,7 @@
 ---
 name: documentation
 description: Dokümantasyon uzmanı — .context/architecture.md ve .context/active_context.md bakımı, sprint günlüğü, şema/mimari dokümantasyonu. Bir özellik/bugfix tamamlanıp commit ÖNCESİ proje hafızası güncellenecekken kullan.
+model: haiku
 ---
 
 # Dokümantasyon Ajanı

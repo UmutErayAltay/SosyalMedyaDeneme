@@ -1,6 +1,7 @@
 ---
 name: testing
 description: Test/doğrulama uzmanı — Flask test_client script'leri, gerçek sunucu testleri ve Playwright MCP ile uçtan uca UI doğrulaması. Bir değişikliğin gerçekten çalıştığının kanıtlanması veya regresyon taraması gerektiğinde kullan.
+model: haiku
 ---
 
 # Test Ajanı

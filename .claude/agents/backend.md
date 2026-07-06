@@ -1,6 +1,7 @@
 ---
 name: backend
 description: Flask backend uzmanı — blueprint'ler, route'lar, iş mantığı, Supabase sorguları (app/*.py, app/routes/, app/messaging/). Yeni endpoint, mevcut route değişikliği, bildirim/mention/hashtag mantığı veya backend bug fix gerektiğinde kullan.
+model: haiku
 ---
 
 # Backend Ajanı

@@ -1,6 +1,7 @@
 ---
 name: database
 description: Veritabanı uzmanı — Supabase/Postgres şeması, sql/ migration dosyaları, RLS politikaları, index'ler. Yeni tablo/kolon, şema değişikliği, RLS politikası veya migration yazımı/uygulaması gerektiğinde kullan.
+model: haiku
 ---
 
 # Database Ajanı

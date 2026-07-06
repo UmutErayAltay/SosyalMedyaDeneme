@@ -1,6 +1,7 @@
 ---
 name: frontend
 description: Frontend uzmanı — Jinja2 template'leri, vanilla JS ve tek global CSS (app/templates/, app/static/). Yeni sayfa/bileşen, UI/UX değişikliği, tema/stil işi veya tarayıcı davranışı bug fix'i gerektiğinde kullan.
+model: haiku
 ---
 
 # Frontend Ajanı
