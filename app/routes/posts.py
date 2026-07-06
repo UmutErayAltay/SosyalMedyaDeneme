@@ -134,7 +134,7 @@ def create_post():
         insert_data["image_url"] = image_urls[0]
 
     visibility = request.form.get("visibility", "public")
-    if visibility not in ("public", "followers"):
+    if visibility not in ("public", "followers", "close_friends"):
         visibility = "public"
 
     # Taslak olarak kaydet: post DB'de oluşur ama feed/profil/arama/hashtag'te
@@ -194,7 +194,7 @@ def edit_post(post_id):
             return redirect(url_for("routes.edit_post", post_id=post_id))
 
         visibility = request.form.get("visibility", post.get("visibility") or "public")
-        if visibility not in ("public", "followers"):
+        if visibility not in ("public", "followers", "close_friends"):
             visibility = "public"
 
         old_mentions = set(extract_mentions(post.get("content") or ""))
@@ -258,6 +258,15 @@ def post_detail(post_id):
             "follower_id", me
         ).eq("following_id", post["user_id"]).execute().data
         if not following:
+            abort(404)
+
+    # Sadece yakın arkadaşlara özel post: yazar değilsen ve seni yakın arkadaş
+    # listesine eklememişse 404.
+    if post.get("visibility") == "close_friends" and post["user_id"] != me:
+        is_close = sb.table("close_friends").select("owner_id").eq(
+            "owner_id", post["user_id"]
+        ).eq("friend_id", me).execute().data
+        if not is_close:
             abort(404)
 
     _attach_post_metrics(sb, [post], me)

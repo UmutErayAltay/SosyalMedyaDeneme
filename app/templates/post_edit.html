@@ -28,6 +28,7 @@
         <select name="visibility" id="post-visibility-select" class="post-visibility-select">
             <option value="public" {{ 'selected' if (post.visibility or 'public') == 'public' }}>🌐 Herkese açık</option>
             <option value="followers" {{ 'selected' if post.visibility == 'followers' }}>🔒 Sadece takipçilerim</option>
+            <option value="close_friends" {{ 'selected' if post.visibility == 'close_friends' }}>💚 Yakın Arkadaşlar</option>
         </select>
 
         <button type="submit" class="btn btn-primary">Kaydet</button>

@@ -6,7 +6,7 @@ from ._common import _my_id, _attach_post_metrics
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..mentions import get_valid_usernames
-from ..visibility import followed_and_self_ids, filter_visible
+from ..visibility import followed_and_self_ids, close_friend_author_ids, filter_visible
 from ..blocks import blocked_user_ids, filter_not_blocked
 from ..polls import attach_polls
 
@@ -68,7 +68,7 @@ def search():
             posts_query = posts_query.lte("created_at", f"{date_to}T23:59:59")
         posts = posts_query.order("created_at", desc=True).limit(50).execute().data
         posts = [p for p in posts if not p.get("is_draft")]  # taslaklar aramada görünmez
-        posts = filter_visible(posts, followed_and_self_ids(sb, me))
+        posts = filter_visible(posts, followed_and_self_ids(sb, me), close_friend_author_ids(sb, me))
         posts = filter_not_blocked(posts, blocked_ids)
         _attach_post_metrics(sb, posts, me)
         attach_polls(sb, posts, me)
@@ -149,6 +149,8 @@ def discover():
         posts = sb.table("posts").select(select_cols).gte("created_at", cutoff).execute().data
 
     posts = [p for p in posts if p["user_id"] not in exclude_ids]
+    close_friend_ids = close_friend_author_ids(sb, me)
+    posts = filter_visible(posts, exclude_ids, close_friend_ids)
     posts = filter_not_blocked(posts, blocked_ids)
     _attach_post_metrics(sb, posts, me)
     attach_polls(sb, posts, me)

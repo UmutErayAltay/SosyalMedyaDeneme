@@ -7,7 +7,7 @@ from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..storage_helper import upload_image
 from ..mentions import get_valid_usernames
-from ..visibility import followed_and_self_ids, filter_visible
+from ..visibility import followed_and_self_ids, close_friend_author_ids, filter_visible
 from ..blocks import blocked_user_ids, filter_not_blocked, has_blocked
 from ..polls import attach_polls
 from ..stories import _get_highlights
@@ -38,6 +38,7 @@ def profile(username):
     # Kaydedilenler) aynı süzme mantığı geçerli, çünkü liked/bookmarked
     # postlar BAŞKA yazarlara ait olabilir.
     visible_author_ids = followed_and_self_ids(sb, me)
+    close_friend_ids = close_friend_author_ids(sb, me)
     blocked_ids = blocked_user_ids(sb, me)
 
     # Postlar + etkileşim sayıları tek sorguda
@@ -45,7 +46,7 @@ def profile(username):
         "*, likes(count), comments(count)"
     ).eq("user_id", prof["id"]).order("created_at", desc=True).execute().data
     posts = [p for p in posts if not p.get("is_draft")]  # taslaklar SADECE /taslaklar'da görünür
-    posts = filter_visible(posts, visible_author_ids)
+    posts = filter_visible(posts, visible_author_ids, close_friend_ids)
     posts = filter_not_blocked(posts, blocked_ids)
     # Sabitlenmiş post en üste taşınır (görünür değilse zaten listede yok,
     # bu durumda pinned_post_id eşleşmesi olmaz — sessizce yok sayılır)
@@ -68,7 +69,7 @@ def profile(username):
         liked_posts = sb.table("posts").select(
             "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
         ).in_("id", liked_ids).execute().data
-        liked_posts = filter_visible(liked_posts, visible_author_ids)
+        liked_posts = filter_visible(liked_posts, visible_author_ids, close_friend_ids)
         liked_posts = filter_not_blocked(liked_posts, blocked_ids)
         _attach_post_metrics(sb, liked_posts, me)
         attach_polls(sb, liked_posts, me)
@@ -97,7 +98,7 @@ def profile(username):
                 bookmarked_posts = sb.table("posts").select(
                     "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
                 ).in_("id", bm_ids).execute().data
-                bookmarked_posts = filter_visible(bookmarked_posts, visible_author_ids)
+                bookmarked_posts = filter_visible(bookmarked_posts, visible_author_ids, close_friend_ids)
                 bookmarked_posts = filter_not_blocked(bookmarked_posts, blocked_ids)
                 _attach_post_metrics(sb, bookmarked_posts, me)
                 attach_polls(sb, bookmarked_posts, me)

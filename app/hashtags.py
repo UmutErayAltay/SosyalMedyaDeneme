@@ -13,6 +13,7 @@ from markupsafe import Markup, escape
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .notifications import notify
+from .visibility import close_friend_author_ids
 
 bp = Blueprint("hashtags", __name__)
 
@@ -118,7 +119,7 @@ def hashtag_posts(tag):
                 posts = sb.table("posts").select(
                     "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
                 ).in_("id", post_ids).order("created_at", desc=True).execute().data
-                posts = filter_visible(posts, followed_and_self_ids(sb, me))
+                posts = filter_visible(posts, followed_and_self_ids(sb, me), close_friend_author_ids(sb, me))
                 posts = filter_not_blocked(posts, blocked_user_ids(sb, me))
                 _attach_post_metrics(sb, posts, me)
                 attach_polls(sb, posts, me)

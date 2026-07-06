@@ -68,6 +68,7 @@ def create_app() -> Flask:
     from .reports import bp as reports_bp
     from .admin import bp as admin_bp
     from .stories import bp as stories_bp
+    from .close_friends import bp as close_friends_bp
 
     # Emoji reaksiyon ikonları şablonlarda {{ REACTIONS['love'] }} olarak kullanılabilir
     app.jinja_env.globals["REACTIONS"] = REACTIONS
@@ -87,5 +88,6 @@ def create_app() -> Flask:
     app.register_blueprint(reports_bp, url_prefix="/social")
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(stories_bp)
+    app.register_blueprint(close_friends_bp)
 
     return app
