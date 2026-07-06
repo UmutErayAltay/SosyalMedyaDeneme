@@ -11,6 +11,7 @@ from flask import Blueprint, request, redirect, url_for, session, flash, jsonify
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .storage_helper import upload_image, upload_video
+from .blocks import is_blocked_either_way
 
 bp = Blueprint("stories", __name__)
 
@@ -129,6 +130,11 @@ def user_stories(user_id):
     işlenir (halka rengi için)."""
     sb = get_sb()
     me = session["user"]["id"]
+
+    # Engelleme kontrolü: harita yönde olursa olsun bir engelleme varsa boş liste dön
+    if user_id != me and is_blocked_either_way(sb, me, user_id):
+        return jsonify(username="Bilinmeyen", avatar_url=None, is_mine=False, stories=[])
+
     now = datetime.now(timezone.utc).isoformat()
 
     try:
@@ -247,6 +253,12 @@ def save_highlight(story_id):
 @retry_on_connection_error
 def get_highlights(user_id):
     sb = get_sb()
+    me = session["user"]["id"]
+
+    # Engelleme kontrolü: hangi yönde olursa olsun bir engelleme varsa boş liste dön
+    if user_id != me and is_blocked_either_way(sb, me, user_id):
+        return jsonify(highlights=[])
+
     return jsonify(highlights=_get_highlights(sb, user_id))
 
 
@@ -262,6 +274,12 @@ def view_highlight(highlight_id):
         ).execute().data
         if not hl:
             return jsonify(error="Highlight bulunamadı."), 404
+
+        # Engelleme kontrolü: hangi yönde olursa olsun bir engelleme varsa 404 dön
+        # (enumeration önleme — highlight bulunamazsa da aynı 404)
+        if hl[0]["user_id"] != me and is_blocked_either_way(sb, me, hl[0]["user_id"]):
+            return jsonify(error="Highlight bulunamadı."), 404
+
         items = sb.table("story_highlight_items").select(
             "id, image_url, video_url, caption, original_created_at"
         ).eq("highlight_id", highlight_id).order("added_at").execute().data
