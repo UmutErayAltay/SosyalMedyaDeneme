@@ -32,7 +32,7 @@ def _notify_conversation(sb, conversation_id: str, sender_id: str) -> None:
 
 
 def _get_or_create_conversation(me_id: str, target_id: str) -> str:
-    """İki kullanıcı arasındaki konuşmayı bulur veya yenisini oluşturur, ID'sini döner."""
+    """İki kullanıcı arasındaki 1:1 konuşmayı bulur veya yenisini oluşturur, ID'sini döner."""
     sb = get_sb()
     my_convs = sb.table("conversation_participants").select("conversation_id").eq("user_id", me_id).execute().data
     target_convs = sb.table("conversation_participants").select("conversation_id").eq("user_id", target_id).execute().data
@@ -40,6 +40,20 @@ def _get_or_create_conversation(me_id: str, target_id: str) -> str:
     my_ids = {c["conversation_id"] for c in my_convs}
     target_ids = {c["conversation_id"] for c in target_convs}
     shared = my_ids & target_ids
+
+    if shared:
+        # İki kullanıcı ortak bir GRUP sohbetinin de üyesi olabilir (örn. aynı
+        # arkadaş grubunda) — bu fonksiyon her zaman 1:1 DM aradığından, grup
+        # conversation'ları kesişimden elenir (yoksa start_conversation() 1:1
+        # yerine yanlışlıkla gruba yönlendirir). migration_group_chat.sql henüz
+        # uygulanmamışsa is_group kolonu yoktur; bu durumda zaten TÜM konuşmalar
+        # 1:1'dir, filtreye gerek yok — sorgu patlarsa eski (filtresiz) davranışa düş.
+        try:
+            rows = sb.table("conversations").select("id, is_group").in_("id", list(shared)).execute().data
+            group_ids = {r["id"] for r in rows if r.get("is_group")}
+            shared = shared - group_ids
+        except Exception:
+            pass
 
     if shared:
         return shared.pop()
