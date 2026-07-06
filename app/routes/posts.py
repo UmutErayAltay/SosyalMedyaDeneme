@@ -13,6 +13,7 @@ from ..visibility import visible_or_filter
 from ..blocks import blocked_user_ids, is_blocked_either_way
 from ..polls import create_poll, attach_polls
 from ..memories import get_memories
+from ..post_views import record_view, get_view_count
 
 
 @bp.route("/")
@@ -271,6 +272,9 @@ def post_detail(post_id):
         if not is_close:
             abort(404)
 
+    # Görüntüleme sayısını kaydet (tüm access kontrolleri geçtikten sonra)
+    record_view(sb, post_id, me, post["user_id"])
+
     _attach_post_metrics(sb, [post], me)
     attach_polls(sb, [post], me)
 
@@ -297,8 +301,12 @@ def post_detail(post_id):
         tc["replies"] = [c for c in comments if c.get("parent_comment_id") == tc["id"]]
     comments = top_comments
 
+    # Görüntüleme sayısı SADECE yazarsa hesaplanır (gereksiz sorgu + bilgi sızıntısı önlenir)
+    view_count = get_view_count(sb, post_id) if post["user_id"] == me else None
+
     return render_template("post_detail.html", post=post, comments=comments,
-                           me=session.get("user"), valid_usernames=get_valid_usernames(sb))
+                           me=session.get("user"), valid_usernames=get_valid_usernames(sb),
+                           view_count=view_count)
 
 
 @bp.route("/post/<post_id>/delete", methods=["POST"])

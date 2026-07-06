@@ -440,6 +440,7 @@ label input { margin-top: 6px; }
 .mention-link { color: var(--primary); font-weight: 600; text-decoration: none; }
 .mention-link:hover { text-decoration: underline; }
 .post-actions { display: flex; gap: 8px; align-items: center; }
+.view-count { display: inline-flex; gap: .25rem; align-items: center; }
 .inline { display: inline; }
 
 /* Avatar */

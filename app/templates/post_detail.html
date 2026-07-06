@@ -81,6 +81,9 @@
     </button>
     {% if me and post.user_id == me.id %}
         <a href="{{ url_for('routes.edit_post', post_id=post.id) }}" class="btn btn-ghost" aria-label="Postu düzenle">✏️ Düzenle</a>
+        {% if view_count is not none %}
+            <span class="view-count muted" title="Görüntülenme sayısı">👁️ {{ view_count }}</span>
+        {% endif %}
     {% endif %}
 </footer>
 </article>
