@@ -421,6 +421,12 @@ label input { margin-top: 6px; }
     border-left: 2px solid var(--border);
 }
 
+/* Sonsuz kaydırma — sentinel görünmez ama yer kaplamalı (IntersectionObserver
+   0 yükseklikli elemanı da gözler ama 1px güvenli), yükleniyor yazısı kayma
+   yaratmasın diye sabit yükseklikte */
+.feed-sentinel { height: 1px; }
+.feed-loading { min-height: 24px; margin: 8px 0; }
+
 .hashtag-header {
     display: flex; align-items: flex-start; justify-content: space-between;
     gap: 12px; margin-bottom: 16px;

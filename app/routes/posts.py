@@ -1,6 +1,6 @@
 """Feed + post yaşam döngüsü: paylaşma, düzenleme, silme, taslak, sabitleme."""
 from datetime import datetime, timezone
-from flask import render_template, request, redirect, url_for, session, abort, flash
+from flask import render_template, request, redirect, url_for, session, abort, flash, make_response
 from . import bp
 from ._common import _my_id, _attach_post_metrics, PAGE_SIZE
 from ..decorators import login_required
@@ -47,6 +47,17 @@ def feed():
     posts = posts[:PAGE_SIZE]
     _attach_post_metrics(sb, posts, me)
     attach_polls(sb, posts, me)
+
+    # Sonsuz kaydırma (infiniteScroll.js): sonraki sayfa istekleri sadece post
+    # kartlarını ister — kenar çubuğu/hikaye/öneri sorgularını ATLA, yalnızca
+    # partial'ı döndür. has_next bilgisi header'la taşınır (HTML'e gömmek
+    # yerine — partial saf kart listesi kalsın).
+    if request.headers.get("X-Requested-With") == "fetch":
+        html = render_template("_feed_posts.html", posts=posts, me=session.get("user"),
+                               valid_usernames=get_valid_usernames(sb))
+        resp = make_response(html)
+        resp.headers["X-Has-Next"] = "1" if has_next else "0"
+        return resp
 
     # Twitter tarzı sağ kenar çubuğu: gündemdeki hashtag'ler (ayrı bir
     # "Gündem" sekmesi yerine doğrudan ana sayfada) — bkz. CLAUDE.md/active_context.
