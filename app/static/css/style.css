@@ -390,7 +390,30 @@ label input { margin-top: 6px; }
     border-radius: 3px 3px 0 0; min-height: 2px;
 }
 .insights-bar-comments { background: var(--muted); }
+.insights-bar-followers { background: var(--success-text); }
 .insights-bar-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
+.insights-range-toggle { display: flex; gap: 8px; margin: 8px 0 16px; }
+.insights-range-btn {
+    border: none; cursor: pointer; text-decoration: none;
+    padding: 8px 16px; border-radius: 8px;
+    font-size: 14px; font-weight: 500;
+    background: transparent; color: var(--muted);
+    transition: all 0.15s;
+}
+.insights-range-btn:hover { background: var(--border); color: var(--text); }
+.insights-range-btn.active { background: var(--primary); color: var(--bg); }
+.insights-most-active { font-weight: 600; margin: 0 0 12px; }
+.day-of-week-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 0;
+}
+.day-of-week-label { flex: 0 0 90px; font-size: 13px; }
+.day-of-week-bar-wrap {
+    flex: 1; background: var(--border); border-radius: 3px; height: 10px;
+    overflow: hidden;
+}
+.day-of-week-bar { height: 100%; background: var(--primary); border-radius: 3px; min-width: 2px; }
+.day-of-week-count { flex: 0 0 30px; text-align: right; font-size: 13px; }
 .insights-top-post {
     display: flex; justify-content: space-between; align-items: center; gap: 12px;
     padding: 10px 0; border-bottom: 1px solid var(--border);

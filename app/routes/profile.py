@@ -266,14 +266,36 @@ def _daily_counts(rows: list, days: int) -> list[dict]:
     ]
 
 
+_GUN_ADLARI = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+
+
+def _day_of_week_counts(rows: list) -> list[dict]:
+    """`rows` (her biri 'created_at' ISO string alanı olan) listesini haftanın
+    günlerine göre sayıma çevirir (Pazartesi→Pazar sırayla, TÜM zamanlar,
+    days penceresinden bağımsız — 'hangi gün daha çok paylaşım yapıyorsun' sabit bir alışkanlık sorusu)."""
+    counts = [0] * 7
+    for r in rows:
+        wd = datetime.fromisoformat(r["created_at"]).weekday()  # 0=Pazartesi
+        counts[wd] += 1
+    return [{"day": _GUN_ADLARI[i], "count": counts[i]} for i in range(7)]
+
+
 @bp.route("/insights")
 @login_required
 @retry_on_connection_error
 def insights():
     """Kendi postlarının beğeni/yorum trendini gösteren basit bir sayfa —
-    yeni bir tablo gerekmez, mevcut likes/comments/posts üzerinden hesaplanır."""
+    yeni bir tablo gerekmez, mevcut likes/comments/posts/follows üzerinden
+    hesaplanır."""
     sb = get_sb()
     me = _my_id()
+
+    # Sadece 7/14/30 kabul edilir; kullanıcı URL'yi elle bozarsa (örn.
+    # ?days=999) sessizce 14'e düşülür — bu bir istatistik sayfası, hata
+    # sayfası göstermeye değmez.
+    days = request.args.get("days", 14, type=int)
+    if days not in (7, 14, 30):
+        days = 14
 
     posts = sb.table("posts").select(
         "id, content, created_at, likes(count), comments(count)"
@@ -288,7 +310,6 @@ def insights():
     total_comments = sum(p["comment_count"] for p in posts)
 
     post_ids = [p["id"] for p in posts]
-    days = 14
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days - 1)).isoformat()
     likes_recent, comments_recent = [], []
     if post_ids:
@@ -301,12 +322,42 @@ def insights():
 
     likes_by_day = _daily_counts(likes_recent, days)
     comments_by_day = _daily_counts(comments_recent, days)
-    max_daily = max([d["count"] for d in likes_by_day + comments_by_day] + [1])
+
+    follows_recent = sb.table("follows").select("created_at").eq(
+        "following_id", me
+    ).gte("created_at", cutoff).execute().data
+    followers_by_day = _daily_counts(follows_recent, days)
+
+    max_daily = max(
+        [d["count"] for d in likes_by_day + comments_by_day + followers_by_day] + [1]
+    )
+
+    total_followers = sb.table("follows").select(
+        "follower_id", count="exact", head=True
+    ).eq("following_id", me).execute().count or 0
+    total_following = sb.table("follows").select(
+        "following_id", count="exact", head=True
+    ).eq("follower_id", me).execute().count or 0
+
+    avg_engagement = round((total_likes + total_comments) / total_posts, 1) if total_posts else 0
+
+    # Haftanın günü dağılımı TÜM postlar üzerinden hesaplanır (days
+    # penceresinden bağımsız) — "hangi gün daha çok paylaşım yapıyorsun"
+    # sabit bir alışkanlık sorusu, son N günle sınırlı olmamalı.
+    day_of_week_stats = _day_of_week_counts(posts)
+    most_active_day = (
+        max(day_of_week_stats, key=lambda d: d["count"])["day"]
+        if any(d["count"] > 0 for d in day_of_week_stats) else None
+    )
 
     top_posts = sorted(posts, key=lambda p: p["engagement"], reverse=True)[:5]
 
     return render_template("insights.html", me=session.get("user"),
+                           days=days,
                            total_posts=total_posts, total_likes=total_likes,
                            total_comments=total_comments, likes_by_day=likes_by_day,
-                           comments_by_day=comments_by_day, max_daily=max_daily,
-                           top_posts=top_posts)
+                           comments_by_day=comments_by_day, followers_by_day=followers_by_day,
+                           max_daily=max_daily, top_posts=top_posts,
+                           total_followers=total_followers, total_following=total_following,
+                           avg_engagement=avg_engagement, day_of_week_stats=day_of_week_stats,
+                           most_active_day=most_active_day)

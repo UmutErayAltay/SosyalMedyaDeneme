@@ -3,15 +3,24 @@
 {% block content %}
 <h1>📊 İstatistiklerim</h1>
 
+<div class="insights-range-toggle">
+    <a href="{{ url_for('routes.insights', days=7) }}" class="insights-range-btn {{ 'active' if days == 7 else '' }}">7 gün</a>
+    <a href="{{ url_for('routes.insights', days=14) }}" class="insights-range-btn {{ 'active' if days == 14 else '' }}">14 gün</a>
+    <a href="{{ url_for('routes.insights', days=30) }}" class="insights-range-btn {{ 'active' if days == 30 else '' }}">30 gün</a>
+</div>
+
 <section class="card insights-summary">
     <div><strong>{{ total_posts }}</strong><span class="muted">Post</span></div>
     <div><strong>{{ total_likes }}</strong><span class="muted">Toplam Beğeni</span></div>
     <div><strong>{{ total_comments }}</strong><span class="muted">Toplam Yorum</span></div>
+    <div><strong>{{ total_followers }}</strong><span class="muted">Takipçi</span></div>
+    <div><strong>{{ total_following }}</strong><span class="muted">Takip Edilen</span></div>
+    <div><strong>{{ avg_engagement }}</strong><span class="muted">Post Başına Ort. Etkileşim</span></div>
 </section>
 
 <section class="card">
-    <h2>Son 14 gün — Beğeniler</h2>
-    <div class="insights-chart" role="img" aria-label="Son 14 günün günlük beğeni sayıları">
+    <h2>Son {{ days }} gün — Beğeniler</h2>
+    <div class="insights-chart" role="img" aria-label="Son {{ days }} günün günlük beğeni sayıları">
         {% for d in likes_by_day %}
         <div class="insights-bar-wrap" title="{{ d.date }}: {{ d.count }} beğeni">
             <div class="insights-bar" style="height: {{ (d.count / max_daily * 100)|round|int }}%"></div>
@@ -22,8 +31,8 @@
 </section>
 
 <section class="card">
-    <h2>Son 14 gün — Yorumlar</h2>
-    <div class="insights-chart" role="img" aria-label="Son 14 günün günlük yorum sayıları">
+    <h2>Son {{ days }} gün — Yorumlar</h2>
+    <div class="insights-chart" role="img" aria-label="Son {{ days }} günün günlük yorum sayıları">
         {% for d in comments_by_day %}
         <div class="insights-bar-wrap" title="{{ d.date }}: {{ d.count }} yorum">
             <div class="insights-bar insights-bar-comments" style="height: {{ (d.count / max_daily * 100)|round|int }}%"></div>
@@ -31,6 +40,35 @@
         </div>
         {% endfor %}
     </div>
+</section>
+
+<section class="card">
+    <h2>Son {{ days }} gün — Yeni Takipçiler</h2>
+    <div class="insights-chart" role="img" aria-label="Son {{ days }} günün günlük yeni takipçi sayıları">
+        {% for d in followers_by_day %}
+        <div class="insights-bar-wrap" title="{{ d.date }}: {{ d.count }} yeni takipçi">
+            <div class="insights-bar insights-bar-followers" style="height: {{ (d.count / max_daily * 100)|round|int }}%"></div>
+            <span class="insights-bar-label">{{ d.date[8:10] }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="card">
+    <h2>Haftanın Günü</h2>
+    {% if most_active_day %}
+    <p class="insights-most-active">🏆 En aktif günün: {{ most_active_day }}</p>
+    {% endif %}
+    {% set week_max = day_of_week_stats | map(attribute='count') | max %}
+    {% for d in day_of_week_stats %}
+    <div class="day-of-week-row">
+        <span class="day-of-week-label">{{ d.day }}</span>
+        <div class="day-of-week-bar-wrap">
+            <div class="day-of-week-bar" style="width: {{ (d.count / week_max * 100)|round|int if week_max else 0 }}%"></div>
+        </div>
+        <span class="day-of-week-count muted">{{ d.count }}</span>
+    </div>
+    {% endfor %}
 </section>
 
 <section class="card">
