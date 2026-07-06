@@ -12,6 +12,7 @@ from ..mentions import notify_mentions, get_valid_usernames, extract_mentions
 from ..visibility import visible_or_filter
 from ..blocks import blocked_user_ids, is_blocked_either_way
 from ..polls import create_poll, attach_polls
+from ..memories import get_memories
 
 
 @bp.route("/")
@@ -23,6 +24,7 @@ def feed():
     me = _my_id()
     page = max(request.args.get("page", 1, type=int), 1)
     offset = (page - 1) * PAGE_SIZE
+    memories = get_memories(sb, me) if page == 1 else []
 
     # Post + yazar + beğeni/yorum sayıları tek sorguda.
     # Bir fazla satır çekilir: sonraki sayfa var mı bilgisi için.
@@ -82,7 +84,7 @@ def feed():
     return render_template("feed.html", posts=posts, me=session.get("user"),
                            page=page, has_next=has_next, trending_tags=trending_tags,
                            suggested_users=suggested_users, stories_bar=stories_bar,
-                           valid_usernames=get_valid_usernames(sb))
+                           memories=memories, valid_usernames=get_valid_usernames(sb))
 
 
 @bp.route("/post/new", methods=["POST"])

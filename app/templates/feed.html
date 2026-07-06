@@ -31,6 +31,24 @@
     {% endfor %}
 </div>
 
+{% if memories %}
+<section class="card memories-card" aria-label="Bugün ne oldu">
+    <h2>📅 Bugün Ne Oldu</h2>
+    {% for m in memories %}
+    <a href="{{ url_for('routes.post_detail', post_id=m.id) }}" class="memory-item">
+        {% if m.image_url %}
+            <img src="{{ m.image_url }}" class="memory-thumb" alt="" loading="lazy">
+        {% endif %}
+        <div class="memory-text">
+            <span class="muted">{{ m.years_ago }} yıl önce bugün</span>
+            <p>{{ (m.content or 'Görsel/video gönderisi')[:100] }}</p>
+            <span class="muted">👍 {{ m.like_count }} · 💬 {{ m.comment_count }}</span>
+        </div>
+    </a>
+    {% endfor %}
+</section>
+{% endif %}
+
 <div class="feed-layout">
     {# Post kartlarının kendisi _feed_posts.html partial'ında — sonsuz kaydırma
        (infiniteScroll.js) sonraki sayfaları AYNI partial'ın AJAX render'ıyla

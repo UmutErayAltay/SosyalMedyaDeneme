@@ -421,6 +421,20 @@ label input { margin-top: 6px; }
 }
 .insights-top-post:last-child { border-bottom: none; }
 .insights-top-post .post-content { margin: 0; flex: 1; }
+
+/* Anılar kartı — "Bugün Ne Oldu" bölümü */
+.memories-card h2 { margin-bottom: 12px; font-size: 16px; }
+.memory-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+    text-decoration: none; color: inherit;
+}
+.memory-item:last-child { border-bottom: none; }
+.memory-thumb { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+.memory-text { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.memory-text p { margin: 0; font-size: 14px; }
+.memory-text .muted { font-size: 13px; }
+
 .hashtag-link { color: var(--primary); font-weight: 600; text-decoration: none; }
 .hashtag-link:hover { text-decoration: underline; }
 .mention-link { color: var(--primary); font-weight: 600; text-decoration: none; }
