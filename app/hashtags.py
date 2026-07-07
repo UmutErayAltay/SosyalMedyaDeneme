@@ -7,6 +7,7 @@ linkify_hashtags jinja filtresiyle #etiket'ler tıklanabilir link olur —
 güvenli sıralama).
 """
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from flask import Blueprint, render_template, request, session, jsonify, redirect, url_for
 from markupsafe import Markup, escape
@@ -119,10 +120,31 @@ def hashtag_posts(tag):
                 posts = sb.table("posts").select(
                     "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
                 ).in_("id", post_ids).order("created_at", desc=True).execute().data
-                posts = filter_visible(posts, followed_and_self_ids(sb, me), close_friend_author_ids(sb, me))
-                posts = filter_not_blocked(posts, blocked_user_ids(sb, me))
+
+                # Paralel: blocked_ids, followed_ids, close_friend_ids çek
+                def _fetch_blocked():
+                    return blocked_user_ids(sb, me)
+
+                def _fetch_followed():
+                    return followed_and_self_ids(sb, me)
+
+                def _fetch_close_friends():
+                    return close_friend_author_ids(sb, me)
+
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    blocked_future = executor.submit(_fetch_blocked)
+                    followed_future = executor.submit(_fetch_followed)
+                    close_future = executor.submit(_fetch_close_friends)
+
+                    blocked_ids = blocked_future.result()
+                    followed_ids = followed_future.result()
+                    close_friend_ids = close_future.result()
+
+                posts = filter_visible(posts, followed_ids, close_friend_ids)
+                posts = filter_not_blocked(posts, blocked_ids)
                 _attach_post_metrics(sb, posts, me)
                 attach_polls(sb, posts, me)
+
             is_following = bool(sb.table("hashtag_follows").select("user_id")
                                  .eq("user_id", me).eq("hashtag_id", hashtag_id).execute().data)
     except Exception:
@@ -175,14 +197,28 @@ def notify_hashtag_followers(sb, actor_id: str, post_id: str, tags: list[str]) -
         hashtag_rows = sb.table("hashtags").select("id").in_("tag", tags).execute().data
     except Exception:
         return
+
+    if not hashtag_rows:
+        return
+
+    # N+1 düzeltme: tüm hashtag'ler için followers'ı tek sorguda al
+    hashtag_ids = [h["id"] for h in hashtag_rows]
+    try:
+        all_follows = sb.table("hashtag_follows").select("hashtag_id, user_id").in_(
+            "hashtag_id", hashtag_ids
+        ).execute().data
+    except Exception:
+        return
+
+    # hashtag_id -> [user_id, ...] haritası oluştur
+    follows_by_hashtag = {}
+    for f in all_follows:
+        follows_by_hashtag.setdefault(f["hashtag_id"], []).append(f["user_id"])
+
     for h in hashtag_rows:
-        try:
-            followers = sb.table("hashtag_follows").select("user_id").eq(
-                "hashtag_id", h["id"]).execute().data
-        except Exception:
-            continue
-        for f in followers:
-            notify(sb, recipient_id=f["user_id"], actor_id=actor_id, type_="hashtag_post",
+        followers = follows_by_hashtag.get(h["id"], [])
+        for follower_id in followers:
+            notify(sb, recipient_id=follower_id, actor_id=actor_id, type_="hashtag_post",
                    post_id=post_id, hashtag_id=h["id"])
 
 

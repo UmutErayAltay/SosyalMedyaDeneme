@@ -1,4 +1,5 @@
 """Konuşma listesi (inbox) + tek bir konuşmanın görüntülenmesi."""
+from concurrent.futures import ThreadPoolExecutor
 from flask import render_template, request, session, abort
 from . import bp
 from ._common import _mark_read, _build_convos
@@ -40,35 +41,55 @@ def conversation(conversation_id):
     # is_admin migration uygulanmamışsa kolon dict'te yok — güvenli varsayılan False
     my_is_admin = bool(part.data[0].get("is_admin"))
 
-    # Grup meta bilgisi (is_group/name) — migration henüz uygulanmamışsa 1:1 gibi davranılır
-    is_group = False
-    group_name = None
-    try:
-        conv = sb.table("conversations").select("is_group, name").eq("id", conversation_id).execute().data
-        if conv:
-            is_group = bool(conv[0].get("is_group"))
-            group_name = conv[0].get("name")
-    except Exception:
-        pass
+    # Diğer veri (grup meta, katılımcılar, mesajlar) paralel çek — conversation_id
+    # doğrulandıktan sonra 3 sorgu birbirinden bağımsız
+    def _fetch_conv_meta():
+        try:
+            conv = sb.table("conversations").select("is_group, name").eq("id", conversation_id).execute().data
+            if conv:
+                return bool(conv[0].get("is_group")), conv[0].get("name")
+        except Exception:
+            pass
+        return False, None
 
-    # Diğer katılımcı(lar) — grupta birden fazla olabilir
-    others = sb.table("conversation_participants").select(
-        "user_id, is_admin, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
-    ).neq("user_id", me).eq("conversation_id", conversation_id).execute().data
-    other_profiles = []
-    for o in others:
-        p = o.get("profiles")
-        if p:
-            other_profiles.append({**p, "is_admin": bool(o.get("is_admin"))})
+    def _fetch_others():
+        try:
+            others = sb.table("conversation_participants").select(
+                "user_id, is_admin, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
+            ).neq("user_id", me).eq("conversation_id", conversation_id).execute().data
+            other_profiles = []
+            for o in others:
+                p = o.get("profiles")
+                if p:
+                    other_profiles.append({**p, "is_admin": bool(o.get("is_admin"))})
+            return other_profiles
+        except Exception:
+            return []
+
+    def _fetch_messages():
+        try:
+            messages = sb.table("messages").select(
+                "*, profiles!messages_sender_id_fkey(username, avatar_url)"
+            ).eq("conversation_id", conversation_id).order("created_at").execute().data
+            return messages
+        except Exception:
+            return []
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        meta_future = executor.submit(_fetch_conv_meta)
+        others_future = executor.submit(_fetch_others)
+        messages_future = executor.submit(_fetch_messages)
+
+        (is_group, group_name) = meta_future.result()
+        other_profiles = others_future.result()
+        messages = messages_future.result()
+
     other_user = None if is_group else (other_profiles[0] if other_profiles else None)
     # Supabase Realtime INSERT payload'ı sadece ham satırı verir (join yok) —
     # grup sohbetinde yeni mesajın kimden geldiğini göstermek için client-side
     # bir id→username haritası gerekiyor (bkz. chat.js, data-member-map).
     member_map = {p["id"]: p["username"] for p in other_profiles if p.get("id")}
 
-    messages = sb.table("messages").select(
-        "*, profiles!messages_sender_id_fkey(username, avatar_url)"
-    ).eq("conversation_id", conversation_id).order("created_at").execute().data
     if not is_group:
         # Grupta "okundu" bilgisi anlamsız (bkz. modül docstring'i) — sadece 1:1'de işaretlenir
         _mark_read(sb, conversation_id, me, messages)

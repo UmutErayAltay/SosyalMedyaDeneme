@@ -1,4 +1,5 @@
 """Arama ve algoritmik keşfet."""
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from flask import render_template, request, session, redirect, url_for
 from . import bp
@@ -80,11 +81,17 @@ def search():
             tag_rows = sb.table("hashtags").select("id, tag").ilike(
                 "tag", f"%{tag_q}%"
             ).limit(20).execute().data
-            for h in tag_rows:
-                count = sb.table("post_hashtags").select(
-                    "post_id", count="exact", head=True
-                ).eq("hashtag_id", h["id"]).execute().count or 0
-                hashtags.append({"tag": h["tag"], "count": count})
+            # N+1 düzeltme: tüm hashtag'lerin post count'unu tek sorguda al
+            if tag_rows:
+                tag_ids = [h["id"] for h in tag_rows]
+                post_counts = sb.table("post_hashtags").select(
+                    "hashtag_id"
+                ).in_("hashtag_id", tag_ids).execute().data
+                counts = {}
+                for pc in post_counts:
+                    counts[pc["hashtag_id"]] = counts.get(pc["hashtag_id"], 0) + 1
+                for h in tag_rows:
+                    hashtags.append({"tag": h["tag"], "count": counts.get(h["id"], 0)})
         except Exception:
             hashtags = []  # migration_hashtags.sql henüz uygulanmamışsa boş liste
 
@@ -135,8 +142,19 @@ def discover():
     sb = get_sb()
     me = _my_id()
 
-    exclude_ids = followed_and_self_ids(sb, me)  # ben + zaten takip ettiklerim — hariç tutulur
-    blocked_ids = blocked_user_ids(sb, me)
+    # Paralel: exclude_ids ve blocked_ids çek — başlarında bağımlılık yok
+    def _fetch_exclude_ids():
+        return followed_and_self_ids(sb, me)
+
+    def _fetch_blocked_ids():
+        return blocked_user_ids(sb, me)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        exclude_future = executor.submit(_fetch_exclude_ids)
+        blocked_future = executor.submit(_fetch_blocked_ids)
+
+        exclude_ids = exclude_future.result()
+        blocked_ids = blocked_future.result()
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url), "
@@ -152,8 +170,20 @@ def discover():
     close_friend_ids = close_friend_author_ids(sb, me)
     posts = filter_visible(posts, exclude_ids, close_friend_ids)
     posts = filter_not_blocked(posts, blocked_ids)
-    _attach_post_metrics(sb, posts, me)
-    attach_polls(sb, posts, me)
+
+    # Paralel: post metrics ve polls çek
+    def _attach_metrics():
+        _attach_post_metrics(sb, posts, me)
+
+    def _attach_polls_fn():
+        attach_polls(sb, posts, me)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        metrics_future = executor.submit(_attach_metrics)
+        polls_future = executor.submit(_attach_polls_fn)
+
+        metrics_future.result()
+        polls_future.result()
 
     for p in posts:
         p["_score"] = (p.get("like_count") or 0) + (p.get("comment_count") or 0)

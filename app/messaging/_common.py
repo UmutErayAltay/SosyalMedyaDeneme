@@ -1,4 +1,5 @@
 """messaging/ paketindeki alt-modüllerin paylaştığı yardımcılar (route yok)."""
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from ..supabase_client import get_sb
 from ..notifications import notify
@@ -34,8 +35,26 @@ def _notify_conversation(sb, conversation_id: str, sender_id: str) -> None:
 def _get_or_create_conversation(me_id: str, target_id: str) -> str:
     """İki kullanıcı arasındaki 1:1 konuşmayı bulur veya yenisini oluşturur, ID'sini döner."""
     sb = get_sb()
-    my_convs = sb.table("conversation_participants").select("conversation_id").eq("user_id", me_id).execute().data
-    target_convs = sb.table("conversation_participants").select("conversation_id").eq("user_id", target_id).execute().data
+
+    # Paralel: her iki kullanıcının konuşma ID'lerini çek
+    def _fetch_my_convs():
+        try:
+            return sb.table("conversation_participants").select("conversation_id").eq("user_id", me_id).execute().data
+        except Exception:
+            return []
+
+    def _fetch_target_convs():
+        try:
+            return sb.table("conversation_participants").select("conversation_id").eq("user_id", target_id).execute().data
+        except Exception:
+            return []
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        my_convs_future = executor.submit(_fetch_my_convs)
+        target_convs_future = executor.submit(_fetch_target_convs)
+
+        my_convs = my_convs_future.result()
+        target_convs = target_convs_future.result()
 
     my_ids = {c["conversation_id"] for c in my_convs}
     target_ids = {c["conversation_id"] for c in target_convs}
@@ -80,36 +99,48 @@ def _build_convos(sb, me: str) -> list[dict]:
 
     convos = []
     if cids:
-        # Grup meta bilgisi (is_group/name) — sql/migration_group_chat.sql
-        # henüz uygulanmamışsa kolonlar yok, hepsi 1:1 gibi davranılır.
-        conv_meta = {}
-        try:
-            rows = sb.table("conversations").select("id, is_group, name").in_("id", cids).execute().data
-            conv_meta = {r["id"]: r for r in rows}
-        except Exception:
-            pass
+        # Grup meta, katılımcılar ve son mesajlar paralel çek — 3 sorgu birbirinden bağımsız
+        def _fetch_conv_meta():
+            try:
+                rows = sb.table("conversations").select("id, is_group, name").in_("id", cids).execute().data
+                return {r["id"]: r for r in rows}
+            except Exception:
+                return {}
 
-        # Diğer katılımcılar tek sorguda (konuşma başına ayrı sorgu yerine).
-        # Grup sohbetinde birden fazla "diğer katılımcı" olabilir, bu yüzden
-        # cid başına LİSTE olarak toplanır (1:1'de tek elemanlı olur).
-        others = sb.table("conversation_participants").select(
-            "conversation_id, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
-        ).in_("conversation_id", cids).neq("user_id", me).execute().data
-        others_by_cid: dict = {}
-        for o in others:
-            others_by_cid.setdefault(o["conversation_id"], []).append(o.get("profiles"))
+        def _fetch_others():
+            try:
+                others = sb.table("conversation_participants").select(
+                    "conversation_id, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
+                ).in_("conversation_id", cids).neq("user_id", me).execute().data
+                others_by_cid: dict = {}
+                for o in others:
+                    others_by_cid.setdefault(o["conversation_id"], []).append(o.get("profiles"))
+                return others_by_cid
+            except Exception:
+                return {}
 
-        # Son mesajlar tek sorguda: yeni → eski çekilir, konuşma başına
-        # ilk görülen kayıt son mesajdır. limit, tüm konuşmaların son
-        # mesajını kapsayacak kadar geniş tutulur.
-        msgs = sb.table("messages").select(
-            "*, profiles!messages_sender_id_fkey(username, avatar_url)"
-        ).in_("conversation_id", cids).order(
-            "created_at", desc=True
-        ).limit(max(len(cids) * 30, 300)).execute().data
-        last_by_cid = {}
-        for m in msgs:
-            last_by_cid.setdefault(m["conversation_id"], m)
+        def _fetch_messages():
+            try:
+                msgs = sb.table("messages").select(
+                    "*, profiles!messages_sender_id_fkey(username, avatar_url)"
+                ).in_("conversation_id", cids).order(
+                    "created_at", desc=True
+                ).limit(max(len(cids) * 30, 300)).execute().data
+                last_by_cid = {}
+                for m in msgs:
+                    last_by_cid.setdefault(m["conversation_id"], m)
+                return last_by_cid
+            except Exception:
+                return {}
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            meta_future = executor.submit(_fetch_conv_meta)
+            others_future = executor.submit(_fetch_others)
+            messages_future = executor.submit(_fetch_messages)
+
+            conv_meta = meta_future.result()
+            others_by_cid = others_future.result()
+            last_by_cid = messages_future.result()
 
         convos = []
         for cid in cids:

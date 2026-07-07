@@ -26,13 +26,23 @@ def feed():
     me = _my_id()
     page = max(request.args.get("page", 1, type=int), 1)
     offset = (page - 1) * PAGE_SIZE
-    memories = get_memories(sb, me) if page == 1 else []
 
-    # Post + yazar + beğeni/yorum sayıları tek sorguda.
-    # Bir fazla satır çekilir: sonraki sayfa var mı bilgisi için.
     select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url), "
                    "likes(count), comments(count)")
-    blocked_ids = blocked_user_ids(sb, me)
+
+    # --- FAZ A: hem tam sayfa hem sonsuz kaydırma (AJAX partial) isteği için
+    # ORTAK/ZORUNLU minimum iş. infiniteScroll.js EN SIK tetiklenen istek —
+    # kenar çubuğu/hikaye/öneri/profil-kartı sorgularının hepsi FAZ B'ye
+    # (partial erken dönüşünden SONRA) bırakıldı. Bir önceki optimizasyon
+    # turunda bunların hepsi yanlışlıkla FAZ A'ya (tek büyük executor'a)
+    # karışmıştı — bu, her scroll sayfasının ~15 gereksiz sorgu yapmasına
+    # yol açan bir regresyondu, burada düzeltildi.
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        blocked_fut = executor.submit(blocked_user_ids, sb, me)
+        usernames_fut = executor.submit(get_valid_usernames, sb)
+        blocked_ids = blocked_fut.result()
+        valid_usernames = usernames_fut.result()
+
     try:
         # Görünürlük + engelleme + taslak filtreleri SQL seviyesinde uygulanır
         # (sayfalama sonrası Python'da süzmek PAGE_SIZE'ı tutarsız hale getirirdi).
@@ -49,29 +59,23 @@ def feed():
 
     has_next = len(posts) > PAGE_SIZE
     posts = posts[:PAGE_SIZE]
-    _attach_post_metrics(sb, posts, me)
-    attach_polls(sb, posts, me)
 
-    # Sonsuz kaydırma (infiniteScroll.js): sonraki sayfa istekleri sadece post
-    # kartlarını ister — kenar çubuğu/hikaye/öneri sorgularını ATLA, yalnızca
-    # partial'ı döndür. has_next bilgisi header'la taşınır (HTML'e gömmek
-    # yerine — partial saf kart listesi kalsın).
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        metrics_fut = executor.submit(_attach_post_metrics, sb, posts, me)
+        polls_fut = executor.submit(attach_polls, sb, posts, me)
+        metrics_fut.result()
+        polls_fut.result()
+
     if request.headers.get("X-Requested-With") == "fetch":
         html = render_template("_feed_posts.html", posts=posts, me=session.get("user"),
-                               valid_usernames=get_valid_usernames(sb))
+                               valid_usernames=valid_usernames)
         resp = make_response(html)
         resp.headers["X-Has-Next"] = "1" if has_next else "0"
         return resp
 
-    # Twitter tarzı sağ kenar çubuğu: gündemdeki hashtag'ler (ayrı bir
-    # "Gündem" sekmesi yerine doğrudan ana sayfada) — bkz. CLAUDE.md/active_context.
-    trending_tags = _trending_hashtags(sb, hours=24, limit=10)
-
-    # Performans: sol profil kartı istatistiklerini paralel çek
-    # (my_posts_count, my_followers_count, my_following_count, my_bio).
-    # Supabase PostgREST API ayrı tablolara ayrı count sorgusu gerektirir
-    # (birleştirilemez), fakat thread-pool ile paralel yapılabilir.
-    # Seri: 4 × 0.4 sn = 1.6 sn, paralel: ~0.4 sn → ~1.2 sn tasarruf.
+    # --- FAZ B: SADECE tam sayfa render'ında gerekli — hikaye çubuğu, gündem,
+    # öneriler, sol profil kartı istatistikleri. Hepsi birbirinden (Faz A'nın
+    # sonucu olan blocked_ids dışında) bağımsız, tek pool'da paralel.
     def _fetch_posts_count():
         try:
             return sb.table("posts").select(
@@ -103,63 +107,80 @@ def feed():
         except Exception:
             return None
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        posts_future = executor.submit(_fetch_posts_count)
-        followers_future = executor.submit(_fetch_followers_count)
-        following_future = executor.submit(_fetch_following_count)
-        bio_future = executor.submit(_fetch_bio)
+    def _fetch_recent_media():
+        """Sol profil kartı için kendi son medyaların mini önizlemesi (3 görsel)."""
+        media = []
+        try:
+            rows = sb.table("posts").select("id, image_url, image_urls").eq(
+                "user_id", me
+            ).eq("is_draft", False).order("created_at", desc=True).limit(6).execute().data
+            for p in rows:
+                img = (p.get("image_urls") or [None])[0] or p.get("image_url")
+                if img:
+                    media.append({"post_id": p["id"], "image_url": img})
+                if len(media) == 3:
+                    break
+        except Exception:
+            pass
+        return media
 
-        my_posts_count = posts_future.result()
-        my_followers_count = followers_future.result()
-        my_following_count = following_future.result()
-        my_bio = bio_future.result()
+    def _fetch_close_friends():
+        """Sağ kenar çubuğu için yakın arkadaşlar preview'ı (6 kişi)."""
+        try:
+            cf_rows = sb.table("close_friends").select(
+                "profiles!close_friends_friend_id_fkey(id, username, avatar_url)"
+            ).eq("owner_id", me).order("created_at", desc=True).limit(6).execute().data
+            return [r["profiles"] for r in cf_rows if r.get("profiles")]
+        except Exception:
+            return []
 
-    # Sol profil kartı için kendi son medyaların mini önizlemesi (3 görsel).
-    # Limit 12'den 6'ya düşürüldü (performans ajanının 3'e düşürmesi DAVRANIŞ
-    # DEĞİŞİKLİĞİYDİ: son 3 post görselsizse önizleme hiç dolmuyordu, önceki
-    # break'siz haliyle geri alındı — 6 satır aramak metin-ağırlıklı
-    # kullanıcılarda bile 3 görselli post bulma ihtimalini makul tutuyor).
-    my_recent_media = []
-    my_posts_rows = sb.table("posts").select("id, image_url, image_urls").eq(
-        "user_id", me
-    ).eq("is_draft", False).order("created_at", desc=True).limit(6).execute().data
-    for p in my_posts_rows:
-        img = (p.get("image_urls") or [None])[0] or p.get("image_url")
-        if img:
-            my_recent_media.append({"post_id": p["id"], "image_url": img})
-        if len(my_recent_media) == 3:
-            break
+    def _fetch_following_ids():
+        try:
+            return {f["following_id"] for f in sb.table("follows").select("following_id")
+                    .eq("follower_id", me).execute().data}
+        except Exception:
+            return set()
 
-    # Sağ kenar çubuğu için yakın arkadaşlar preview'ı (6 kişi)
-    close_friends_preview = []
-    try:
-        cf_rows = sb.table("close_friends").select(
-            "profiles!close_friends_friend_id_fkey(id, username, avatar_url)"
-        ).eq("owner_id", me).order("created_at", desc=True).limit(6).execute().data
-        close_friends_preview = [r["profiles"] for r in cf_rows if r.get("profiles")]
-    except Exception:
-        pass  # migration_close_friends.sql henüz uygulanmamışsa boş liste
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        memories_fut = executor.submit(get_memories, sb, me) if page == 1 else None
+        trending_fut = executor.submit(_trending_hashtags, sb, hours=24, limit=10)
+        posts_count_fut = executor.submit(_fetch_posts_count)
+        followers_count_fut = executor.submit(_fetch_followers_count)
+        following_count_fut = executor.submit(_fetch_following_count)
+        bio_fut = executor.submit(_fetch_bio)
+        recent_media_fut = executor.submit(_fetch_recent_media)
+        close_friends_fut = executor.submit(_fetch_close_friends)
+        stories_fut = executor.submit(active_stories_bar, sb, me, blocked_ids)
+        following_ids_fut = executor.submit(_fetch_following_ids)
 
-    # "Kimi takip etmeli" önerisi: zaten takip edilen, ben, engellenen ve
-    # banlı kullanıcılar hariç en yeni katılan 5 kişi — sağ kenar çubuğu boş
-    # kalmasın diye (kullanıcı isteğiyle eklendi).
-    # Optimizasyon: filtre SQL seviyesine taşındı (.not_.in_) — 30 satırı 5'e indir.
-    following_ids = {f["following_id"] for f in sb.table("follows").select("following_id")
-                     .eq("follower_id", me).execute().data}
-    exclude_ids = following_ids | blocked_ids | {me}
-    query = sb.table("profiles").select("id, username, avatar_url, full_name") \
-        .eq("is_banned", False)
-    if exclude_ids:
-        query = query.not_.in_("id", list(exclude_ids))
-    suggested_users = query.order("created_at", desc=True).limit(5).execute().data
+        memories = memories_fut.result() if memories_fut else []
+        trending_tags = trending_fut.result()
+        my_posts_count = posts_count_fut.result()
+        my_followers_count = followers_count_fut.result()
+        my_following_count = following_count_fut.result()
+        my_bio = bio_fut.result()
+        my_recent_media = recent_media_fut.result()
+        close_friends_preview = close_friends_fut.result()
+        stories_bar = stories_fut.result()
+        following_ids = following_ids_fut.result()
 
-    # Hikaye çubuğu: 24 saatte kaybolan ephemeral paylaşımlar (bkz. app/stories.py).
-    stories_bar = active_stories_bar(sb, me, blocked_ids)
+        # following_ids/blocked_ids bekledikten sonra: "kimi takip etmeli" önerisi
+        def _fetch_suggested_users():
+            exclude_ids = following_ids | blocked_ids | {me}
+            query = sb.table("profiles").select("id, username, avatar_url, full_name").eq("is_banned", False)
+            if exclude_ids:
+                query = query.not_.in_("id", list(exclude_ids))
+            try:
+                return query.order("created_at", desc=True).limit(5).execute().data
+            except Exception:
+                return []
+
+        suggested_users = executor.submit(_fetch_suggested_users).result()
 
     return render_template("feed.html", posts=posts, me=session.get("user"),
                            page=page, has_next=has_next, trending_tags=trending_tags,
                            suggested_users=suggested_users, stories_bar=stories_bar,
-                           memories=memories, valid_usernames=get_valid_usernames(sb),
+                           memories=memories, valid_usernames=valid_usernames,
                            my_stats={"posts": my_posts_count, "followers": my_followers_count, "following": my_following_count},
                            my_recent_media=my_recent_media, close_friends_preview=close_friends_preview,
                            my_bio=my_bio)
