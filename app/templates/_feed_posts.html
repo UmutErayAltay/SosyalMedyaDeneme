@@ -6,6 +6,14 @@
    2. sayfa boş dönerse akışa "Henüz post yok" eklenmemeli. #}
 {% import "_post_card.html" as pc %}
 {% for p in posts %}
+{% if trending_tags is defined and trending_tags and loop.index == 10 %}
+<div class="card feed-interleave-card">
+    <h2>🔥 Gündemde</h2>
+    <div class="feed-interleave-tags">
+    {% for t in trending_tags[:4] %}<a href="{{ url_for('hashtags.hashtag_posts', tag=t.tag) }}" class="trending-tag">#{{ t.tag }}</a>{% endfor %}
+    </div>
+</div>
+{% endif %}
 <article class="card post" data-post-url="{{ url_for('routes.post_detail', post_id=p.id) }}">
     <header class="post-header">
         {% if p.profiles and p.profiles.avatar_url %}

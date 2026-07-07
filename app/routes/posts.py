@@ -1,5 +1,5 @@
 """Feed + post yaşam döngüsü: paylaşma, düzenleme, silme, taslak, sabitleme."""
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 from flask import render_template, request, redirect, url_for, session, abort, flash, make_response
 from . import bp
@@ -155,6 +155,45 @@ def feed():
         except Exception:
             return set()
 
+    def _fetch_recent_activity():
+        """Sağ sidebar için viewer'ın son 5 bildirimi."""
+        try:
+            return sb.table("notifications").select(
+                "type, post_id, created_at, profiles!notifications_actor_id_fkey(username, avatar_url)"
+            ).eq("recipient_id", me).order("created_at", desc=True).limit(5).execute().data
+        except Exception:
+            return []
+
+    def _fetch_my_week_stats():
+        """Bu hafta post ve like sayıları."""
+        week_cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+
+        def _fetch_week_posts():
+            try:
+                return sb.table("posts").select(
+                    "id", count="exact", head=True
+                ).eq("user_id", me).eq("is_draft", False).gte("created_at", week_cutoff).execute().count or 0
+            except Exception:
+                return 0
+
+        def _fetch_week_likes():
+            try:
+                # Benim postlarıma bu hafta yapılan likes
+                return sb.table("likes").select(
+                    "post_id, posts!inner(user_id)", count="exact", head=True
+                ).eq("posts.user_id", me).gte("created_at", week_cutoff).execute().count or 0
+            except Exception:
+                # Fallback: inner-join sözdizimi çalışmazsa, '0' döner
+                return 0
+
+        with ThreadPoolExecutor(max_workers=2) as inner_executor:
+            posts_fut = inner_executor.submit(_fetch_week_posts)
+            likes_fut = inner_executor.submit(_fetch_week_likes)
+            posts_count = posts_fut.result()
+            likes_count = likes_fut.result()
+
+        return {"posts": posts_count, "likes": likes_count}
+
     with ThreadPoolExecutor(max_workers=10) as executor:
         blocked_fut = executor.submit(blocked_user_ids, sb, me)
         memories_fut = executor.submit(get_memories, sb, me) if page == 1 else None
@@ -166,6 +205,8 @@ def feed():
         recent_media_fut = executor.submit(_fetch_recent_media)
         close_friends_fut = executor.submit(_fetch_close_friends)
         following_ids_fut = executor.submit(_fetch_following_ids)
+        recent_activity_fut = executor.submit(_fetch_recent_activity)
+        my_week_stats_fut = executor.submit(_fetch_my_week_stats)
 
         # blocked_ids'i bekle, ardından stories submit et
         blocked_ids = blocked_fut.result()
@@ -181,6 +222,8 @@ def feed():
         my_recent_media = recent_media_fut.result()
         close_friends_preview = close_friends_fut.result()
         stories_bar = stories_fut.result()
+        recent_activity = recent_activity_fut.result()
+        my_week_stats = my_week_stats_fut.result()
 
         # following_ids/blocked_ids bekledikten sonra: "kimi takip etmeli" önerisi
         def _fetch_suggested_users():
@@ -195,13 +238,22 @@ def feed():
 
         suggested_users = executor.submit(_fetch_suggested_users).result()
 
+    # explore_suggestions: akış zayıfsa sayfa 1'de keşfet önerileri
+    explore_suggestions = []
+    if page == 1 and len(posts) < 5:
+        try:
+            explore_suggestions = sb.rpc("discover_page_posts", {"p_me": me, "p_limit": 5}).execute().data or []
+        except Exception:
+            explore_suggestions = []
+
     return render_template("feed.html", posts=posts, me=session.get("user"),
                            page=page, has_next=has_next, trending_tags=trending_tags,
                            suggested_users=suggested_users, stories_bar=stories_bar,
                            memories=memories, valid_usernames=valid_usernames,
                            my_stats={"posts": my_posts_count, "followers": my_followers_count, "following": my_following_count},
                            my_recent_media=my_recent_media, close_friends_preview=close_friends_preview,
-                           my_bio=my_bio)
+                           my_bio=my_bio, recent_activity=recent_activity, my_week_stats=my_week_stats,
+                           explore_suggestions=explore_suggestions)
 
 
 @bp.route("/post/new", methods=["POST"])

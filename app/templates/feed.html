@@ -29,6 +29,9 @@
             <strong>{{ my_stats.following }}</strong><span class="muted">Takip</span>
         </a>
     </div>
+    {% if my_week_stats %}
+    <p class="feed-profile-week muted">Bu hafta: {{ my_week_stats.posts }} gönderi · {{ my_week_stats.likes }} beğeni</p>
+    {% endif %}
     {% if my_recent_media %}
     <div class="feed-profile-media-preview" aria-label="Son paylaşımların">
         {% for m in my_recent_media %}
@@ -54,6 +57,12 @@
    açmasına yol açıyordu (kullanıcı raporu). Tek grid öğesi olunca bu satır
    bölünme sorunu KÖKTEN ortadan kalkar. #}
 <div class="feed-layout">
+    {# Sekmeli akış: Akış | Keşfet #}
+    <nav class="feed-tabs" aria-label="Akış sekmeleri">
+        <a href="{{ url_for('routes.feed') }}" class="feed-tab active" aria-current="page">Akış</a>
+        <a href="{{ url_for('routes.discover') }}" class="feed-tab">🧭 Keşfet</a>
+    </nav>
+
     {# Hikaye çubuğu: 24 saatte kaybolan ephemeral paylaşımlar — sadece
        görüntüleme + kendi hikayeni ekleme/silme, yorum/beğeni/"kim gördü"
        YOK (kapsam bilinçli olarak dar tutuldu, bkz. app/stories.py). #}
@@ -110,6 +119,14 @@
         {% include "_feed_posts.html" %}
         {% if not posts %}
         <p class="muted center">Henüz post yok. İlkini sen paylaş!</p>
+        {% endif %}
+        {# Akış zayıfsa (5'ten az post — backend kararı) keşfet önerileri:
+           "if not posts" İÇİNE gömülmemeli, 1-4 postta da görünmeli. #}
+        {% if explore_suggestions %}
+        <h2 class="explore-suggestions-title">✨ Şunlar ilgini çekebilir</h2>
+        {% for p in explore_suggestions %}
+            {{ pc.post_card(p, p.profiles.username if p.profiles else 'Bilinmeyen', p.profiles.avatar_url if p.profiles else none, false) }}
+        {% endfor %}
         {% endif %}
     </section>
 
@@ -194,6 +211,19 @@
             {% endfor %}
         </div>
         <a href="{{ url_for('close_friends.close_friends_list') }}" class="trending-viewall">Yönet →</a>
+    </div>
+    {% endif %}
+    {% if recent_activity %}
+    <div class="card activity-sidebar-card">
+        <h2>⚡ Son Aktiviteler</h2>
+        {% for a in recent_activity %}
+        <div class="activity-row">
+            {% if a.profiles and a.profiles.avatar_url %}<img src="{{ a.profiles.avatar_url }}" class="avatar avatar-sm" alt="">
+            {% else %}<div class="avatar avatar-sm avatar-placeholder" aria-hidden="true"></div>{% endif %}
+            <span class="activity-text"><strong>{{ a.profiles.username if a.profiles else '?' }}</strong>
+                {{ {'like':'postunu beğendi','comment':'yorum yaptı','follow':'seni takip etti','mention':'senden bahsetti','hashtag_post':'takip ettiğin etikette paylaştı','share':'sana post gönderdi','poll_vote':'anketinde oy kullandı'}.get(a.type, 'etkileşimde bulundu') }}</span>
+        </div>
+        {% endfor %}
     </div>
     {% endif %}
 </aside>

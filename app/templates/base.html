@@ -72,7 +72,6 @@
 
         <div class="nav-links" id="nav-links">
             <a href="{{ url_for('routes.feed') }}" aria-label="Akış">Akış</a>
-            <a href="{{ url_for('routes.discover') }}" aria-label="Keşfet">🧭 Keşfet</a>
             <a href="{{ url_for('messaging.inbox') }}" aria-label="Mesajlar">Mesajlar</a>
             {% if me.is_admin %}
                 <a href="{{ url_for('admin.dashboard') }}" aria-label="Admin paneli">🛠️ Admin</a>
