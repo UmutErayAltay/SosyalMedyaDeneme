@@ -259,6 +259,36 @@
                 </div>
             </div>
 
+            {# GIF seçici paneli #}
+            <div id="gif-picker-panel" class="gif-picker-panel" hidden>
+                <input type="text" id="gif-search-input" placeholder="GIF ara..." class="gif-search-input">
+                <div id="gif-results" class="gif-picker"></div>
+                <p id="gif-loading-msg" class="muted center" hidden>Yükleniyor...</p>
+            </div>
+
+            {# Seçilen GIF önizlemesi #}
+            <div id="gif-preview-wrap" class="gif-preview-wrap" hidden>
+                <img id="gif-preview-img" src="" alt="GIF Önizlemesi" class="gif-preview-img">
+                <button type="button" class="btn btn-ghost small" id="gif-remove-btn">Kaldır</button>
+            </div>
+
+            {# Konum rozeti #}
+            <div id="location-badge-wrap" class="location-badge-wrap" hidden>
+                <span class="location-badge">📍 <span id="location-name-display"></span></span>
+                <button type="button" class="btn btn-ghost small" id="location-remove-btn">×</button>
+            </div>
+
+            {# Gizli input'lar (planlama, GIF, konum) #}
+            <input type="hidden" name="gif_url" id="gif-url-input">
+            <input type="hidden" name="location_lat" id="location-lat-input">
+            <input type="hidden" name="location_lng" id="location-lng-input">
+            <input type="hidden" name="location_name" id="location-name-input">
+            {# name özniteliği JS ile SADECE planlama onaylanınca eklenir — boş
+               hâliyle name="action" taşısaydı submit butonlarından önce geldiği
+               için form.get("action") hep "" dönerdi ve taslak kaydı bozulurdu #}
+            <input type="hidden" id="schedule-action-input">
+            <input type="hidden" name="scheduled_at" id="scheduled-at-input">
+
             {# Görsel/video/anket eklemek için önceden 3 ayrı, hep görünen buton
                vardı — artık tek bir "⋯" menüsü altında (daha sade bir UI). #}
             <div class="composer-toolbar">
@@ -279,6 +309,12 @@
                         <button type="button" class="attach-menu-item" id="poll-toggle-btn" role="menuitem">
                             📊 Anket Ekle
                         </button>
+                        <button type="button" class="attach-menu-item" id="gif-toggle-btn" role="menuitem">
+                            🎬 GIF Ekle
+                        </button>
+                        <button type="button" class="attach-menu-item" id="location-toggle-btn" role="menuitem">
+                            📍 Konum Ekle
+                        </button>
                     </div>
                 </div>
 
@@ -289,7 +325,16 @@
                 </select>
             </div>
 
+            {# Planlama satırı #}
+            <div id="schedule-row" class="schedule-row" hidden>
+                <label for="schedule-input">Zamanı seç:</label>
+                <input type="datetime-local" id="schedule-input" class="schedule-input">
+                <button type="button" class="btn btn-primary small" id="schedule-confirm-btn">Planla</button>
+                <button type="button" class="btn btn-ghost small" id="schedule-cancel-btn">İptal</button>
+            </div>
+
             <button type="submit" name="action" value="publish" class="btn btn-primary btn-full">Paylaş</button>
+            <button type="button" class="btn btn-ghost btn-full" id="schedule-modal-btn">🕒 Planla</button>
             <button type="submit" name="action" value="draft" class="btn btn-ghost btn-full">Taslak olarak kaydet</button>
         </form>
     </div>

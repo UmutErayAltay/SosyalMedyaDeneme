@@ -1397,6 +1397,67 @@ body.navbar-hidden .feed-profile-card { top: 16px; }
     transition: opacity 0.2s;
 }
 
+/* === Planlama, GIF, Konum === */
+.schedule-row {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 8px 0; border-top: 1px solid var(--border);
+    margin: 8px 0;
+}
+.schedule-row[hidden] { display: none; }
+.schedule-input {
+    width: 100%; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--card); color: var(--text); font-size: 13px;
+}
+
+.gif-picker-panel {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 8px 0; border-top: 1px solid var(--border);
+    margin: 8px 0;
+}
+.gif-picker-panel[hidden] { display: none; }
+.gif-search-input {
+    width: 100%; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--card); color: var(--text); font-size: 13px;
+}
+.gif-picker {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 8px; max-height: 240px; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px;
+    background: var(--bg);
+}
+.gif-picker-img {
+    aspect-ratio: 1; object-fit: cover; border-radius: 4px;
+    cursor: pointer; transition: transform 0.1s;
+}
+.gif-picker-img:hover { transform: scale(1.05); }
+
+.gif-preview-wrap {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg);
+}
+.gif-preview-wrap[hidden] { display: none; }
+.gif-preview-img {
+    width: 60px; height: 60px; object-fit: cover; border-radius: 4px;
+}
+
+.location-badge-wrap {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border-radius: 20px;
+    background: var(--border); margin: 4px 0;
+}
+.location-badge-wrap[hidden] { display: none; }
+.location-badge { font-size: 13px; color: var(--text); }
+.post-location { font-size: 12px; }
+
+.draft-scheduled-badge {
+    font-size: 12px; color: var(--muted);
+    margin-bottom: 8px; padding: 4px 8px;
+    background: var(--border); border-radius: 4px;
+}
+
 /* Navbar scroll-hide (aşağı kaydırınca gizlen, yukarı kaydırınca gel) */
 header[role="banner"] {
     display: contents;

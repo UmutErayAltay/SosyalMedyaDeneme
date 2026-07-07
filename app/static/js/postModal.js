@@ -1,5 +1,5 @@
 // Post paylaşma modalı — erişilebilir (focus trap, ESC, overlay click)
-// Çoklu görsel önizleme
+// Çoklu görsel önizleme + planlama + GIF seçici + konum
 
 (function () {
     var modal = document.getElementById('post-modal');
@@ -16,9 +16,34 @@
     var pollCancelBtn = document.getElementById('poll-cancel-btn');
     var attachMenuBtn = document.getElementById('attach-menu-btn');
     var attachMenu = document.getElementById('attach-menu');
+    var scheduleModalBtn = document.getElementById('schedule-modal-btn');
+    var scheduleRow = document.getElementById('schedule-row');
+    var scheduleInput = document.getElementById('schedule-input');
+    var scheduleConfirmBtn = document.getElementById('schedule-confirm-btn');
+    var scheduleCancelBtn = document.getElementById('schedule-cancel-btn');
+    var scheduleActionInput = document.getElementById('schedule-action-input');
+    var scheduledAtInput = document.getElementById('scheduled-at-input');
+    var gifToggleBtn = document.getElementById('gif-toggle-btn');
+    var gifPickerPanel = document.getElementById('gif-picker-panel');
+    var gifSearchInput = document.getElementById('gif-search-input');
+    var gifResults = document.getElementById('gif-results');
+    var gifLoadingMsg = document.getElementById('gif-loading-msg');
+    var gifUrlInput = document.getElementById('gif-url-input');
+    var gifPreviewWrap = document.getElementById('gif-preview-wrap');
+    var gifPreviewImg = document.getElementById('gif-preview-img');
+    var gifRemoveBtn = document.getElementById('gif-remove-btn');
+    var locationToggleBtn = document.getElementById('location-toggle-btn');
+    var locationBadgeWrap = document.getElementById('location-badge-wrap');
+    var locationNameDisplay = document.getElementById('location-name-display');
+    var locationRemoveBtn = document.getElementById('location-remove-btn');
+    var locationLatInput = document.getElementById('location-lat-input');
+    var locationLngInput = document.getElementById('location-lng-input');
+    var locationNameInput = document.getElementById('location-name-input');
     if (!modal || !openBtn) return;
 
     var lastFocused = null;
+    var scheduledTime = null;
+    var selectedLocation = null;
 
     function closeAttachMenu() {
         if (!attachMenu || attachMenu.hidden) return;
@@ -43,6 +68,33 @@
         if (lastFocused) lastFocused.focus();
         if (pollContainer && !pollContainer.hidden) resetPollUI();
         closeAttachMenu();
+        resetScheduleUI();
+        resetGifPanel();
+    }
+
+    // Sadece satırı gizler — onaylanmış planı SİLMEZ (onay sonrası çağrılır)
+    function hideScheduleRow() {
+        if (scheduleRow) scheduleRow.hidden = true;
+        if (scheduleInput) scheduleInput.value = '';
+    }
+
+    // Tam sıfırlama: hidden input'lardaki name/değer de temizlenir (modal kapanışı)
+    function resetScheduleUI() {
+        hideScheduleRow();
+        scheduledTime = null;
+        if (scheduleActionInput) {
+            scheduleActionInput.value = '';
+            scheduleActionInput.removeAttribute('name');
+        }
+        if (scheduledAtInput) scheduledAtInput.value = '';
+        if (scheduleModalBtn) scheduleModalBtn.hidden = false;
+    }
+
+    function resetGifPanel() {
+        if (!gifPickerPanel) return;
+        gifPickerPanel.hidden = true;
+        if (gifSearchInput) gifSearchInput.value = '';
+        if (gifResults) gifResults.innerHTML = '';
     }
 
     // --- "Ekle" (⋯) menüsü: görsel/video/anket seçenekleri artık her zaman
@@ -180,6 +232,173 @@
 
     if (pollCancelBtn) {
         pollCancelBtn.addEventListener('click', resetPollUI);
+    }
+
+    // --- Planlama ---
+    if (scheduleModalBtn && scheduleRow) {
+        scheduleModalBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            scheduleRow.hidden = false;
+            if (scheduleInput) {
+                var now = new Date();
+                // datetime-local YEREL saat bekler; toISOString UTC döndürdüğü
+                // için offset düşülmeden min UTC+3'te 3 saat geriye kayar
+                var minTime = new Date(now.getTime() + 60000 - now.getTimezoneOffset() * 60000);
+                scheduleInput.min = minTime.toISOString().slice(0, 16);
+                scheduleInput.focus();
+            }
+        });
+    }
+
+    if (scheduleConfirmBtn && scheduleInput) {
+        scheduleConfirmBtn.addEventListener('click', function () {
+            var val = scheduleInput.value;
+            if (!val) return;
+            var dt = new Date(val);
+            var now = new Date();
+            if (dt <= now) {
+                alert('Geçmiş bir tarih seçemezsin.');
+                return;
+            }
+            scheduledTime = dt.toISOString();
+            if (scheduleActionInput) {
+                scheduleActionInput.setAttribute('name', 'action');
+                scheduleActionInput.value = 'schedule';
+            }
+            if (scheduledAtInput) scheduledAtInput.value = scheduledTime;
+            alert('Post ' + val.replace('T', ' ') + ' tarihine planlandı. "Paylaş" ile onayla.');
+            hideScheduleRow();
+            if (scheduleModalBtn) scheduleModalBtn.hidden = true;
+        });
+    }
+
+    if (scheduleCancelBtn) {
+        scheduleCancelBtn.addEventListener('click', resetScheduleUI);
+    }
+
+    // --- GIF Seçici ---
+    if (gifToggleBtn && gifPickerPanel) {
+        gifToggleBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            if (gifPickerPanel.hidden) {
+                gifPickerPanel.hidden = false;
+                if (gifSearchInput) gifSearchInput.focus();
+                // İlk açılışta trending GIF'leri fetch et
+                if (!gifResults.innerHTML) {
+                    searchGifs('');
+                }
+            } else {
+                resetGifPanel();
+            }
+        });
+    }
+
+    function searchGifs(q) {
+        if (!gifLoadingMsg || !gifResults) return;
+        gifLoadingMsg.hidden = false;
+        gifResults.innerHTML = '';
+        fetch('/gif/search?q=' + encodeURIComponent(q))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                gifLoadingMsg.hidden = true;
+                if (data.disabled) {
+                    gifPickerPanel.innerHTML = '<p class="muted center">GIF servisi şu anda kullanılamıyor.</p>';
+                    gifToggleBtn.hidden = true;
+                    return;
+                }
+                if (!data.gifs || data.gifs.length === 0) {
+                    gifResults.innerHTML = '<p class="muted center">Sonuç bulunamadı.</p>';
+                    return;
+                }
+                data.gifs.forEach(function (gif) {
+                    var img = document.createElement('img');
+                    img.src = gif.preview || gif.url;
+                    img.alt = 'GIF';
+                    img.className = 'gif-picker-img';
+                    img.addEventListener('click', function () {
+                        selectGif(gif.url);
+                    });
+                    gifResults.appendChild(img);
+                });
+            })
+            .catch(function (e) {
+                gifLoadingMsg.hidden = true;
+                gifResults.innerHTML = '<p class="muted center">Hata: ' + e.message + '</p>';
+            });
+    }
+
+    function selectGif(url) {
+        if (gifUrlInput) gifUrlInput.value = url;
+        if (gifPreviewImg) gifPreviewImg.src = url;
+        if (gifPreviewWrap) gifPreviewWrap.hidden = false;
+        // Görsel/Video input'larını temizle (backend gif + dosya kabul etmiyor)
+        if (fileInput) {
+            fileInput.value = '';
+            previewGrid.innerHTML = '';
+        }
+        if (videoInput) {
+            videoInput.value = '';
+            videoPreview.style.display = 'none';
+            videoPreview.removeAttribute('src');
+        }
+        resetGifPanel();
+    }
+
+    if (gifSearchInput) {
+        var gifSearchTimer = null;
+        gifSearchInput.addEventListener('input', function () {
+            var q = this.value;
+            clearTimeout(gifSearchTimer);
+            // Her tuş vuruşunda Tenor proxy'sine istek gitmesin
+            gifSearchTimer = setTimeout(function () { searchGifs(q); }, 300);
+        });
+    }
+
+    if (gifRemoveBtn && gifPreviewWrap) {
+        gifRemoveBtn.addEventListener('click', function () {
+            if (gifUrlInput) gifUrlInput.value = '';
+            if (gifPreviewImg) gifPreviewImg.src = '';
+            gifPreviewWrap.hidden = true;
+        });
+    }
+
+    // --- Konum ---
+    if (locationToggleBtn) {
+        locationToggleBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            if (!navigator.geolocation) {
+                alert('Tarayıcında Konum özelliği yok.');
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                function (pos) {
+                    var lat = pos.coords.latitude;
+                    var lng = pos.coords.longitude;
+                    var name = prompt('Konum adı (örn: Kahveci, Park):');
+                    if (!name) return;
+                    if (locationLatInput) locationLatInput.value = lat;
+                    if (locationLngInput) locationLngInput.value = lng;
+                    if (locationNameInput) locationNameInput.value = name;
+                    if (locationNameDisplay) locationNameDisplay.textContent = name;
+                    if (locationBadgeWrap) locationBadgeWrap.hidden = false;
+                    selectedLocation = { lat: lat, lng: lng, name: name };
+                    closeAttachMenu();
+                },
+                function (err) {
+                    alert('Konum alınamadı: ' + err.message);
+                }
+            );
+        });
+    }
+
+    if (locationRemoveBtn && locationBadgeWrap) {
+        locationRemoveBtn.addEventListener('click', function () {
+            if (locationLatInput) locationLatInput.value = '';
+            if (locationLngInput) locationLngInput.value = '';
+            if (locationNameInput) locationNameInput.value = '';
+            locationBadgeWrap.hidden = true;
+            selectedLocation = null;
+        });
     }
 
     // --- Sürükle-bırak görsel yükleme (tıklanabilir "Görsel Ekle" her zaman
