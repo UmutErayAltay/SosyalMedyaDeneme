@@ -175,6 +175,17 @@ Tam şema, dizin ağacı ve dosya sorumlulukları için:
   `IN` sorgusuyla çekilir.
 - `count="exact", head=True` kullan satır çekmeden sayı almak için (profil
   istatistikleri gibi).
+- Birbirinden bağımsız Supabase sorguları `ThreadPoolExecutor` ile paralel
+  çalıştırılabilir (feed/profil/mesajlaşma'da yerleşik desen, Sprint 52) —
+  ama bu tür bir refactor'da early-return yollarının (örn. `feed()`'deki
+  sonsuz kaydırma partial dönüşü) YERİ korunmalı: erken dönüşü paralel
+  bloğun arkasına almak, en sık isteği kullanmadığı sorgularla ağırlaştırır
+  ve `py_compile` bunu yakalamaz — diff'te erken dönüşün hâlâ aynı noktada
+  olduğunu satır satır kontrol et. Flask `session`/request context'e bağımlı
+  okumalar thread içine sokulmaz.
+- Nadiren değişen, kullanıcıya özel olmayan veriler için `app/cache.py`
+  (süreç-içi TTL cache, `get_cached`/`invalidate`) kullan — yeni bir cache
+  eklerken veriyi DEĞİŞTİREN her yere `invalidate()` çağrısı eklemeyi unutma.
 
 ## Token Optimizasyonu Kuralları
 
