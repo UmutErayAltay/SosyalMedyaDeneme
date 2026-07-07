@@ -84,6 +84,45 @@ def conversation(conversation_id):
         other_profiles = others_future.result()
         messages = messages_future.result()
 
+    # Tepkileri bağla — message_reactions tablosu henüz yoksa sessizce boş liste
+    try:
+        if messages:
+            msg_ids = [m["id"] for m in messages]
+            reactions_raw = sb.table("message_reactions").select(
+                "message_id, reaction, user_id"
+            ).in_("message_id", msg_ids).execute().data
+
+            # Gruplama: {message_id: {reaction: [user_ids]}}
+            reactions_by_msg = {}
+            for r in reactions_raw:
+                mid = r["message_id"]
+                react = r["reaction"]
+                uid = r["user_id"]
+                if mid not in reactions_by_msg:
+                    reactions_by_msg[mid] = {}
+                if react not in reactions_by_msg[mid]:
+                    reactions_by_msg[mid][react] = []
+                reactions_by_msg[mid][react].append(uid)
+
+            # Mesajlara bağla
+            for m in messages:
+                m["reactions"] = []
+                if m["id"] in reactions_by_msg:
+                    for reaction, user_ids in reactions_by_msg[m["id"]].items():
+                        m["reactions"].append({
+                            "reaction": reaction,
+                            "count": len(user_ids),
+                            "mine": me in user_ids
+                        })
+        else:
+            # Boş mesaj listesi
+            for m in messages:
+                m["reactions"] = []
+    except Exception:
+        # message_reactions tablosu henüz oluşturulmamış — tepkiler boş liste
+        for m in messages:
+            m["reactions"] = []
+
     other_user = None if is_group else (other_profiles[0] if other_profiles else None)
     # Supabase Realtime INSERT payload'ı sadece ham satırı verir (join yok) —
     # grup sohbetinde yeni mesajın kimden geldiğini göstermek için client-side

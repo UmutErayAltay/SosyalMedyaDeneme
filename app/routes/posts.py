@@ -1,6 +1,7 @@
 """Feed + post yaşam döngüsü: paylaşma, düzenleme, silme, taslak, sabitleme."""
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
+import time as _time
 from flask import render_template, request, redirect, url_for, session, abort, flash, make_response
 from . import bp
 from ._common import _my_id, _attach_post_metrics, PAGE_SIZE
@@ -15,6 +16,10 @@ from ..blocks import blocked_user_ids, is_blocked_either_way
 from ..polls import create_poll, attach_polls
 from ..memories import get_memories
 from ..post_views import record_view, get_view_count
+from ..cache import invalidate
+
+# Planlanmış post yayıncısı: 60sn throttle (çok sık çalışmaz, fakat zamanı gelenleri yapar)
+_last_sched_publish = 0
 
 
 @bp.route("/")
@@ -26,6 +31,24 @@ def feed():
     me = _my_id()
     page = max(request.args.get("page", 1, type=int), 1)
     offset = (page - 1) * PAGE_SIZE
+
+    # --- Planlanmış post yayıncısı (60sn throttle'lı)
+    global _last_sched_publish
+    now = _time.time()
+    if now - _last_sched_publish >= 60:
+        _last_sched_publish = now
+        try:
+            due = sb.table("posts").select("id, user_id, content").eq("is_draft", True)\
+                  .not_.is_("scheduled_at", "null").lte("scheduled_at", datetime.now(timezone.utc).isoformat()).execute().data
+            for p in due:
+                sb.table("posts").update({"is_draft": False, "scheduled_at": None,
+                                          "created_at": datetime.now(timezone.utc).isoformat()}).eq("id", p["id"]).execute()
+                if p.get("content"):
+                    sync_post_hashtags(sb, p["id"], p["content"])
+                    notify_mentions(sb, actor_id=p["user_id"], content=p["content"], post_id=p["id"])
+                    notify_hashtag_followers(sb, actor_id=p["user_id"], post_id=p["id"], tags=extract_hashtags(p["content"]))
+        except Exception:
+            pass
 
     # --- FAZ A: hem tam sayfa hem sonsuz kaydırma (AJAX partial) isteği için
     # ORTAK/ZORUNLU minimum iş. infiniteScroll.js EN SIK tetiklenen istek —
@@ -283,12 +306,17 @@ def create_post():
 
     image_urls = []
     video_url = None
+    gif_url = request.form.get("gif_url", "").strip()
     if valid_files:
         # Çoklu görsel yükle (maksimum 4)
         image_urls = upload_images(valid_files, folder="posts", max_count=4)
         if not image_urls:
             flash("Görsel yüklenemedi (geçersiz format veya 5MB'tan büyük).", "error")
             return redirect(url_for("routes.feed"))
+    elif gif_url and not video_file:
+        # GIF URL'si: tenor domain'inden olmalı ve https:// ile başlamalı
+        if gif_url.startswith("https://media.tenor.com/"):
+            image_urls = [gif_url]
     if has_video:
         video_url = upload_video(video_file, folder="posts")
         if not video_url:
@@ -308,32 +336,68 @@ def create_post():
     if visibility not in ("public", "followers", "close_friends"):
         visibility = "public"
 
-    # Taslak olarak kaydet: post DB'de oluşur ama feed/profil/arama/hashtag'te
-    # hiç görünmez, hashtag senkronu/mention bildirimi de YAYINLANMADAN
-    # tetiklenmez (içerik henüz herkese açık değil) — bkz. publish_draft().
-    is_draft = request.form.get("action") == "draft"
+    # Taslak veya planlanmış post olarak kaydet
+    action = request.form.get("action", "")
+    is_draft = action == "draft"
+    is_scheduled = action == "schedule"
+    scheduled_at = None
+    if is_scheduled:
+        scheduled_at_str = request.form.get("scheduled_at", "").strip()
+        if scheduled_at_str:
+            is_draft = True  # Planlanmış post de taslak gibi gizlidir
+            scheduled_at = scheduled_at_str
+
+    # Konum alanları (try/except ile — kolon yoksa atlanır)
+    location_name = request.form.get("location_name", "").strip()[:80]
+    location_lat_str = request.form.get("location_lat", "").strip()
+    location_lng_str = request.form.get("location_lng", "").strip()
+    location_lat = None
+    location_lng = None
+    if location_lat_str and location_lng_str:
+        try:
+            location_lat = float(location_lat_str)
+            location_lng = float(location_lng_str)
+            if not (-90 <= location_lat <= 90 and -180 <= location_lng <= 180):
+                location_lat = location_lng = None
+        except ValueError:
+            pass
 
     sb = get_sb()
     try:
-        # sql/migration_post_visibility.sql, migration_video_posts.sql veya
-        # migration_drafts.sql henüz uygulanmamışsa ilgili kolon(lar) yok —
+        # sql/migration_post_visibility.sql, migration_video_posts.sql,
+        # migration_drafts.sql, migration_post_scheduling.sql,
+        # migration_post_location.sql henüz uygulanmamışsa ilgili kolon(lar) yok —
         # post paylaşımı bundan etkilenmesin diye kolonsuz (eski) haliyle dene
         full_data = {**insert_data, "visibility": visibility, "is_draft": is_draft}
         if video_url:
             full_data["video_url"] = video_url
+        if scheduled_at:
+            full_data["scheduled_at"] = scheduled_at
+        if location_name or (location_lat is not None and location_lng is not None):
+            if location_name:
+                full_data["location_name"] = location_name
+            if location_lat is not None:
+                full_data["location_lat"] = location_lat
+            if location_lng is not None:
+                full_data["location_lng"] = location_lng
         inserted = sb.table("posts").insert(full_data).execute()
     except Exception:
         inserted = sb.table("posts").insert(insert_data).execute()
     post_id = inserted.data[0]["id"] if inserted.data else None
+    # Hashtag/mention işlemleri SADECE yayınlanmış (ve planlı değil) postta yapılır
     if post_id and content and not is_draft:
         sync_post_hashtags(sb, post_id, content)
+        invalidate("trending:")  # Gündem cache'i güncelle
         notify_mentions(sb, actor_id=_my_id(), content=content, post_id=post_id)
         notify_hashtag_followers(sb, actor_id=_my_id(), post_id=post_id, tags=extract_hashtags(content))
     if post_id and has_poll:
         create_poll(sb, post_id, poll_options)
 
     if is_draft:
-        flash("Taslak kaydedildi.", "success")
+        if is_scheduled:
+            flash("Post planlandı.", "success")
+        else:
+            flash("Taslak kaydedildi.", "success")
         return redirect(url_for("routes.drafts_list"))
 
     flash("Post paylaşıldı.", "success")
@@ -384,6 +448,7 @@ def edit_post(post_id):
         # bunları tetiklemek yanlış olurdu.
         if not post.get("is_draft"):
             sync_post_hashtags(sb, post_id, content)
+            invalidate("trending:")  # Gündem cache'i güncelle
             if added_mentions:
                 # Sentetik bir "@kullanıcı @kullanıcı2" metni: notify_mentions zaten
                 # extract_mentions ile ayrıştırıyor, sadece YENİ eklenenleri bildirir
@@ -513,7 +578,8 @@ def drafts_list():
 def publish_draft(post_id):
     """Bir taslağı yayınlar — artık is_draft=false olur, TAM O ANDA hashtag
     senkronu + mention bildirimi tetiklenir (taslakken içerik herkese açık
-    olmadığı için bunlar bilerek ERTELENMİŞTİ)."""
+    olmadığı için bunlar bilerek ERTELENMİŞTİ). Planlanmış post ise scheduled_at
+    silinir (yayın zamanı geçmiş anlamına gelir)."""
     sb = get_sb()
     me = _my_id()
 
@@ -522,10 +588,15 @@ def publish_draft(post_id):
         abort(403)
     post = post[0]
 
-    sb.table("posts").update({"is_draft": False}).eq("id", post_id).execute()
+    try:
+        sb.table("posts").update({"is_draft": False, "scheduled_at": None}).eq("id", post_id).execute()
+    except Exception:
+        sb.table("posts").update({"is_draft": False}).eq("id", post_id).execute()
     if post.get("content"):
         sync_post_hashtags(sb, post_id, post["content"])
+        invalidate("trending:")  # Gündem cache'i güncelle
         notify_mentions(sb, actor_id=me, content=post["content"], post_id=post_id)
+        notify_hashtag_followers(sb, actor_id=me, post_id=post_id, tags=extract_hashtags(post["content"]))
 
     flash("Post yayınlandı.", "success")
     return redirect(url_for("routes.post_detail", post_id=post_id))
