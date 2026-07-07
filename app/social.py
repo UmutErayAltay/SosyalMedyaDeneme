@@ -261,8 +261,15 @@ def toggle_bookmark(post_id):
             sb.table("bookmarks").delete().eq("post_id", post_id).eq("user_id", me).execute()
             bookmarked = False
         else:
-            sb.table("bookmarks").insert({"post_id": post_id, "user_id": me}).execute()
-            bookmarked = True
+            collection_id = (request.get_json(silent=True) or {}).get("collection_id") or request.form.get("collection_id") or None
+            try:
+                # collection_id ile insert'i dene
+                sb.table("bookmarks").insert({"post_id": post_id, "user_id": me, "collection_id": collection_id}).execute()
+                bookmarked = True
+            except Exception:
+                # migration_bookmark_collections henüz uygulanmamışsa, collection_id kolonu olmayabilir
+                sb.table("bookmarks").insert({"post_id": post_id, "user_id": me}).execute()
+                bookmarked = True
     except Exception:
         # sql/migration_bookmarks.sql henüz uygulanmamış — sayfayı kırmak yerine
         # nazikçe "değişmedi" dön
@@ -274,6 +281,22 @@ def toggle_bookmark(post_id):
     if request.headers.get("X-Requested-With") == "fetch":
         return jsonify(bookmarked=bookmarked)
     return redirect(request.referrer or url_for("routes.feed"))
+
+
+@bp.route("/collections")
+@login_required
+@retry_on_connection_error
+def list_collections():
+    """Kullanıcının kaydetme klasörlerini döner (id, name)."""
+    sb = get_sb()
+    me = session["user"]["id"]
+    try:
+        cols = sb.table("bookmark_collections").select("id, name").eq(
+            "user_id", me).order("created_at").execute().data
+    except Exception:
+        # migration_bookmark_collections henüz uygulanmamışsa, boş liste dön
+        cols = []
+    return jsonify(collections=cols)
 
 
 # ------------------- KAYDEDİLENLER KLASÖRLERİ (collections) -------------------

@@ -187,16 +187,6 @@
             <div class="bookmark-item" data-collection-id="{{ p.bookmark_collection_id or '' }}">
                 {{ pc.post_card(p, p.profiles.username if p.profiles else 'Bilinmeyen',
                              p.profiles.avatar_url if p.profiles else none, false) }}
-                <label class="bookmark-move-label">
-                    Klasör:
-                    <select class="bookmark-move-select" data-post-id="{{ p.id }}"
-                            data-move-url="{{ url_for('social.set_bookmark_collection', post_id=p.id) }}">
-                        <option value="" {{ 'selected' if not p.bookmark_collection_id }}>Genel</option>
-                        {% for col in bookmark_collections %}
-                            <option value="{{ col.id }}" {{ 'selected' if p.bookmark_collection_id == col.id }}>{{ col.name }}</option>
-                        {% endfor %}
-                    </select>
-                </label>
             </div>
         {% else %}
             <p class="muted">Henüz kaydedilen post yok.</p>

@@ -1518,3 +1518,19 @@ header[role="banner"] {
 .feed-interleave-tags { display: flex; gap: 12px; flex-wrap: wrap; }
 
 .explore-suggestions-title { font-size: 16px; margin: 24px 0 12px; }
+
+/* Kaydetme klasör seçici popover */
+.bookmark-picker {
+    position: absolute; z-index: 50; min-width: 180px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: 0 4px 16px rgba(43, 36, 32, 0.18);
+    padding: 6px;
+}
+.bookmark-picker-item {
+    display: block; width: 100%; text-align: left; padding: 8px 10px;
+    background: none; border: none; cursor: pointer; border-radius: var(--radius-sm);
+    font-size: 13px; color: var(--text);
+}
+.bookmark-picker-item:hover { background: var(--border); }
+.bookmark-picker-new { display: flex; gap: 6px; padding: 6px 4px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
+.bookmark-picker-new input { flex: 1; min-width: 0; font-size: 13px; }

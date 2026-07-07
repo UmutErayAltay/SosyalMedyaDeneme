@@ -13,10 +13,6 @@
         return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    document.querySelectorAll('.bookmark-move-select').forEach(function (sel) {
-        sel.dataset.previousValue = sel.value;
-    });
-
     // --- Klasöre göre filtrele: "Tümü" / "Genel" / belirli bir klasör ---
     var collectionBar = document.querySelector('.collection-bar');
     if (collectionBar) {
@@ -70,13 +66,6 @@
                     '<button type="button" class="collection-chip" data-collection-filter="' + data.id + '">' + safeName + '</button>' +
                     '<button type="button" class="collection-delete-btn" data-collection-id="' + data.id + '" data-delete-url="' + deleteUrl + '" aria-label="' + safeName + ' klasörünü sil" title="Klasörü sil">×</button>';
                 newForm.parentElement.insertBefore(wrap, newForm);
-
-                document.querySelectorAll('.bookmark-move-select').forEach(function (sel) {
-                    var opt = document.createElement('option');
-                    opt.value = data.id;
-                    opt.textContent = data.name;
-                    sel.appendChild(opt);
-                });
             } catch (err) {
                 console.error('Klasör oluşturulamadı:', err);
             }
@@ -102,42 +91,11 @@
 
             var wrap = delBtn.closest('.collection-chip-wrap');
             if (wrap) wrap.remove();
-            document.querySelectorAll('.bookmark-move-select option[value="' + collectionId + '"]').forEach(function (o) {
-                o.remove();
-            });
             document.querySelectorAll('.bookmark-item[data-collection-id="' + collectionId + '"]').forEach(function (item) {
                 item.dataset.collectionId = '';
-                var sel = item.querySelector('.bookmark-move-select');
-                if (sel) sel.value = '';
             });
         } catch (err) {
             console.error('Klasör silinemedi:', err);
-        }
-    });
-
-    // --- Bir kaydı bir klasöre taşı ---
-    document.addEventListener('change', async function (e) {
-        var sel = e.target.closest('.bookmark-move-select');
-        if (!sel) return;
-        var collectionId = sel.value;
-        var previous = sel.dataset.previousValue || '';
-
-        try {
-            var res = await fetch(sel.dataset.moveUrl, {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'fetch',
-                    'X-CSRF-Token': csrfHeader(),
-                },
-                body: new URLSearchParams({ collection_id: collectionId }),
-            });
-            if (!res.ok) throw new Error('İstek başarısız: ' + res.status);
-            var item = sel.closest('.bookmark-item');
-            if (item) item.dataset.collectionId = collectionId;
-            sel.dataset.previousValue = collectionId;
-        } catch (err) {
-            sel.value = previous;
-            console.error('Taşınamadı:', err);
         }
     });
 })();
