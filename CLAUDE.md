@@ -79,6 +79,13 @@ Tam şema, dizin ağacı ve dosya sorumlulukları için:
   (Playwright ile gerçek tarayıcıda computed style kontrolüyle yakalandı,
   kod okuyarak fark edilmedi) — yeni bir `hidden` kullanımı eklerken bunu
   kontrol et.
+- CSS: Primitive renk paletine sıcak/nötr (taupe/beige) ton eklemesi
+  planlanıyorsa, bu renk 13px+ küçük metin içinde kullanılacaksa HER ZAMAN
+  aynı gün WCAG AA kontrast (4.5:1) doğrulanmalı. Sıcak/samimi estetik hedefi
+  renk farkını azaltma eğilimi taşıdığından bu risk özellikle yüksektir
+  (Sprint 51'de `--color-taupe-600` başta 3.70:1 verdi, düzeltildi). Kontrol
+  araçları: WebAIM Contrast Checker, Lighthouse Accessibility, `#7A6F63` gibi
+  daha koyu varyantlar her zaman tercih edilmeli.
 
 ## Arama Stratejisi
 
