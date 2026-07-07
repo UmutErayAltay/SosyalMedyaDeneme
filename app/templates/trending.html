@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Gündem{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>🔥 Gündemde</h1>
+    {% for t in tags %}
+        <a href="{{ url_for('hashtags.hashtag_posts', tag=t.tag) }}" class="trending-tag-row">
+            <span class="trending-tag">#{{ t.tag }}</span>
+            <span class="muted">{{ t.count }} post</span>
+        </a>
+    {% else %}
+        <p class="muted">Son 24 saatte gündemde bir şey yok.</p>
+    {% endfor %}
+</div>
+{% endblock %}

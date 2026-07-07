@@ -66,6 +66,16 @@ def feed():
     # "Gündem" sekmesi yerine doğrudan ana sayfada) — bkz. CLAUDE.md/active_context.
     trending_tags = _trending_hashtags(sb, hours=24, limit=10)
 
+    my_posts_count = sb.table("posts").select(
+        "id", count="exact", head=True
+    ).eq("user_id", me).eq("is_draft", False).execute().count or 0
+    my_followers_count = sb.table("follows").select(
+        "follower_id", count="exact", head=True
+    ).eq("following_id", me).execute().count or 0
+    my_following_count = sb.table("follows").select(
+        "following_id", count="exact", head=True
+    ).eq("follower_id", me).execute().count or 0
+
     # "Kimi takip etmeli" önerisi: zaten takip edilen, ben, engellenen ve
     # banlı kullanıcılar hariç en yeni katılan 5 kişi — sağ kenar çubuğu boş
     # kalmasın diye (kullanıcı isteğiyle eklendi).
@@ -85,7 +95,8 @@ def feed():
     return render_template("feed.html", posts=posts, me=session.get("user"),
                            page=page, has_next=has_next, trending_tags=trending_tags,
                            suggested_users=suggested_users, stories_bar=stories_bar,
-                           memories=memories, valid_usernames=get_valid_usernames(sb))
+                           memories=memories, valid_usernames=get_valid_usernames(sb),
+                           my_stats={"posts": my_posts_count, "followers": my_followers_count, "following": my_following_count})
 
 
 @bp.route("/post/new", methods=["POST"])

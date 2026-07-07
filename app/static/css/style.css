@@ -607,18 +607,25 @@ label input { margin-top: 6px; }
 
 /* Ana sayfa — Twitter tarzı sağ kenar çubuğu (gündemdeki hashtag'ler) */
 main.feed-page {
-    max-width: 920px;
-    display: grid; grid-template-columns: 1fr 280px; gap: 24px;
+    max-width: 1224px;
+    display: grid; grid-template-columns: 280px 1fr 280px; gap: 24px;
     align-items: start;
 }
-/* .feed-page bir GRID — flash mesajı (varsa) DOM'da .feed-layout'tan ÖNCE
-   gelir ve auto-placement'a bırakılırsa grid'in 1. hücresini kapar, tüm
+/* .feed-page bir GRID — flash mesajı (varsa) DOM'da feed-profile-card/stories-bar'dan
+   ÖNCE gelir ve auto-placement'a bırakılırsa grid'in 1. hücresini kapar, tüm
    akışı sağa/alta kaydırır (kullanıcı raporu: post paylaşınca/silince akış
    kayıyordu). Üç kural birlikte bunu KÖKTEN önler: flash tüm satırı kaplar,
-   feed-layout/sidebar'ın kolonu DOM sırasından bağımsız olarak sabittir. */
+   profil kartı/feed-layout/sidebar'ın kolonu DOM sırasından bağımsız olarak sabittir.
+   stories-bar ve memories-card önceden grid-column kuralına sahip değildi ve
+   auto-placement'a bırakılıyordu — şimdi sol kolonu profil kartı aldığı için
+   bunları AÇIKÇA column 2'ye sabitlemek ZORUNLU, yoksa auto-placement onları
+   yeni sol kolona (profil kartıyla çakışacak şekilde) yerleştirir. */
 .flash-container { grid-column: 1 / -1; }
-main.feed-page .feed-layout { grid-column: 1; }
-main.feed-page .feed-sidebar { grid-column: 2; }
+main.feed-page .feed-profile-card { grid-column: 1; }
+main.feed-page .stories-bar { grid-column: 2; }
+main.feed-page .memories-card { grid-column: 2; }
+main.feed-page .feed-layout { grid-column: 2; }
+main.feed-page .feed-sidebar { grid-column: 3; }
 /* top: sadece 24px olsaydı navbar (73px) geri kayınca (yukarı scroll) kenar
    çubuğunun üst kısmının üzerine biner (navbar z-index:10 ile daha üstte) —
    navbar yüksekliği + boşluk olarak hesaplanmalı. navbar.js scroll'a göre
@@ -626,6 +633,25 @@ main.feed-page .feed-sidebar { grid-column: 2; }
    73px'lik boşluk boşa gitmesin diye top da navbar'la birlikte kayar. */
 .feed-sidebar { position: sticky; top: calc(var(--navbar-height) + 16px); transition: top 0.25s ease; }
 body.navbar-hidden .feed-sidebar { top: 16px; }
+.feed-profile-card {
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+    gap: 8px; position: sticky; top: calc(var(--navbar-height) + 16px); transition: top 0.25s ease;
+}
+body.navbar-hidden .feed-profile-card { top: 16px; }
+.feed-profile-avatar-link { display: block; }
+.feed-profile-username { font-weight: 600; font-family: var(--font-display); }
+.feed-profile-stats {
+    display: flex; justify-content: space-around; width: 100%; margin: 8px 0;
+    padding: 8px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.feed-profile-stats a { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.feed-profile-stats strong { font-size: 15px; }
+.feed-profile-stats .muted { font-size: 11px; }
+.feed-profile-links { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.feed-profile-links a {
+    font-size: 13px; padding: 6px 8px; border-radius: var(--radius-sm); text-align: left;
+}
+.feed-profile-links a:hover { background: var(--border); }
 .trending-sidebar-card h2, .suggested-users-card h2 { font-size: 16px; margin-bottom: 12px; }
 .trending-tag-row {
     display: flex; justify-content: space-between; align-items: center;
@@ -633,6 +659,10 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
 }
 .trending-tag-row:last-child { border-bottom: none; }
 .trending-tag { font-weight: 600; color: var(--primary); }
+.trending-viewall {
+    display: block; text-align: center; margin-top: 8px; padding-top: 8px;
+    font-size: 13px; font-weight: 600; color: var(--primary);
+}
 .suggested-user-row {
     display: flex; align-items: center; justify-content: space-between;
     gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border);
@@ -645,6 +675,10 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
 .suggested-user-info { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
 .suggested-user-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggested-user-info .muted { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1100px) {
+    main.feed-page { grid-template-columns: 1fr 280px; max-width: 920px; }
+    .feed-profile-card { display: none; }
+}
 @media (max-width: 900px) {
     main.feed-page { grid-template-columns: 1fr; max-width: var(--max-width); }
     .feed-sidebar { display: none; }

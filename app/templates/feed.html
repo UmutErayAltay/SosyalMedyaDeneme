@@ -3,6 +3,35 @@
 {% block title %}Akış{% endblock %}
 {% block container_class %}feed-page{% endblock %}
 {% block content %}
+{# Twitter tarzı sol kenar çubuğu: kendi profil özetin — sağdaki gündem
+   çubuğuna simetrik, feed'in sol boşluğunu doldurur (kullanıcı isteğiyle
+   eklendi, sadece bu sayfada). #}
+<aside class="card feed-profile-card" aria-label="Profil özetin">
+    <a href="{{ url_for('routes.profile', username=me.username) }}" class="feed-profile-avatar-link">
+        {% if me.avatar_url %}
+            <img src="{{ me.avatar_url }}" class="avatar large" alt="">
+        {% else %}
+            <div class="avatar large avatar-placeholder" aria-hidden="true"></div>
+        {% endif %}
+    </a>
+    <a href="{{ url_for('routes.profile', username=me.username) }}" class="feed-profile-username">{{ me.username }}</a>
+    <div class="feed-profile-stats">
+        <a href="{{ url_for('routes.profile', username=me.username) }}">
+            <strong>{{ my_stats.posts }}</strong><span class="muted">Gönderi</span>
+        </a>
+        <a href="{{ url_for('routes.followers_list', username=me.username) }}">
+            <strong>{{ my_stats.followers }}</strong><span class="muted">Takipçi</span>
+        </a>
+        <a href="{{ url_for('routes.following_list', username=me.username) }}">
+            <strong>{{ my_stats.following }}</strong><span class="muted">Takip</span>
+        </a>
+    </div>
+    <nav class="feed-profile-links" aria-label="Hızlı linkler">
+        <a href="{{ url_for('routes.drafts_list') }}">📝 Taslaklarım</a>
+        <a href="{{ url_for('close_friends.close_friends_list') }}">💚 Yakın Arkadaşlar</a>
+    </nav>
+</aside>
+
 {# Hikaye çubuğu: 24 saatte kaybolan ephemeral paylaşımlar — sadece
    görüntüleme + kendi hikayeni ekleme/silme, yorum/beğeni/"kim gördü"
    YOK (kapsam bilinçli olarak dar tutuldu, bkz. app/stories.py). #}
@@ -117,7 +146,7 @@
     {% endif %}
     <div class="card trending-sidebar-card">
         <h2>🔥 Gündemde</h2>
-        {% for t in trending_tags %}
+        {% for t in trending_tags[:5] %}
             <a href="{{ url_for('hashtags.hashtag_posts', tag=t.tag) }}" class="trending-tag-row">
                 <span class="trending-tag">#{{ t.tag }}</span>
                 <span class="muted">{{ t.count }} post</span>
@@ -125,6 +154,9 @@
         {% else %}
             <p class="muted">Son 24 saatte gündemde bir şey yok.</p>
         {% endfor %}
+        {% if trending_tags|length > 5 %}
+            <a href="{{ url_for('hashtags.trending_all') }}" class="trending-viewall">Tümünü gör →</a>
+        {% endif %}
     </div>
 </aside>
 

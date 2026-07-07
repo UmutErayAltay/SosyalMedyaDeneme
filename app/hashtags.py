@@ -186,6 +186,16 @@ def notify_hashtag_followers(sb, actor_id: str, post_id: str, tags: list[str]) -
                    post_id=post_id, hashtag_id=h["id"])
 
 
+@bp.route("/gundem")
+@login_required
+@retry_on_connection_error
+def trending_all():
+    """Gündemdeki TÜM etiketler — feed sidebar'ındaki ilk 5'in "Tümünü gör" hedefi."""
+    sb = get_sb()
+    tags = _trending_hashtags(sb, hours=24, limit=50)
+    return render_template("trending.html", tags=tags, me=session.get("user"))
+
+
 def _trending_hashtags(sb, hours: int = 24, limit: int = 10) -> list[dict]:
     """Son `hours` saat içinde en çok kullanılan hashtag'ler.
 
