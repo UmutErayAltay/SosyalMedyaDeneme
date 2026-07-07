@@ -309,7 +309,9 @@ def list_collections():
 def create_collection():
     sb = get_sb()
     me = session["user"]["id"]
-    name = request.form.get("name", "").strip()[:40]
+    # bookmarks.js JSON gövde gönderir, kaydedilenler sayfasındaki form ise form-data
+    _json = request.get_json(silent=True) or {}
+    name = (_json.get("name") or request.form.get("name", "")).strip()[:40]
     is_fetch = request.headers.get("X-Requested-With") == "fetch"
 
     if not name:

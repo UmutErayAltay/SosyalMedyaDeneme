@@ -103,8 +103,8 @@
     var progressTimer = null;
     var lastFocused = null;
     var isPaused = false;
-    var pauseStartTime = null;
-    var storyStartTime = null;
+    var storyStartTime = null;   // aktif oynatma diliminin başlangıcı
+    var elapsedPlayed = 0;       // bu hikayede toplam OYNATILMIŞ süre (duraklamalar hariç)
 
     function timeAgo(iso) {
         var diffMs = Date.now() - new Date(iso).getTime();
@@ -130,29 +130,47 @@
         if (progressTimer) { clearTimeout(progressTimer); progressTimer = null; }
     }
 
+    // Aktif hikayenin progress fill'i (document.querySelector hep İLK segmenti bulur)
+    function currentFill() {
+        var segs = progressRow.querySelectorAll('.story-progress-seg');
+        return segs[currentIndex] ? segs[currentIndex].querySelector('.story-progress-fill') : null;
+    }
+
     function setPaused(paused) {
         isPaused = paused;
         var indicator = document.getElementById('story-paused-indicator');
-        var fill = document.querySelector('.story-progress-fill');
+        var fill = currentFill();
+        var isVideo = !!(currentStories[currentIndex] && currentStories[currentIndex].video_url);
         if (paused) {
-            pauseStartTime = Date.now();
             clearTimer();
+            if (!isVideo) {
+                if (storyStartTime) elapsedPlayed += Date.now() - storyStartTime;
+                // Bar CSS transition ile akıyor; class'la DONDURULAMAZ
+                // (animation-play-state sadece animation'a işler) — mevcut
+                // genişliği hesaplayıp transition'ı kapatarak sabitle
+                if (fill) {
+                    var pct = Math.min(100, (elapsedPlayed / IMAGE_DURATION_MS) * 100);
+                    fill.style.transition = 'none';
+                    fill.style.width = pct + '%';
+                }
+            }
             if (viewerVideo && !viewerVideo.hidden) viewerVideo.pause();
             if (indicator) indicator.hidden = false;
-            if (fill) fill.classList.add('paused');
         } else {
             if (indicator) indicator.hidden = true;
-            if (fill) fill.classList.remove('paused');
-            if (viewerVideo && !viewerVideo.hidden) {
-                viewerVideo.play().catch(function () { });
-            }
-            // Kalan süreyi hesapla ve devam ettir
-            if (currentStories[currentIndex].video_url) {
-                // Video oynatıyorsa, zaten onended ile devam edecek
+            if (isVideo) {
+                // Video kendi kaldığı yerden oynar, onended ile ilerler
+                if (viewerVideo && !viewerVideo.hidden) viewerVideo.play().catch(function () { });
                 return;
             }
-            var elapsed = pauseStartTime ? Date.now() - pauseStartTime : 0;
-            var remaining = Math.max(0, IMAGE_DURATION_MS - elapsed);
+            storyStartTime = Date.now();
+            var remaining = Math.max(0, IMAGE_DURATION_MS - elapsedPlayed);
+            if (fill) {
+                requestAnimationFrame(function () {
+                    fill.style.transition = 'width ' + remaining + 'ms linear';
+                    fill.style.width = '100%';
+                });
+            }
             progressTimer = setTimeout(function () { showStory(currentIndex + 1); }, remaining);
         }
     }
@@ -160,7 +178,9 @@
     function showStory(index) {
         clearTimer();
         isPaused = false;
-        pauseStartTime = null;
+        elapsedPlayed = 0;
+        var oldIndicator = document.getElementById('story-paused-indicator');
+        if (oldIndicator) oldIndicator.hidden = true;
         if (index < 0) return; // ilk hikayede geri gidilemez
         if (index >= currentStories.length) { closeViewer(); return; }
         currentIndex = index;
@@ -200,7 +220,6 @@
             viewerImage.src = s.image_url || '';
             viewerImage.hidden = false;
             var fill = segs[index].querySelector('.story-progress-fill');
-            pauseStartTime = null;
             requestAnimationFrame(function () {
                 fill.style.transition = 'width ' + IMAGE_DURATION_MS + 'ms linear';
                 fill.style.width = '100%';
@@ -243,7 +262,7 @@
     function closeViewer() {
         clearTimer();
         isPaused = false;
-        pauseStartTime = null;
+        elapsedPlayed = 0;
         storyStartTime = null;
         viewerVideo.pause();
         viewerModal.hidden = true;
