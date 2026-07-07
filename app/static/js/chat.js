@@ -514,6 +514,141 @@
         }
     };
 
+    // === Mesaj Tepkileri (Emoji Reactions) — Document Delegation ===
+    // Picker tetikleme, emoji seçimi, chip tıklaması (panel AJAX geçişlerinden bağımsız)
+    document.addEventListener('click', function (e) {
+        var panel = e.target.closest('#conversation-panel');
+        if (!panel) return; // yalnız messaging panel içindeki tıklamalar işlenir
+
+        // 1. Tetik butonu: picker açma/kapama
+        var trigger = e.target.closest('.msg-react-trigger');
+        if (trigger) {
+            e.preventDefault();
+            var msg = trigger.closest('.msg');
+            if (msg) {
+                var picker = msg.querySelector('.msg-react-picker');
+                if (picker) {
+                    if (picker.hasAttribute('hidden')) {
+                        picker.removeAttribute('hidden');
+                    } else {
+                        picker.setAttribute('hidden', '');
+                    }
+                }
+            }
+            return;
+        }
+
+        // 2. Emoji seçimi (picker içindeki emoji butonları)
+        var emojiBtn = e.target.closest('.msg-react-picker button[data-emoji]');
+        if (emojiBtn) {
+            e.preventDefault();
+            var msg = emojiBtn.closest('.msg');
+            var picker = emojiBtn.closest('.msg-react-picker');
+            if (msg && picker) {
+                var msgId = msg.dataset.msgId;
+                var emoji = emojiBtn.dataset.emoji;
+                var reactUrl = msg.dataset.reactUrl;
+                picker.setAttribute('hidden', '');
+
+                if (!msgId || !reactUrl) return;
+
+                // POST /messages/message/<msgId>/react
+                var csrfInput = document.querySelector('input[name="csrf_token"]');
+                fetch(reactUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfInput ? csrfInput.value : ''
+                    },
+                    body: JSON.stringify({ reaction: emoji })
+                })
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    if (!data.ok) return;
+
+                    var reactionsDiv = msg.querySelector('.msg-reactions');
+                    var chip = msg.querySelector('.msg-reaction-chip[data-reaction="' + emoji + '"]');
+
+                    if (data.reaction) {
+                        // Tepki eklendi: yeni chip veya sayı arttır
+                        if (!chip) {
+                            if (!reactionsDiv) {
+                                reactionsDiv = document.createElement('div');
+                                reactionsDiv.className = 'msg-reactions';
+                                // time span'ından sonra ekle
+                                var timeEl = msg.querySelector('.time');
+                                if (timeEl) timeEl.insertAdjacentElement('afterend', reactionsDiv);
+                                else msg.appendChild(reactionsDiv);
+                            }
+                            chip = document.createElement('button');
+                            chip.type = 'button';
+                            chip.className = 'msg-reaction-chip mine';
+                            chip.dataset.reaction = emoji;
+                            chip.dataset.count = 1;
+                            chip.textContent = emoji + ' 1';
+                            chip.title = '1 kişi';
+                            reactionsDiv.appendChild(chip);
+                        } else {
+                            chip.classList.add('mine');
+                            var count = parseInt(chip.dataset.count || 1, 10);
+                            count += 1;
+                            chip.dataset.count = count;
+                            chip.textContent = emoji + ' ' + count;
+                            chip.title = count + ' kişi';
+                        }
+                    } else {
+                        // Tepki kaldırıldı: sayı azalt veya chip'i sil
+                        if (chip) {
+                            var count = parseInt(chip.dataset.count || 1, 10);
+                            count -= 1;
+                            if (count <= 0) {
+                                chip.remove();
+                            } else {
+                                chip.classList.remove('mine');
+                                chip.dataset.count = count;
+                                chip.textContent = emoji + ' ' + count;
+                                chip.title = count + ' kişi';
+                            }
+                        }
+                    }
+                })
+                .catch(function (err) {
+                    console.error('Tepki gönderilemedi:', err);
+                });
+            }
+            return;
+        }
+
+        // 3. Chip tıklaması: kendi tepkimi toggle et (hızlı tıkla)
+        var chip = e.target.closest('.msg-reaction-chip');
+        if (chip && !chip.closest('.msg-react-picker')) {
+            e.preventDefault();
+            var msg = chip.closest('.msg');
+            if (msg && chip.classList.contains('mine')) {
+                var emoji = chip.dataset.reaction;
+                var reactUrl = msg.dataset.reactUrl;
+                var msgId = msg.dataset.msgId;
+
+                if (!msgId || !reactUrl) return;
+
+                var csrfInput = document.querySelector('input[name="csrf_token"]');
+                fetch(reactUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfInput ? csrfInput.value : ''
+                    },
+                    body: JSON.stringify({ reaction: emoji })
+                })
+                .then(function (res) { return res.json(); })
+                .catch(function (err) {
+                    console.error('Tepki toggle başarısız:', err);
+                });
+            }
+            return;
+        }
+    });
+
     // İlk sayfa yüklemesinde çalıştır (AJAX geçişlerinde messagesPanel.js çağırır)
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', window.initConversation);

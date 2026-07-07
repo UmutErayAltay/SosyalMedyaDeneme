@@ -28,7 +28,7 @@
     {# aria-live: ekran okuyucu yeni mesajı duyurur (WCAG 4.1.3), aria-atomic=false sadece yeni mesajı okur #}
     <div class="message-stream" id="stream" role="log" aria-live="polite" aria-atomic="false" aria-label="Mesaj geçmişi">
         {% for m in messages %}
-        <div class="msg {{ 'mine' if m.sender_id == me.id else 'theirs' }}" data-msg-id="{{ m.id }}">
+        <div class="msg {{ 'mine' if m.sender_id == me.id else 'theirs' }}" data-msg-id="{{ m.id }}" data-user-id="{{ me.id }}" data-react-url="{{ url_for('messaging.react_to_message', message_id=m.id) }}">
             {% if is_group and m.sender_id != me.id %}
                 <span class="msg-sender">{{ m.profiles.username if m.profiles else 'Bilinmeyen' }}</span>
             {% endif %}
@@ -50,6 +50,32 @@
                     <span class="read-receipt" aria-label="İletildi">✓</span>
                 {% endif %}
             </span>
+
+            {# Mesaj tepkileri — reactions arrayı varsa render et #}
+            {% if m.reactions %}
+            <div class="msg-reactions">
+                {% for r in m.reactions %}
+                <button class="msg-reaction-chip {{ 'mine' if r.mine }}"
+                        data-reaction="{{ r.reaction }}"
+                        data-count="{{ r.count }}"
+                        title="{{ r.count }} kişi"
+                        type="button">
+                    {{ r.reaction }} {{ r.count }}
+                </button>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {# Emoji tepkisi tetik butonu (baloncuk hover'ında belirir) + picker #}
+            <button class="msg-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>
+            <div class="msg-react-picker" hidden>
+                <button type="button" data-emoji="❤️" aria-label="Kalp tepkisi">❤️</button>
+                <button type="button" data-emoji="😂" aria-label="Gül tepkisi">😂</button>
+                <button type="button" data-emoji="👍" aria-label="Beğen tepkisi">👍</button>
+                <button type="button" data-emoji="😮" aria-label="Şaşır tepkisi">😮</button>
+                <button type="button" data-emoji="😢" aria-label="Üzül tepkisi">😢</button>
+                <button type="button" data-emoji="🔥" aria-label="Ateş tepkisi">🔥</button>
+            </div>
         </div>
         {% else %}
         <p class="muted center">Konuşmaya başla — ilk mesajı sen yaz.</p>
