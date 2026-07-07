@@ -508,6 +508,11 @@
                     }
                 });
                 activeChannel = channel;
+
+                // WebRTC arama sistemi: call.js'i başlat
+                if (window.initCallSystem && !isGroup) {
+                    window.initCallSystem(conversationId, window.ME_ID, activeChannel, panel.dataset.otherUserId || '');
+                }
             } catch (err) {
                 console.warn('Realtime başlatılamadı:', err);
             }

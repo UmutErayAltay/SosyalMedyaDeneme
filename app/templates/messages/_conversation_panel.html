@@ -6,6 +6,7 @@
      data-conversation-id="{{ conversation_id }}"
      data-send-url="{{ url_for('messaging.send_message', conversation_id=conversation_id) }}"
      data-other-username="{{ (group_name if is_group else other_user.username) or 'Kullanıcı' }}"
+     data-other-user-id="{{ other_user.id if other_user else '' }}"
      data-my-username="{{ me.username or 'Sen' }}"
      data-is-group="{{ '1' if is_group else '0' }}"
      data-member-map="{{ (member_map if is_group else {})|tojson|forceescape }}">
@@ -22,6 +23,12 @@
                     data-conversation-id="{{ conversation_id }}">{{ '⚙️ Yönet' if my_is_admin else '👥 Üyeler' }}</button>
         {% else %}
             <h2>{{ other_user.username if other_user else 'Bilinmeyen' }}</h2>
+            <div class="conv-call-buttons">
+                <button type="button" class="btn btn-ghost small" id="call-voice-btn"
+                        aria-label="Sesli arama başlat" title="Sesli arama">📞</button>
+                <button type="button" class="btn btn-ghost small" id="call-video-btn"
+                        aria-label="Görüntülü arama başlat" title="Görüntülü arama">🎥</button>
+            </div>
         {% endif %}
     </header>
 
@@ -108,6 +115,50 @@
     </form>
     <span id="msg-image-name" class="muted" aria-live="polite"></span>
     <p class="muted drop-hint sr-only" id="drop-hint" aria-live="polite"></p>
+</div>
+
+{# === GELEN ARAMA MODALI (1:1 Konuşmalar) === #}
+<div class="modal-overlay" id="call-modal-incoming" role="dialog" aria-modal="true"
+     aria-labelledby="call-modal-incoming-title" hidden>
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="call-modal-incoming-title">Gelen Arama</h2>
+        </div>
+        <div class="modal-body call-modal-body">
+            <p id="incoming-call-name" style="text-align: center; font-weight: 600; margin-bottom: 16px;"></p>
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button type="button" class="btn btn-primary" id="incoming-call-accept-btn">✓ Kabul Et</button>
+                <button type="button" class="btn btn-ghost danger" id="incoming-call-reject-btn">✗ Reddet</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# === ARAMA OVERLAY (Tam Ekran) === #}
+<div class="call-overlay" id="call-overlay" hidden>
+    {# Sesli aramada avatar göster #}
+    <div class="call-remote-avatar" id="call-remote-avatar" hidden>
+        <div class="avatar avatar-large" style="background: var(--border); width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px;">
+            👤
+        </div>
+        <p id="call-voice-info" style="margin-top: 16px; color: var(--card); font-size: 16px;">Sesli Arama</p>
+    </div>
+
+    {# Görüntülü aramada remote video #}
+    <video id="call-remote-video" class="call-remote-video" autoplay playsinline></video>
+
+    {# Köşede local video #}
+    <video id="call-local-video" class="call-local-video" autoplay playsinline muted></video>
+
+    {# Alt bar: kontrol butonları + süre #}
+    <div class="call-controls-bar">
+        <span id="call-duration" class="call-duration"></span>
+        <div class="call-controls">
+            <button type="button" class="call-btn" id="call-controls-mic" aria-label="Mikrofonu aç/kapat" title="Mikrofon">🎙</button>
+            <button type="button" class="call-btn" id="call-controls-camera" aria-label="Kamerayı aç/kapat" title="Kamera">📷</button>
+            <button type="button" class="call-btn call-btn-danger" id="call-controls-hangup" aria-label="Aramayı sonlandır" title="Kapat">📵</button>
+        </div>
+    </div>
 </div>
 
 {% if is_group %}
