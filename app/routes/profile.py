@@ -325,6 +325,8 @@ def profile_edit():
 
         # Profili güncelle
         sb.table("profiles").update(update_data).eq("id", me).execute()
+        from ..cache import invalidate
+        invalidate("valid_usernames")
 
         # Session'daki kullanıcı bilgilerini senkronize et (navbar avatarı için)
         session["user"]["username"] = username

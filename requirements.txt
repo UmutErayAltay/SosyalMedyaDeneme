@@ -3,3 +3,4 @@ supabase==2.7.4
 python-dotenv==1.0.1
 PyJWT==2.9.0
 requests==2.32.3
+waitress==3.0.0

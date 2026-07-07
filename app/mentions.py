@@ -81,6 +81,10 @@ def linkify_mentions(content, valid_usernames: set | None = None):
 
 def get_valid_usernames(sb) -> set:
     """Tüm kullanıcı adlarını küçük harfle döner — sayfa başına TEK sorgu,
-    mention linkify'ın her postta ayrı bir DB sorgusu yapmasını önler (N+1)."""
-    rows = sb.table("profiles").select("username").execute().data
-    return {r["username"].lower() for r in rows if r.get("username")}
+    mention linkify'ın her postta ayrı bir DB sorgusu yapmasını önler (N+1).
+    60 saniye TTL ile cache'lenir."""
+    from .cache import get_cached
+    def _fetch():
+        rows = sb.table("profiles").select("username").execute().data
+        return {r["username"].lower() for r in rows if r.get("username")}
+    return get_cached("valid_usernames", 60, _fetch)

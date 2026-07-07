@@ -41,16 +41,21 @@ def create_app() -> Flask:
 
     # Navbar zil rozeti: her sayfada okunmamış bildirim sayısını enjekte eder.
     # Supabase geçici olarak erişilemezse rozet sessizce 0 gösterir — sayfa
-    # render'ı asla bu yüzden kırılmaz.
+    # render'ı asla bu yüzden kırılmaz. 20 saniye TTL per-user cache ile
+    # optimize edilir (navbar.js 25 saniyede bir fetch ile tazeler).
     @app.context_processor
     def inject_unread_notifications():
         if not session.get("user"):
             return {}
         try:
             from .supabase_client import get_sb
-            count = get_sb().table("notifications").select(
-                "id", count="exact", head=True
-            ).eq("recipient_id", session["user"]["id"]).eq("is_read", False).execute().count or 0
+            from .cache import get_cached
+            user_id = session["user"]["id"]
+            def _fetch():
+                return get_sb().table("notifications").select(
+                    "id", count="exact", head=True
+                ).eq("recipient_id", user_id).eq("is_read", False).execute().count or 0
+            count = get_cached(f"unread:{user_id}", 20, _fetch)
         except Exception:
             count = 0
         return {"unread_notifications": count}

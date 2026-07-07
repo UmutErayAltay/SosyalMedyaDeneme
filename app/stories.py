@@ -15,6 +15,8 @@ from .blocks import is_blocked_either_way
 
 bp = Blueprint("stories", __name__)
 
+_last_cleanup = 0.0
+
 
 def _cleanup_expired_stories(sb) -> None:
     """Süresi dolmuş (expires_at geçmiş) hikayeleri siler.
@@ -22,7 +24,15 @@ def _cleanup_expired_stories(sb) -> None:
     Ayrı bir cron/scheduler YOK (bu projede hiç yok, bkz. notifications.py
     RETENTION_DAYS deseni) — feed her ziyaret edildiğinde fırsatçı temizlik
     yeterli, bu ölçekte (arkadaş grubu) hikayelerin saatlerce/günlerce
-    görüntülenmeden birikmesi olası değil."""
+    görüntülenmeden birikmesi olası değil. En fazla 10 dakikada bir çalışması
+    için throttle'lenir (cleanup DDL çalışması pahalı)."""
+    global _last_cleanup
+    import time
+    now_ts = time.time()
+    if now_ts - _last_cleanup < 600:
+        return
+    _last_cleanup = now_ts
+
     now = datetime.now(timezone.utc).isoformat()
     try:
         sb.table("stories").delete().lt("expires_at", now).execute()

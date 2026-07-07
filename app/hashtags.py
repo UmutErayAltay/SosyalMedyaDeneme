@@ -238,30 +238,37 @@ def _trending_hashtags(sb, hours: int = 24, limit: int = 10) -> list[dict]:
     Sadece HERKESE AÇIK postlar sayılır — bir 'sadece takipçiler' postunun
     etiketi herkese açık gündem listesine sızmamalı. Engelleme ilişkileri
     hesaba KATILMIYOR (gündem viewer'a özel değil, paylaşılan/global bir
-    liste — tam kişiselleştirme bu özelliğin amacını bozardı).
+    liste — tam kişiselleştirme bu özelliğin amacını bozardı). 120 saniye
+    TTL ile cache'lenir.
     """
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    try:
-        recent_posts = sb.table("posts").select("id").gte(
-            "created_at", cutoff
-        ).eq("visibility", "public").execute().data
-        post_ids = [p["id"] for p in recent_posts]
-        if not post_ids:
-            return []
+    from .cache import get_cached
+    cache_key = f"trending:{hours}:{limit}"
 
-        rows = sb.table("post_hashtags").select("hashtag_id").in_("post_id", post_ids).execute().data
-        counts: dict = {}
-        for r in rows:
-            counts[r["hashtag_id"]] = counts.get(r["hashtag_id"], 0) + 1
-        if not counts:
-            return []
+    def _fetch():
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        try:
+            recent_posts = sb.table("posts").select("id").gte(
+                "created_at", cutoff
+            ).eq("visibility", "public").execute().data
+            post_ids = [p["id"] for p in recent_posts]
+            if not post_ids:
+                return []
 
-        top_ids = sorted(counts, key=lambda hid: counts[hid], reverse=True)[:limit]
-        tags = sb.table("hashtags").select("id, tag").in_("id", top_ids).execute().data
-        tag_by_id = {t["id"]: t["tag"] for t in tags}
-        return [
-            {"tag": tag_by_id[hid], "count": counts[hid]}
-            for hid in top_ids if hid in tag_by_id
-        ]
-    except Exception:
-        return []  # migration_hashtags.sql veya migration_post_visibility.sql henüz uygulanmamış olabilir
+            rows = sb.table("post_hashtags").select("hashtag_id").in_("post_id", post_ids).execute().data
+            counts: dict = {}
+            for r in rows:
+                counts[r["hashtag_id"]] = counts.get(r["hashtag_id"], 0) + 1
+            if not counts:
+                return []
+
+            top_ids = sorted(counts, key=lambda hid: counts[hid], reverse=True)[:limit]
+            tags = sb.table("hashtags").select("id, tag").in_("id", top_ids).execute().data
+            tag_by_id = {t["id"]: t["tag"] for t in tags}
+            return [
+                {"tag": tag_by_id[hid], "count": counts[hid]}
+                for hid in top_ids if hid in tag_by_id
+            ]
+        except Exception:
+            return []  # migration_hashtags.sql veya migration_post_visibility.sql henüz uygulanmamış olabilir
+
+    return get_cached(cache_key, 120, _fetch)

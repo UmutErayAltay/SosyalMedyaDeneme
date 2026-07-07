@@ -93,6 +93,8 @@ def notify(sb, *, recipient_id: str, actor_id: str, type_: str,
         "conversation_id": conversation_id,
         "hashtag_id": hashtag_id,
     }).execute()
+    from .cache import invalidate
+    invalidate(f"unread:{recipient_id}")
 
 
 def _annotate(n: dict) -> dict:
@@ -168,6 +170,8 @@ def _fetch_and_mark_read(sb, me: str, limit: int, offset: int = 0) -> tuple[list
     unread_ids = [n["id"] for n in rows if not n["is_read"]]
     if unread_ids:
         sb.table("notifications").update({"is_read": True}).in_("id", unread_ids).execute()
+        from .cache import invalidate
+        invalidate(f"unread:{me}")
 
     return _group_notifications(rows), has_next
 
@@ -258,10 +262,13 @@ def preferences():
 @login_required
 @retry_on_connection_error
 def unread_count():
-    """Navbar rozeti için JS polling ucu."""
+    """Navbar rozeti için JS polling ucu. 20 saniye TTL cache ile optimize edilir."""
+    from .cache import get_cached
     sb = get_sb()
     me = session["user"]["id"]
-    count = sb.table("notifications").select(
-        "id", count="exact", head=True
-    ).eq("recipient_id", me).eq("is_read", False).execute().count or 0
+    def _fetch():
+        return sb.table("notifications").select(
+            "id", count="exact", head=True
+        ).eq("recipient_id", me).eq("is_read", False).execute().count or 0
+    count = get_cached(f"unread:{me}", 20, _fetch)
     return jsonify(count=count)

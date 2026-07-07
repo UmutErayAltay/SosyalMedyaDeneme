@@ -115,6 +115,8 @@ def register():
                     })
                 )
                 _save_session(login_res)
+                from .cache import invalidate
+                invalidate("valid_usernames")
                 flash(f"Hoş geldin {username}!", "success")
                 return redirect(url_for("routes.feed"))
             except Exception:
