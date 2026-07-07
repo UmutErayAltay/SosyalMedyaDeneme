@@ -1168,6 +1168,7 @@ body.navbar-hidden .feed-profile-card { top: 16px; }
     flex: 1; height: 3px; background: var(--overlay-light); border-radius: 2px; overflow: hidden;
 }
 .story-progress-fill { height: 100%; width: 0; background: var(--color-white); }
+.story-progress-fill.paused { animation-play-state: paused; }
 .story-viewer-header {
     display: flex; align-items: center; gap: 8px; padding: 10px 12px;
     color: var(--color-white);
@@ -1189,11 +1190,29 @@ body.navbar-hidden .feed-profile-card { top: 16px; }
 .story-nav-zone { position: absolute; top: 0; bottom: 0; width: 35%; cursor: pointer; z-index: 1; }
 .story-nav-prev { left: 0; }
 .story-nav-next { right: 0; }
+.story-nav-btn {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: var(--overlay-dark); color: var(--color-white);
+    border: none; border-radius: 50%; width: 48px; height: 48px;
+    cursor: pointer; font-size: 32px; display: flex; align-items: center;
+    justify-content: center; z-index: 10; transition: background 0.15s;
+}
+.story-nav-btn:hover { background: rgba(43, 36, 32, 0.75); }
+.story-nav-btn[hidden] { display: none; }
+.story-nav-btn-prev { left: 12px; }
+.story-nav-btn-next { right: 12px; }
 .story-caption {
     position: absolute; bottom: 16px; left: 16px; right: 16px;
     color: var(--color-white); text-align: center; font-size: 14px;
     text-shadow: 0 1px 3px rgba(43, 36, 32, 0.6);
 }
+.story-paused-indicator {
+    position: absolute; top: 12px; right: 12px;
+    background: var(--overlay-dark); color: var(--color-white);
+    border-radius: 6px; padding: 4px 8px; font-size: 16px;
+    font-weight: 600;
+}
+.story-paused-indicator[hidden] { display: none; }
 
 /* Öne çıkanlar çubuğu (profil, bio'nun altı) — .stories-bar/.story-avatar-btn
    ile aynı ruhta ama kalıcı içerik olduğu için daha küçük/kare. */

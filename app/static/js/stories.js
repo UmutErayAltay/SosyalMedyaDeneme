@@ -102,6 +102,9 @@
     var currentIndex = 0;
     var progressTimer = null;
     var lastFocused = null;
+    var isPaused = false;
+    var pauseStartTime = null;
+    var storyStartTime = null;
 
     function timeAgo(iso) {
         var diffMs = Date.now() - new Date(iso).getTime();
@@ -127,12 +130,48 @@
         if (progressTimer) { clearTimeout(progressTimer); progressTimer = null; }
     }
 
+    function setPaused(paused) {
+        isPaused = paused;
+        var indicator = document.getElementById('story-paused-indicator');
+        var fill = document.querySelector('.story-progress-fill');
+        if (paused) {
+            pauseStartTime = Date.now();
+            clearTimer();
+            if (viewerVideo && !viewerVideo.hidden) viewerVideo.pause();
+            if (indicator) indicator.hidden = false;
+            if (fill) fill.classList.add('paused');
+        } else {
+            if (indicator) indicator.hidden = true;
+            if (fill) fill.classList.remove('paused');
+            if (viewerVideo && !viewerVideo.hidden) {
+                viewerVideo.play().catch(function () { });
+            }
+            // Kalan süreyi hesapla ve devam ettir
+            if (currentStories[currentIndex].video_url) {
+                // Video oynatıyorsa, zaten onended ile devam edecek
+                return;
+            }
+            var elapsed = pauseStartTime ? Date.now() - pauseStartTime : 0;
+            var remaining = Math.max(0, IMAGE_DURATION_MS - elapsed);
+            progressTimer = setTimeout(function () { showStory(currentIndex + 1); }, remaining);
+        }
+    }
+
     function showStory(index) {
         clearTimer();
+        isPaused = false;
+        pauseStartTime = null;
         if (index < 0) return; // ilk hikayede geri gidilemez
         if (index >= currentStories.length) { closeViewer(); return; }
         currentIndex = index;
         var s = currentStories[index];
+        storyStartTime = Date.now();
+
+        // Buton görünürlüğü: ilk hikayede prev gizli, son hikayede next gizli
+        var storyPrevBtn = document.getElementById('story-prev-btn');
+        var storyNextBtn = document.getElementById('story-next-btn');
+        if (storyPrevBtn) storyPrevBtn.hidden = (index === 0);
+        if (storyNextBtn) storyNextBtn.hidden = (index === currentStories.length - 1);
 
         var segs = progressRow.querySelectorAll('.story-progress-seg');
         segs.forEach(function (seg, i) {
@@ -161,6 +200,7 @@
             viewerImage.src = s.image_url || '';
             viewerImage.hidden = false;
             var fill = segs[index].querySelector('.story-progress-fill');
+            pauseStartTime = null;
             requestAnimationFrame(function () {
                 fill.style.transition = 'width ' + IMAGE_DURATION_MS + 'ms linear';
                 fill.style.width = '100%';
@@ -202,10 +242,15 @@
 
     function closeViewer() {
         clearTimer();
+        isPaused = false;
+        pauseStartTime = null;
+        storyStartTime = null;
         viewerVideo.pause();
         viewerModal.hidden = true;
         document.body.style.overflow = '';
         currentStories = [];
+        var indicator = document.getElementById('story-paused-indicator');
+        if (indicator) indicator.hidden = true;
         if (lastFocused) lastFocused.focus();
     }
 
@@ -216,6 +261,28 @@
     if (viewerCloseBtn) viewerCloseBtn.addEventListener('click', closeViewer);
     if (navPrev) navPrev.addEventListener('click', function () { showStory(currentIndex - 1); });
     if (navNext) navNext.addEventListener('click', function () { showStory(currentIndex + 1); });
+
+    // Buton event'leri (görünür yön butonları)
+    var storyPrevBtn = document.getElementById('story-prev-btn');
+    var storyNextBtn = document.getElementById('story-next-btn');
+    if (storyPrevBtn) storyPrevBtn.addEventListener('click', function () { showStory(currentIndex - 1); });
+    if (storyNextBtn) storyNextBtn.addEventListener('click', function () { showStory(currentIndex + 1); });
+
+    // Medya alanı tıklama — duraklat/devam
+    if (viewerModal) {
+        viewerModal.addEventListener('click', function (e) {
+            if (e.target === viewerModal) { closeViewer(); return; }
+            // Medya alanı veya onun alt öğelerine tıklandı mı kontrol et
+            var mediaArea = document.getElementById('story-media-area');
+            if (mediaArea && (e.target === mediaArea || mediaArea.contains(e.target))) {
+                // Buton tıklandıysa atla
+                if (e.target.classList && (e.target.classList.contains('story-nav-btn') ||
+                    e.target.classList.contains('story-nav-zone'))) return;
+                // Duraklat/devam
+                setPaused(!isPaused);
+            }
+        });
+    }
 
     // storyHighlights.js bu event'i dinler — stories.js picker'ın kendisini
     // BİLMEMELİ (gevşek bağlama), sadece hangi hikayenin öne çıkarılacağını fırlatır.
