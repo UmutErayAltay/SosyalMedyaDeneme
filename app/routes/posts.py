@@ -76,6 +76,28 @@ def feed():
         "following_id", count="exact", head=True
     ).eq("follower_id", me).execute().count or 0
 
+    # Sol profil kartı için kendi son medyaların mini önizlemesi (3 görsel)
+    my_recent_media = []
+    my_posts_rows = sb.table("posts").select("id, image_url, image_urls").eq(
+        "user_id", me
+    ).eq("is_draft", False).order("created_at", desc=True).limit(12).execute().data
+    for p in my_posts_rows:
+        img = (p.get("image_urls") or [None])[0] or p.get("image_url")
+        if img:
+            my_recent_media.append({"post_id": p["id"], "image_url": img})
+        if len(my_recent_media) == 3:
+            break
+
+    # Sağ kenar çubuğu için yakın arkadaşlar preview'ı (6 kişi)
+    close_friends_preview = []
+    try:
+        cf_rows = sb.table("close_friends").select(
+            "profiles!close_friends_friend_id_fkey(id, username, avatar_url)"
+        ).eq("owner_id", me).order("created_at", desc=True).limit(6).execute().data
+        close_friends_preview = [r["profiles"] for r in cf_rows if r.get("profiles")]
+    except Exception:
+        pass  # migration_close_friends.sql henüz uygulanmamışsa boş liste
+
     # "Kimi takip etmeli" önerisi: zaten takip edilen, ben, engellenen ve
     # banlı kullanıcılar hariç en yeni katılan 5 kişi — sağ kenar çubuğu boş
     # kalmasın diye (kullanıcı isteğiyle eklendi).
@@ -96,7 +118,8 @@ def feed():
                            page=page, has_next=has_next, trending_tags=trending_tags,
                            suggested_users=suggested_users, stories_bar=stories_bar,
                            memories=memories, valid_usernames=get_valid_usernames(sb),
-                           my_stats={"posts": my_posts_count, "followers": my_followers_count, "following": my_following_count})
+                           my_stats={"posts": my_posts_count, "followers": my_followers_count, "following": my_following_count},
+                           my_recent_media=my_recent_media, close_friends_preview=close_friends_preview)
 
 
 @bp.route("/post/new", methods=["POST"])

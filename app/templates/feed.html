@@ -26,7 +26,17 @@
             <strong>{{ my_stats.following }}</strong><span class="muted">Takip</span>
         </a>
     </div>
+    {% if my_recent_media %}
+    <div class="feed-profile-media-preview" aria-label="Son paylaşımların">
+        {% for m in my_recent_media %}
+            <a href="{{ url_for('routes.post_detail', post_id=m.post_id) }}">
+                <img src="{{ m.image_url }}" alt="" loading="lazy">
+            </a>
+        {% endfor %}
+    </div>
+    {% endif %}
     <nav class="feed-profile-links" aria-label="Hızlı linkler">
+        <a href="{{ url_for('routes.profile_edit') }}">✏️ Profili Düzenle</a>
         <a href="{{ url_for('routes.drafts_list') }}">📝 Taslaklarım</a>
         <a href="{{ url_for('close_friends.close_friends_list') }}">💚 Yakın Arkadaşlar</a>
     </nav>
@@ -166,6 +176,23 @@
             <a href="{{ url_for('hashtags.trending_all') }}" class="trending-viewall">Tümünü gör →</a>
         {% endif %}
     </div>
+    {% if close_friends_preview %}
+    <div class="card close-friends-sidebar-card">
+        <h2>💚 Yakın Arkadaşların</h2>
+        <div class="close-friends-avatar-row">
+            {% for u in close_friends_preview %}
+                <a href="{{ url_for('routes.profile', username=u.username) }}" aria-label="{{ u.username }}">
+                    {% if u.avatar_url %}
+                        <img src="{{ u.avatar_url }}" class="avatar avatar-sm" alt="">
+                    {% else %}
+                        <div class="avatar avatar-sm avatar-placeholder" aria-hidden="true"></div>
+                    {% endif %}
+                </a>
+            {% endfor %}
+        </div>
+        <a href="{{ url_for('close_friends.close_friends_list') }}" class="trending-viewall">Yönet →</a>
+    </div>
+    {% endif %}
 </aside>
 
 {# Sağ-alt köşede yüzen post paylaşma butonu (FAB) — önceden akışın en
