@@ -27,9 +27,6 @@ def feed():
     page = max(request.args.get("page", 1, type=int), 1)
     offset = (page - 1) * PAGE_SIZE
 
-    select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url), "
-                   "likes(count), comments(count)")
-
     # --- FAZ A: hem tam sayfa hem sonsuz kaydırma (AJAX partial) isteği için
     # ORTAK/ZORUNLU minimum iş. infiniteScroll.js EN SIK tetiklenen istek —
     # kenar çubuğu/hikaye/öneri/profil-kartı sorgularının hepsi FAZ B'ye
@@ -37,34 +34,51 @@ def feed():
     # turunda bunların hepsi yanlışlıkla FAZ A'ya (tek büyük executor'a)
     # karışmıştı — bu, her scroll sayfasının ~15 gereksiz sorgu yapmasına
     # yol açan bir regresyondu, burada düzeltildi.
+    # Kritik yol tek RPC'ye indirildi (Sprint 53): engel + görünürlük + post
+    # + sayaçlar + anket tek round-trip. RPC henüz uygulanmamışsa (migration
+    # bekliyor olabilir) None döner ve eski çok-sorgulu yola düşülür.
+    def _fetch_posts_rpc():
+        try:
+            return sb.rpc("feed_page_posts", {
+                "p_me": me, "p_offset": offset, "p_limit": PAGE_SIZE + 1,
+            }).execute().data or []
+        except Exception:
+            return None
+
     with ThreadPoolExecutor(max_workers=2) as executor:
-        blocked_fut = executor.submit(blocked_user_ids, sb, me)
+        posts_fut = executor.submit(_fetch_posts_rpc)
         usernames_fut = executor.submit(get_valid_usernames, sb)
-        blocked_ids = blocked_fut.result()
+        posts = posts_fut.result()
         valid_usernames = usernames_fut.result()
 
-    try:
-        # Görünürlük + engelleme + taslak filtreleri SQL seviyesinde uygulanır
-        # (sayfalama sonrası Python'da süzmek PAGE_SIZE'ı tutarsız hale getirirdi).
-        query = sb.table("posts").select(select_cols).or_(visible_or_filter(sb, me)).eq("is_draft", False)
-        if blocked_ids:
-            query = query.not_.in_("user_id", list(blocked_ids))
-        posts = query.order("created_at", desc=True).range(offset, offset + PAGE_SIZE).execute().data
-    except Exception:
-        # sql/migration_post_visibility.sql henüz uygulanmamışsa 'visibility'
-        # kolonu yok — filtresiz eski davranışa düş (feed asla kırılmasın)
-        posts = sb.table("posts").select(select_cols).order(
-            "created_at", desc=True
-        ).range(offset, offset + PAGE_SIZE).execute().data
-
-    has_next = len(posts) > PAGE_SIZE
-    posts = posts[:PAGE_SIZE]
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        metrics_fut = executor.submit(_attach_post_metrics, sb, posts, me)
-        polls_fut = executor.submit(attach_polls, sb, posts, me)
-        metrics_fut.result()
-        polls_fut.result()
+    if posts is None:
+        # Fallback: eski çok-sorgulu yol (davranış birebir aynı)
+        select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url), "
+                       "likes(count), comments(count)")
+        blocked_ids_fb = blocked_user_ids(sb, me)
+        try:
+            # Görünürlük + engelleme + taslak filtreleri SQL seviyesinde uygulanır
+            # (sayfalama sonrası Python'da süzmek PAGE_SIZE'ı tutarsız hale getirirdi).
+            query = sb.table("posts").select(select_cols).or_(visible_or_filter(sb, me)).eq("is_draft", False)
+            if blocked_ids_fb:
+                query = query.not_.in_("user_id", list(blocked_ids_fb))
+            posts = query.order("created_at", desc=True).range(offset, offset + PAGE_SIZE).execute().data
+        except Exception:
+            # sql/migration_post_visibility.sql henüz uygulanmamışsa 'visibility'
+            # kolonu yok — filtresiz eski davranışa düş (feed asla kırılmasın)
+            posts = sb.table("posts").select(select_cols).order(
+                "created_at", desc=True
+            ).range(offset, offset + PAGE_SIZE).execute().data
+        has_next = len(posts) > PAGE_SIZE
+        posts = posts[:PAGE_SIZE]
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            metrics_fut = executor.submit(_attach_post_metrics, sb, posts, me)
+            polls_fut = executor.submit(attach_polls, sb, posts, me)
+            metrics_fut.result()
+            polls_fut.result()
+    else:
+        has_next = len(posts) > PAGE_SIZE
+        posts = posts[:PAGE_SIZE]
 
     if request.headers.get("X-Requested-With") == "fetch":
         html = render_template("_feed_posts.html", posts=posts, me=session.get("user"),
@@ -142,6 +156,7 @@ def feed():
             return set()
 
     with ThreadPoolExecutor(max_workers=10) as executor:
+        blocked_fut = executor.submit(blocked_user_ids, sb, me)
         memories_fut = executor.submit(get_memories, sb, me) if page == 1 else None
         trending_fut = executor.submit(_trending_hashtags, sb, hours=24, limit=10)
         posts_count_fut = executor.submit(_fetch_posts_count)
@@ -150,8 +165,12 @@ def feed():
         bio_fut = executor.submit(_fetch_bio)
         recent_media_fut = executor.submit(_fetch_recent_media)
         close_friends_fut = executor.submit(_fetch_close_friends)
-        stories_fut = executor.submit(active_stories_bar, sb, me, blocked_ids)
         following_ids_fut = executor.submit(_fetch_following_ids)
+
+        # blocked_ids'i bekle, ardından stories submit et
+        blocked_ids = blocked_fut.result()
+        stories_fut = executor.submit(active_stories_bar, sb, me, blocked_ids)
+        following_ids = following_ids_fut.result()
 
         memories = memories_fut.result() if memories_fut else []
         trending_tags = trending_fut.result()
@@ -162,7 +181,6 @@ def feed():
         my_recent_media = recent_media_fut.result()
         close_friends_preview = close_friends_fut.result()
         stories_bar = stories_fut.result()
-        following_ids = following_ids_fut.result()
 
         # following_ids/blocked_ids bekledikten sonra: "kimi takip etmeli" önerisi
         def _fetch_suggested_users():
