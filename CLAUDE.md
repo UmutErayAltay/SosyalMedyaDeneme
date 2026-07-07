@@ -162,12 +162,10 @@ Tam şema, dizin ağacı ve dosya sorumlulukları için:
 - Her özellik/bugfix sonrası: kod commit'inden ÖNCE `.context/active_context.md`
   ve gerekirse `.context/architecture.md` güncellenir (bu dosyalar commit'e
   girmez ama proje hafızasının parçasıdır).
-- **Commit SADECE ana oturum (orchestrator) atar, subagent'lar ASLA değil**
-  (2026-07-06'da 2 kez ihlal edildi — bir subagent Bash erişimini kullanıp
-  kendi kendine commit attı; içerik doğru olduğu için geri alınmadı ama bu
-  bir istisna değil, kural ihlaliydi). Tüm subagent tanımlarının (`.claude/
-  agents/*.md`) "Rol" bölümünün hemen altına bu kuralı vurgulayan bir not
-  eklendi — yeni bir subagent türü eklenirse aynı notu ekle.
+- **Commit SADECE ana oturum (orchestrator) atar, subagent'lar ASLA değil.**
+  Tüm subagent tanımlarının (`.claude/agents/*.md`) "Rol" bölümünün hemen
+  altına bu kuralı vurgulayan bir not eklendi — yeni bir subagent türü
+  eklenirse aynı notu ekle.
 
 ## Performans Rehberi
 

@@ -619,13 +619,19 @@ main.feed-page {
    stories-bar ve memories-card önceden grid-column kuralına sahip değildi ve
    auto-placement'a bırakılıyordu — şimdi sol kolonu profil kartı aldığı için
    bunları AÇIKÇA column 2'ye sabitlemek ZORUNLU, yoksa auto-placement onları
-   yeni sol kolona (profil kartıyla çakışacak şekilde) yerleştirir. */
+   yeni sol kolona (profil kartıyla çakışacak şekilde) yerleştirir.
+   feed-profile-card/feed-sidebar `grid-row: 1 / -1` İLE tüm satırlara YAYILIR —
+   bu olmadan ikisi de auto-placement'ta SADECE 1. satıra yerleşiyor, orta
+   kolonun 1. satırı (stories-bar) kısa olduğu için 1. satır kendi yüksekliğini
+   YAN sütunların (uzun profil kartı/sidebar) yüksekliğine göre belirliyor,
+   bu da stories-bar ile altındaki postlar arasında saçma bir boşluk açıyordu
+   (kullanıcı raporu). Yayılma bu satır-bağımlılığını tamamen ortadan kaldırır. */
 .flash-container { grid-column: 1 / -1; }
-main.feed-page .feed-profile-card { grid-column: 1; }
+main.feed-page .feed-profile-card { grid-column: 1; grid-row: 1 / -1; }
 main.feed-page .stories-bar { grid-column: 2; }
 main.feed-page .memories-card { grid-column: 2; }
 main.feed-page .feed-layout { grid-column: 2; }
-main.feed-page .feed-sidebar { grid-column: 3; }
+main.feed-page .feed-sidebar { grid-column: 3; grid-row: 1 / -1; }
 /* top: sadece 24px olsaydı navbar (73px) geri kayınca (yukarı scroll) kenar
    çubuğunun üst kısmının üzerine biner (navbar z-index:10 ile daha üstte) —
    navbar yüksekliği + boşluk olarak hesaplanmalı. navbar.js scroll'a göre
