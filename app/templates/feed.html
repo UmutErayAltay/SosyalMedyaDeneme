@@ -32,53 +32,61 @@
     </nav>
 </aside>
 
-{# Hikaye çubuğu: 24 saatte kaybolan ephemeral paylaşımlar — sadece
-   görüntüleme + kendi hikayeni ekleme/silme, yorum/beğeni/"kim gördü"
-   YOK (kapsam bilinçli olarak dar tutuldu, bkz. app/stories.py). #}
-<div class="stories-bar" id="stories-bar" aria-label="Hikayeler" data-my-user-id="{{ me.id }}">
-    <button type="button" class="story-avatar-btn" id="add-story-btn" aria-label="Hikaye ekle">
-        {% if me and me.avatar_url %}
-            <img src="{{ me.avatar_url }}" class="avatar" alt="">
-        {% else %}
-            <div class="avatar avatar-placeholder" aria-hidden="true"></div>
-        {% endif %}
-        <span class="story-add-badge" aria-hidden="true">+</span>
-        <span class="story-username">Ekle</span>
-    </button>
-    {% for s in stories_bar %}
-        <button type="button"
-                class="story-avatar-btn {{ 'story-seen' if s.all_seen else 'story-unseen' }}"
-                data-user-id="{{ s.user_id }}"
-                aria-label="{{ 'Senin hikayen' if s.user_id == me.id else s.username + ' hikayesi' }}">
-            {% if s.avatar_url %}
-                <img src="{{ s.avatar_url }}" class="avatar" alt="">
+{# feed-layout, sol/sağ kolonlarla (feed-profile-card/feed-sidebar) aynı
+   grid satırında TEK bir grid öğesi olması için hikaye çubuğu + anılar +
+   post listesini TEK bir div içine alır — önceden bunlar ayrı grid
+   öğeleriydi ve grid-column'u sabit olan feed-profile-card/feed-sidebar
+   ile aynı satıra auto-placement'la düşüyorlardı, bu da satır yüksekliğinin
+   yan kolonlara göre şişip hikaye çubuğu ile postlar arasında boşluk
+   açmasına yol açıyordu (kullanıcı raporu). Tek grid öğesi olunca bu satır
+   bölünme sorunu KÖKTEN ortadan kalkar. #}
+<div class="feed-layout">
+    {# Hikaye çubuğu: 24 saatte kaybolan ephemeral paylaşımlar — sadece
+       görüntüleme + kendi hikayeni ekleme/silme, yorum/beğeni/"kim gördü"
+       YOK (kapsam bilinçli olarak dar tutuldu, bkz. app/stories.py). #}
+    <div class="stories-bar" id="stories-bar" aria-label="Hikayeler" data-my-user-id="{{ me.id }}">
+        <button type="button" class="story-avatar-btn" id="add-story-btn" aria-label="Hikaye ekle">
+            {% if me and me.avatar_url %}
+                <img src="{{ me.avatar_url }}" class="avatar" alt="">
             {% else %}
                 <div class="avatar avatar-placeholder" aria-hidden="true"></div>
             {% endif %}
-            <span class="story-username">{{ 'Sen' if s.user_id == me.id else s.username }}</span>
+            <span class="story-add-badge" aria-hidden="true">+</span>
+            <span class="story-username">Ekle</span>
         </button>
-    {% endfor %}
-</div>
+        {% for s in stories_bar %}
+            <button type="button"
+                    class="story-avatar-btn {{ 'story-seen' if s.all_seen else 'story-unseen' }}"
+                    data-user-id="{{ s.user_id }}"
+                    aria-label="{{ 'Senin hikayen' if s.user_id == me.id else s.username + ' hikayesi' }}">
+                {% if s.avatar_url %}
+                    <img src="{{ s.avatar_url }}" class="avatar" alt="">
+                {% else %}
+                    <div class="avatar avatar-placeholder" aria-hidden="true"></div>
+                {% endif %}
+                <span class="story-username">{{ 'Sen' if s.user_id == me.id else s.username }}</span>
+            </button>
+        {% endfor %}
+    </div>
 
-{% if memories %}
-<section class="card memories-card" aria-label="Bugün ne oldu">
-    <h2>📅 Bugün Ne Oldu</h2>
-    {% for m in memories %}
-    <a href="{{ url_for('routes.post_detail', post_id=m.id) }}" class="memory-item">
-        {% if m.image_url %}
-            <img src="{{ m.image_url }}" class="memory-thumb" alt="" loading="lazy">
-        {% endif %}
-        <div class="memory-text">
-            <span class="muted">{{ m.years_ago }} yıl önce bugün</span>
-            <p>{{ (m.content or 'Görsel/video gönderisi')[:100] }}</p>
-            <span class="muted">👍 {{ m.like_count }} · 💬 {{ m.comment_count }}</span>
-        </div>
-    </a>
-    {% endfor %}
-</section>
-{% endif %}
+    {% if memories %}
+    <section class="card memories-card" aria-label="Bugün ne oldu">
+        <h2>📅 Bugün Ne Oldu</h2>
+        {% for m in memories %}
+        <a href="{{ url_for('routes.post_detail', post_id=m.id) }}" class="memory-item">
+            {% if m.image_url %}
+                <img src="{{ m.image_url }}" class="memory-thumb" alt="" loading="lazy">
+            {% endif %}
+            <div class="memory-text">
+                <span class="muted">{{ m.years_ago }} yıl önce bugün</span>
+                <p>{{ (m.content or 'Görsel/video gönderisi')[:100] }}</p>
+                <span class="muted">👍 {{ m.like_count }} · 💬 {{ m.comment_count }}</span>
+            </div>
+        </a>
+        {% endfor %}
+    </section>
+    {% endif %}
 
-<div class="feed-layout">
     {# Post kartlarının kendisi _feed_posts.html partial'ında — sonsuz kaydırma
        (infiniteScroll.js) sonraki sayfaları AYNI partial'ın AJAX render'ıyla
        çeker, kart markup'ı tek yerde yaşar. #}

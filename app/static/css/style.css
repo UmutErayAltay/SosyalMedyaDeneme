@@ -611,27 +611,26 @@ main.feed-page {
     display: grid; grid-template-columns: 280px 1fr 280px; gap: 24px;
     align-items: start;
 }
-/* .feed-page bir GRID — flash mesajı (varsa) DOM'da feed-profile-card/stories-bar'dan
+/* .feed-page bir GRID — flash mesajı (varsa) DOM'da feed-profile-card'dan
    ÖNCE gelir ve auto-placement'a bırakılırsa grid'in 1. hücresini kapar, tüm
    akışı sağa/alta kaydırır (kullanıcı raporu: post paylaşınca/silince akış
-   kayıyordu). Üç kural birlikte bunu KÖKTEN önler: flash tüm satırı kaplar,
-   profil kartı/feed-layout/sidebar'ın kolonu DOM sırasından bağımsız olarak sabittir.
-   stories-bar ve memories-card önceden grid-column kuralına sahip değildi ve
-   auto-placement'a bırakılıyordu — şimdi sol kolonu profil kartı aldığı için
-   bunları AÇIKÇA column 2'ye sabitlemek ZORUNLU, yoksa auto-placement onları
-   yeni sol kolona (profil kartıyla çakışacak şekilde) yerleştirir.
-   feed-profile-card/feed-sidebar `grid-row: 1 / -1` İLE tüm satırlara YAYILIR —
-   bu olmadan ikisi de auto-placement'ta SADECE 1. satıra yerleşiyor, orta
-   kolonun 1. satırı (stories-bar) kısa olduğu için 1. satır kendi yüksekliğini
-   YAN sütunların (uzun profil kartı/sidebar) yüksekliğine göre belirliyor,
-   bu da stories-bar ile altındaki postlar arasında saçma bir boşluk açıyordu
-   (kullanıcı raporu). Yayılma bu satır-bağımlılığını tamamen ortadan kaldırır. */
+   kayıyordu). İki kural birlikte bunu KÖKTEN önler: flash tüm satırı kaplar,
+   profil kartı/feed-layout/sidebar'ın kolonu DOM sırasından bağımsız olarak
+   sabittir. ÖNEMLİ: her kolonda TEK BİR grid öğesi olmalı — hikaye çubuğu +
+   anılar + post listesi tek bir `.feed-layout` div'i İÇİNDE (ayrı grid öğeleri
+   DEĞİL, bkz. feed.html). Daha önce bunlar ayrı grid öğeleriydi ve
+   grid-row:1/-1 ile "tüm satırlara yayma" denendi — ama main.feed-page'de
+   grid-template-rows TANIMLI OLMADIĞI için (satırlar tamamen implicit),
+   `-1` çözümlemesi kararsız/öngörülemez ekstra implicit satırlar üretti,
+   sidebar'ın tüm yüksekliği TEK bir satıra yığılıp hikaye çubuğu ile postlar
+   arasında dev bir boşluk açtı (kullanıcı raporu, computed
+   grid-template-rows Playwright'ta "434.5px 57px 104px 3931px" gibi anlamsız
+   4 satır olarak gözlemlendi). Tek grid öğesi + align-items:start ile bu
+   sorun hiç oluşmaz — üç kolon da doğal olarak TEK satırda üst hizalanır. */
 .flash-container { grid-column: 1 / -1; }
-main.feed-page .feed-profile-card { grid-column: 1; grid-row: 1 / -1; }
-main.feed-page .stories-bar { grid-column: 2; }
-main.feed-page .memories-card { grid-column: 2; }
+main.feed-page .feed-profile-card { grid-column: 1; }
 main.feed-page .feed-layout { grid-column: 2; }
-main.feed-page .feed-sidebar { grid-column: 3; grid-row: 1 / -1; }
+main.feed-page .feed-sidebar { grid-column: 3; }
 /* top: sadece 24px olsaydı navbar (73px) geri kayınca (yukarı scroll) kenar
    çubuğunun üst kısmının üzerine biner (navbar z-index:10 ile daha üstte) —
    navbar yüksekliği + boşluk olarak hesaplanmalı. navbar.js scroll'a göre
