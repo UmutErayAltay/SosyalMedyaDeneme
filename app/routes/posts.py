@@ -88,6 +88,11 @@ def feed():
         if len(my_recent_media) == 3:
             break
 
+    # Sol profil kartında bio'yu gösterebilmek için (session'da yok, sadece
+    # avatar_url/username/is_admin cache'lenir — bkz. auth.py _save_session).
+    my_bio_row = sb.table("profiles").select("bio").eq("id", me).execute().data
+    my_bio = (my_bio_row[0].get("bio") if my_bio_row else None) or None
+
     # Sağ kenar çubuğu için yakın arkadaşlar preview'ı (6 kişi)
     close_friends_preview = []
     try:
@@ -119,7 +124,8 @@ def feed():
                            suggested_users=suggested_users, stories_bar=stories_bar,
                            memories=memories, valid_usernames=get_valid_usernames(sb),
                            my_stats={"posts": my_posts_count, "followers": my_followers_count, "following": my_following_count},
-                           my_recent_media=my_recent_media, close_friends_preview=close_friends_preview)
+                           my_recent_media=my_recent_media, close_friends_preview=close_friends_preview,
+                           my_bio=my_bio)
 
 
 @bp.route("/post/new", methods=["POST"])

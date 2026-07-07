@@ -15,6 +15,9 @@
         {% endif %}
     </a>
     <a href="{{ url_for('routes.profile', username=me.username) }}" class="feed-profile-username">{{ me.username }}</a>
+    {% if my_bio %}
+        <p class="feed-profile-bio">{{ my_bio|truncate(60) }}</p>
+    {% endif %}
     <div class="feed-profile-stats">
         <a href="{{ url_for('routes.profile', username=me.username) }}">
             <strong>{{ my_stats.posts }}</strong><span class="muted">Gönderi</span>
