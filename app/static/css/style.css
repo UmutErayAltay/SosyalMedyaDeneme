@@ -1078,9 +1078,15 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
 }
 .story-avatar-btn .avatar { width: 56px; height: 56px; box-sizing: border-box; }
 .story-avatar-btn.story-unseen .avatar {
+    /* border-image border-radius'a uymaz (Chrome/WebKit'te köşeler hep kare
+       kalır) — bunun yerine border-radius'a tam uyan iki katmanlı arka plan
+       tekniği: iç katman boşluğu --card rengiyle doldurur, dış katman
+       gradyanı sadece border alanında gösterir. */
     border: 3px solid transparent;
-    border-image: linear-gradient(135deg, var(--color-coral-500), var(--color-teal-500)) 1;
     padding: 2px;
+    background:
+        linear-gradient(var(--card), var(--card)) padding-box,
+        linear-gradient(135deg, var(--color-coral-500), var(--color-teal-500)) border-box;
 }
 .story-avatar-btn.story-seen .avatar { border: 3px solid var(--border); padding: 2px; }
 .story-username {
