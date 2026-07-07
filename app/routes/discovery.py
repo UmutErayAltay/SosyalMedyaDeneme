@@ -142,53 +142,54 @@ def discover():
     sb = get_sb()
     me = _my_id()
 
-    # Paralel: exclude_ids ve blocked_ids çek — başlarında bağımlılık yok
-    def _fetch_exclude_ids():
-        return followed_and_self_ids(sb, me)
+    # RPC kritik yol: görünürlük + engelleme + 7 gün + skor RPC'de yapılır
+    def _fetch_discover_rpc():
+        try:
+            return sb.rpc("discover_page_posts", {"p_me": me, "p_limit": 20}).execute().data or []
+        except Exception:
+            return None
 
-    def _fetch_blocked_ids():
-        return blocked_user_ids(sb, me)
+    posts = _fetch_discover_rpc()
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        exclude_future = executor.submit(_fetch_exclude_ids)
-        blocked_future = executor.submit(_fetch_blocked_ids)
+    if posts is None:
+        # Fallback: eski çok-sorgulu yol (davranış birebir aynı) — migration
+        # henüz uygulanmamışsa veya RPC başarısızsa çalışır
+        exclude_ids = followed_and_self_ids(sb, me)
+        blocked_ids = blocked_user_ids(sb, me)
 
-        exclude_ids = exclude_future.result()
-        blocked_ids = blocked_future.result()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url), "
+                       "likes(count), comments(count)")
+        try:
+            posts = sb.table("posts").select(select_cols).gte(
+                "created_at", cutoff
+            ).eq("visibility", "public").eq("is_draft", False).execute().data
+        except Exception:
+            posts = sb.table("posts").select(select_cols).gte("created_at", cutoff).execute().data
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-    select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url), "
-                   "likes(count), comments(count)")
-    try:
-        posts = sb.table("posts").select(select_cols).gte(
-            "created_at", cutoff
-        ).eq("visibility", "public").eq("is_draft", False).execute().data
-    except Exception:
-        posts = sb.table("posts").select(select_cols).gte("created_at", cutoff).execute().data
+        posts = [p for p in posts if p["user_id"] not in exclude_ids]
+        close_friend_ids = close_friend_author_ids(sb, me)
+        posts = filter_visible(posts, exclude_ids, close_friend_ids)
+        posts = filter_not_blocked(posts, blocked_ids)
 
-    posts = [p for p in posts if p["user_id"] not in exclude_ids]
-    close_friend_ids = close_friend_author_ids(sb, me)
-    posts = filter_visible(posts, exclude_ids, close_friend_ids)
-    posts = filter_not_blocked(posts, blocked_ids)
+        # Paralel: post metrics ve polls çek
+        def _attach_metrics():
+            _attach_post_metrics(sb, posts, me)
 
-    # Paralel: post metrics ve polls çek
-    def _attach_metrics():
-        _attach_post_metrics(sb, posts, me)
+        def _attach_polls_fn():
+            attach_polls(sb, posts, me)
 
-    def _attach_polls_fn():
-        attach_polls(sb, posts, me)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            metrics_future = executor.submit(_attach_metrics)
+            polls_future = executor.submit(_attach_polls_fn)
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        metrics_future = executor.submit(_attach_metrics)
-        polls_future = executor.submit(_attach_polls_fn)
+            metrics_future.result()
+            polls_future.result()
 
-        metrics_future.result()
-        polls_future.result()
-
-    for p in posts:
-        p["_score"] = (p.get("like_count") or 0) + (p.get("comment_count") or 0)
-    posts.sort(key=lambda p: p["_score"], reverse=True)
-    posts = posts[:20]
+        for p in posts:
+            p["_score"] = (p.get("like_count") or 0) + (p.get("comment_count") or 0)
+        posts.sort(key=lambda p: p["_score"], reverse=True)
+        posts = posts[:20]
 
     return render_template("discover.html", posts=posts, me=session.get("user"),
                            valid_usernames=get_valid_usernames(sb))

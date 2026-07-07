@@ -1,4 +1,5 @@
 """Profil sayfası, takipçi/takip listeleri, profil düzenleme, istatistikler."""
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from flask import render_template, request, redirect, url_for, session, abort, flash
 from . import bp
@@ -17,8 +18,6 @@ from ..stories import _get_highlights
 @login_required
 @retry_on_connection_error
 def profile(username):
-    from concurrent.futures import ThreadPoolExecutor
-
     sb = get_sb()
     prof = sb.table("profiles").select("*").eq("username", username).execute()
     if not prof.data:
@@ -35,26 +34,17 @@ def profile(username):
     if not is_self and has_blocked(sb, prof["id"], me):
         abort(404)
 
-    # Performans: visibility filtreleri ve engagement metrikleri paralel çekilir.
-    # Bağımlılık: followed/close_friend/blocked_ids → posts'tan SONRA kullanılır.
-    # posts → metrics/polls/liked-bookmarked işleri.
-
-    def _fetch_visible_author_ids():
-        return followed_and_self_ids(sb, me)
-
-    def _fetch_close_friend_ids():
-        return close_friend_author_ids(sb, me)
-
-    def _fetch_blocked_ids():
-        return blocked_user_ids(sb, me)
-
-    def _fetch_liked_rows():
+    # RPC kritik yol: posts + liked + bookmarked + sayaçlar + is_following
+    def _fetch_profile_rpc():
         try:
-            return sb.table("likes").select("post_id").eq(
-                "user_id", prof["id"]
-            ).order("created_at", desc=True).execute().data
+            return sb.rpc("profile_page_data", {
+                "p_viewer": me, "p_owner": prof["id"], "p_include_bookmarks": is_self,
+            }).execute().data
         except Exception:
-            return []
+            return None
+
+    def _fetch_highlights():
+        return _get_highlights(sb, prof["id"])
 
     def _fetch_bookmark_collections():
         if not is_self:
@@ -66,157 +56,190 @@ def profile(username):
         except Exception:
             return []
 
-    def _fetch_bookmarks_raw():
-        if not is_self:
-            return []
-        try:
-            return sb.table("bookmarks").select("post_id, collection_id").eq(
-                "user_id", me
-            ).order("created_at", desc=True).execute().data
-        except Exception:
-            return []
-
-    def _fetch_followers_count():
-        try:
-            return sb.table("follows").select(
-                "follower_id", count="exact", head=True
-            ).eq("following_id", prof["id"]).execute().count or 0
-        except Exception:
-            return 0
-
-    def _fetch_following_count():
-        try:
-            return sb.table("follows").select(
-                "following_id", count="exact", head=True
-            ).eq("follower_id", prof["id"]).execute().count or 0
-        except Exception:
-            return 0
-
-    def _fetch_is_following():
-        if is_self:
-            return False
-        try:
-            f = sb.table("follows").select().eq("follower_id", me).eq(
-                "following_id", prof["id"]
-            ).execute()
-            return bool(f.data)
-        except Exception:
-            return False
-
-    def _fetch_highlights():
-        return _get_highlights(sb, prof["id"])
-
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        # Level 1: Filtreleme işleri (posts'tan bağımsız başlanabilir)
-        visible_fut = executor.submit(_fetch_visible_author_ids)
-        close_friend_fut = executor.submit(_fetch_close_friend_ids)
-        blocked_fut = executor.submit(_fetch_blocked_ids)
-
-        # Level 1b: posts'tan bağımsız engagement işleri
-        liked_rows_fut = executor.submit(_fetch_liked_rows)
-        collections_fut = executor.submit(_fetch_bookmark_collections)
-        bookmarks_raw_fut = executor.submit(_fetch_bookmarks_raw)
-        followers_fut = executor.submit(_fetch_followers_count)
-        following_fut = executor.submit(_fetch_following_count)
-        is_following_fut = executor.submit(_fetch_is_following)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        rpc_fut = executor.submit(_fetch_profile_rpc)
         highlights_fut = executor.submit(_fetch_highlights)
         usernames_fut = executor.submit(get_valid_usernames, sb)
-
-        # Filtreleri bekle (posts sorgusu için gerekli)
-        visible_author_ids = visible_fut.result()
-        close_friend_ids = close_friend_fut.result()
-        blocked_ids = blocked_fut.result()
-
-        # Level 2 (filtreleri bekledikten sonra): posts sorgusu
-        def _fetch_posts_filtered():
-            posts_data = sb.table("posts").select(
-                "*, likes(count), comments(count)"
-            ).eq("user_id", prof["id"]).order("created_at", desc=True).execute().data
-            posts_data = [p for p in posts_data if not p.get("is_draft")]
-            posts_data = filter_visible(posts_data, visible_author_ids, close_friend_ids)
-            posts_data = filter_not_blocked(posts_data, blocked_ids)
-            # Sabitlenmiş post en üste taşınır
-            pinned_id = prof.get("pinned_post_id")
-            if pinned_id:
-                posts_data.sort(key=lambda p: 0 if p["id"] == pinned_id else 1)
-            return posts_data
-
-        posts_fut = executor.submit(_fetch_posts_filtered)
-
-        # Level 1b sonuçlarını topla (çoğu hazır)
-        liked_rows = liked_rows_fut.result()
-        liked_ids = [l["post_id"] for l in liked_rows]
-        bookmark_collections = collections_fut.result()
-        bookmarks_raw = bookmarks_raw_fut.result()
-        followers_count = followers_fut.result()
-        following_count = following_fut.result()
-        is_following = is_following_fut.result()
+        collections_fut = executor.submit(_fetch_bookmark_collections)
+        data = rpc_fut.result()
         highlights = highlights_fut.result()
         valid_usernames = usernames_fut.result()
+        bookmark_collections = collections_fut.result()
 
-        # Level 2 sonucunu topla
-        posts = posts_fut.result()
+    if data is not None:
+        # RPC yolundan veri geldi
+        posts = data.get("posts", [])
+        liked_posts = data.get("liked_posts", [])
+        bookmarked_posts = data.get("bookmarked_posts", [])
+        followers_count = data.get("followers_count", 0)
+        following_count = data.get("following_count", 0)
+        is_following = False if is_self else data.get("is_following", False)
+        # is_blocked_by_me: BEN onu engelledim mi? (RPC'de bu bilgi yok, single-way check)
+        is_blocked_by_me = False
+        if not is_self:
+            is_blocked_by_me = has_blocked(sb, me, prof["id"])
+    else:
+        # Fallback: eski çok-sorgulu yol (davranış birebir aynı)
+        def _fetch_visible_author_ids():
+            return followed_and_self_ids(sb, me)
 
-        # Level 3 (posts bitince): metrics ve polls
-        metrics_fut = executor.submit(_attach_post_metrics, sb, posts, me)
-        polls_fut = executor.submit(attach_polls, sb, posts, me)
+        def _fetch_close_friend_ids():
+            return close_friend_author_ids(sb, me)
 
-        # Level 3+ (liked_rows + filtreler bitince): liked_posts ve bookmarked_posts
-        def _fetch_liked_posts():
-            if not liked_ids:
+        def _fetch_blocked_ids():
+            return blocked_user_ids(sb, me)
+
+        def _fetch_liked_rows():
+            try:
+                return sb.table("likes").select("post_id").eq(
+                    "user_id", prof["id"]
+                ).order("created_at", desc=True).execute().data
+            except Exception:
                 return []
-            posts_data = sb.table("posts").select(
-                "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
-            ).in_("id", liked_ids).execute().data
-            posts_data = filter_visible(posts_data, visible_author_ids, close_friend_ids)
-            posts_data = filter_not_blocked(posts_data, blocked_ids)
-            _attach_post_metrics(sb, posts_data, me)
-            attach_polls(sb, posts_data, me)
-            # .in_() sırayı garanti etmez; beğeni sırasına (liked_ids) göre yeniden diz
-            order = {pid: i for i, pid in enumerate(liked_ids)}
-            posts_data.sort(key=lambda p: order.get(p["id"], 0))
-            return posts_data
 
-        def _fetch_bookmarked_posts():
-            if not bookmarks_raw:
+        def _fetch_bookmarks_raw():
+            if not is_self:
                 return []
-            bm_ids = [b["post_id"] for b in bookmarks_raw]
-            collection_by_post = {b["post_id"]: b.get("collection_id") for b in bookmarks_raw}
-            if not bm_ids:
+            try:
+                return sb.table("bookmarks").select("post_id, collection_id").eq(
+                    "user_id", me
+                ).order("created_at", desc=True).execute().data
+            except Exception:
                 return []
-            posts_data = sb.table("posts").select(
-                "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
-            ).in_("id", bm_ids).execute().data
-            posts_data = filter_visible(posts_data, visible_author_ids, close_friend_ids)
-            posts_data = filter_not_blocked(posts_data, blocked_ids)
-            _attach_post_metrics(sb, posts_data, me)
-            attach_polls(sb, posts_data, me)
-            bm_order = {pid: i for i, pid in enumerate(bm_ids)}
-            posts_data.sort(key=lambda p: bm_order.get(p["id"], 0))
-            for p in posts_data:
-                p["bookmark_collection_id"] = collection_by_post.get(p["id"])
-            return posts_data
 
-        liked_posts_fut = executor.submit(_fetch_liked_posts)
-        bookmarked_posts_fut = executor.submit(_fetch_bookmarked_posts)
+        def _fetch_followers_count():
+            try:
+                return sb.table("follows").select(
+                    "follower_id", count="exact", head=True
+                ).eq("following_id", prof["id"]).execute().count or 0
+            except Exception:
+                return 0
 
-        # Level 3 sonuçlarını topla (metrics ve polls posts'u modifiye ediyor)
-        metrics_fut.result()
-        polls_fut.result()
+        def _fetch_following_count():
+            try:
+                return sb.table("follows").select(
+                    "following_id", count="exact", head=True
+                ).eq("follower_id", prof["id"]).execute().count or 0
+            except Exception:
+                return 0
 
-        # Level 3+ sonuçlarını topla
-        liked_posts = liked_posts_fut.result()
-        bookmarked_posts = bookmarked_posts_fut.result()
+        def _fetch_is_following():
+            if is_self:
+                return False
+            try:
+                f = sb.table("follows").select().eq("follower_id", me).eq(
+                    "following_id", prof["id"]
+                ).execute()
+                return bool(f.data)
+            except Exception:
+                return False
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            # Level 1: Filtreleme işleri (posts'tan bağımsız başlanabilir)
+            visible_fut = executor.submit(_fetch_visible_author_ids)
+            close_friend_fut = executor.submit(_fetch_close_friend_ids)
+            blocked_fut = executor.submit(_fetch_blocked_ids)
+
+            # Level 1b: posts'tan bağımsız engagement işleri
+            liked_rows_fut = executor.submit(_fetch_liked_rows)
+            bookmarks_raw_fut = executor.submit(_fetch_bookmarks_raw)
+            followers_fut = executor.submit(_fetch_followers_count)
+            following_fut = executor.submit(_fetch_following_count)
+            is_following_fut = executor.submit(_fetch_is_following)
+
+            # Filtreleri bekle (posts sorgusu için gerekli)
+            visible_author_ids = visible_fut.result()
+            close_friend_ids = close_friend_fut.result()
+            blocked_ids = blocked_fut.result()
+
+            # Level 2 (filtreleri bekledikten sonra): posts sorgusu
+            def _fetch_posts_filtered():
+                posts_data = sb.table("posts").select(
+                    "*, likes(count), comments(count)"
+                ).eq("user_id", prof["id"]).order("created_at", desc=True).execute().data
+                posts_data = [p for p in posts_data if not p.get("is_draft")]
+                posts_data = filter_visible(posts_data, visible_author_ids, close_friend_ids)
+                posts_data = filter_not_blocked(posts_data, blocked_ids)
+                # Sabitlenmiş post en üste taşınır
+                pinned_id = prof.get("pinned_post_id")
+                if pinned_id:
+                    posts_data.sort(key=lambda p: 0 if p["id"] == pinned_id else 1)
+                return posts_data
+
+            posts_fut = executor.submit(_fetch_posts_filtered)
+
+            # Level 1b sonuçlarını topla (çoğu hazır)
+            liked_rows = liked_rows_fut.result()
+            liked_ids = [l["post_id"] for l in liked_rows]
+            bookmarks_raw = bookmarks_raw_fut.result()
+            followers_count = followers_fut.result()
+            following_count = following_fut.result()
+            is_following = is_following_fut.result()
+
+            # Level 2 sonucunu topla
+            posts = posts_fut.result()
+
+            # Level 3 (posts bitince): metrics ve polls
+            metrics_fut = executor.submit(_attach_post_metrics, sb, posts, me)
+            polls_fut = executor.submit(attach_polls, sb, posts, me)
+
+            # Level 3+ (liked_rows + filtreler bitince): liked_posts ve bookmarked_posts
+            def _fetch_liked_posts():
+                if not liked_ids:
+                    return []
+                posts_data = sb.table("posts").select(
+                    "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+                ).in_("id", liked_ids).execute().data
+                posts_data = filter_visible(posts_data, visible_author_ids, close_friend_ids)
+                posts_data = filter_not_blocked(posts_data, blocked_ids)
+                _attach_post_metrics(sb, posts_data, me)
+                attach_polls(sb, posts_data, me)
+                # .in_() sırayı garanti etmez; beğeni sırasına (liked_ids) göre yeniden diz
+                order = {pid: i for i, pid in enumerate(liked_ids)}
+                posts_data.sort(key=lambda p: order.get(p["id"], 0))
+                return posts_data
+
+            def _fetch_bookmarked_posts():
+                if not bookmarks_raw:
+                    return []
+                bm_ids = [b["post_id"] for b in bookmarks_raw]
+                collection_by_post = {b["post_id"]: b.get("collection_id") for b in bookmarks_raw}
+                if not bm_ids:
+                    return []
+                posts_data = sb.table("posts").select(
+                    "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+                ).in_("id", bm_ids).execute().data
+                posts_data = filter_visible(posts_data, visible_author_ids, close_friend_ids)
+                posts_data = filter_not_blocked(posts_data, blocked_ids)
+                _attach_post_metrics(sb, posts_data, me)
+                attach_polls(sb, posts_data, me)
+                bm_order = {pid: i for i, pid in enumerate(bm_ids)}
+                posts_data.sort(key=lambda p: bm_order.get(p["id"], 0))
+                for p in posts_data:
+                    p["bookmark_collection_id"] = collection_by_post.get(p["id"])
+                return posts_data
+
+            liked_posts_fut = executor.submit(_fetch_liked_posts)
+            bookmarked_posts_fut = executor.submit(_fetch_bookmarked_posts)
+
+            # Level 3 sonuçlarını topla (metrics ve polls posts'u modifiye ediyor)
+            metrics_fut.result()
+            polls_fut.result()
+
+            # Level 3+ sonuçlarını topla
+            liked_posts = liked_posts_fut.result()
+            bookmarked_posts = bookmarked_posts_fut.result()
+
+        # is_blocked_by_me: BEN onu engelledim mi?
+        is_blocked_by_me = False
+        if not is_self:
+            is_blocked_by_me = prof["id"] in blocked_ids
 
     # Medya sekmesi: görsel içeren postlar (ek sorgu yok, mevcut listeden süzülür)
     media_posts = [p for p in posts if p.get("image_urls") or p.get("image_url")]
 
     # Toplam beğeni (kullanıcının tüm postlarına gelen)
-    total_likes = sum(p["like_count"] for p in posts)
-
-    is_blocked_by_me = False
-    if not is_self:
-        is_blocked_by_me = prof["id"] in blocked_ids
+    total_likes = sum(p.get("like_count", 0) for p in posts)
 
     return render_template("profile.html", profile=prof, posts=posts,
                            media_posts=media_posts, liked_posts=liked_posts,
