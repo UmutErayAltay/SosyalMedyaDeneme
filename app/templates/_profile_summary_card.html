@@ -1,0 +1,44 @@
+{# Paylaşılan profil özet kartı — feed + post detay sayfasında kullanılır #}
+{% macro profile_summary_card(profile_user, my_stats, my_bio, my_recent_media=none, my_week_stats=none) -%}
+<aside class="card feed-profile-card" aria-label="Profil özetin">
+    <a href="{{ url_for('routes.profile', username=profile_user.username) }}" class="feed-profile-avatar-link">
+        {% if profile_user.avatar_url %}
+            <img src="{{ profile_user.avatar_url }}" class="avatar large" alt="">
+        {% else %}
+            <div class="avatar large avatar-placeholder" aria-hidden="true"></div>
+        {% endif %}
+    </a>
+    <a href="{{ url_for('routes.profile', username=profile_user.username) }}" class="feed-profile-username">{{ profile_user.username }}</a>
+    {% if my_bio %}
+        <p class="feed-profile-bio">{{ my_bio|truncate(60) }}</p>
+    {% endif %}
+    <div class="feed-profile-stats">
+        <a href="{{ url_for('routes.profile', username=profile_user.username) }}">
+            <strong>{{ my_stats.posts }}</strong><span class="muted">Gönderi</span>
+        </a>
+        <a href="{{ url_for('routes.followers_list', username=profile_user.username) }}">
+            <strong>{{ my_stats.followers }}</strong><span class="muted">Takipçi</span>
+        </a>
+        <a href="{{ url_for('routes.following_list', username=profile_user.username) }}">
+            <strong>{{ my_stats.following }}</strong><span class="muted">Takip</span>
+        </a>
+    </div>
+    {% if my_week_stats %}
+    <p class="feed-profile-week muted">Bu hafta: {{ my_week_stats.posts }} gönderi · {{ my_week_stats.likes }} beğeni</p>
+    {% endif %}
+    {% if my_recent_media %}
+    <div class="feed-profile-media-preview" aria-label="Son paylaşımların">
+        {% for m in my_recent_media %}
+            <a href="{{ url_for('routes.post_detail', post_id=m.post_id) }}">
+                <img src="{{ m.image_url }}" alt="" loading="lazy">
+            </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <nav class="feed-profile-links" aria-label="Hızlı linkler">
+        <a href="{{ url_for('routes.profile_edit') }}">✏️ Profili Düzenle</a>
+        <a href="{{ url_for('routes.drafts_list') }}">📝 Taslaklarım</a>
+        <a href="{{ url_for('close_friends.close_friends_list') }}">💚 Yakın Arkadaşlar</a>
+    </nav>
+</aside>
+{%- endmacro %}

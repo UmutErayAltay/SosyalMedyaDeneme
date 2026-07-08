@@ -706,6 +706,33 @@ body.navbar-hidden .feed-profile-card { top: 16px; }
     .feed-sidebar { display: none; }
 }
 
+/* Post detay sayfası — feed'deki 3 sütun grid deseni */
+main.post-detail-page {
+    max-width: 1224px;
+    display: grid; grid-template-columns: 280px 1fr 280px; gap: 24px;
+    align-items: start;
+}
+.flash-container { grid-column: 1 / -1; }
+main.post-detail-page .feed-profile-card { grid-column: 1; }
+main.post-detail-page .post-detail-layout { grid-column: 2; }
+main.post-detail-page .post-detail-sidebar { grid-column: 3; }
+.post-detail-layout { display: flex; flex-direction: column; }
+.post-detail-sidebar {
+    position: sticky;
+    top: calc(var(--navbar-height) + 16px);
+    transition: top 0.25s ease;
+    display: flex; flex-direction: column; gap: 12px;
+}
+body.navbar-hidden .post-detail-sidebar { top: 16px; }
+@media (max-width: 1100px) {
+    main.post-detail-page { grid-template-columns: 1fr 280px; max-width: 920px; }
+    .feed-profile-card { display: none; }
+}
+@media (max-width: 900px) {
+    main.post-detail-page { grid-template-columns: 1fr; max-width: var(--max-width); }
+    .post-detail-sidebar { display: none; }
+}
+
 .messages-layout {
     display: flex; gap: 20px;
     height: calc(100vh - 130px);

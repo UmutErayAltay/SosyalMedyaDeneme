@@ -537,9 +537,81 @@ def post_detail(post_id):
     # Görüntüleme sayısı SADECE yazarsa hesaplanır (gereksiz sorgu + bilgi sızıntısı önlenir)
     view_count = get_view_count(sb, post_id) if post["user_id"] == me else None
 
+    # --- Sidebar verilerini hafif şekilde parallel topla (feed'deki FAZ B deseni)
+    # SADECE: my_stats, my_bio, trending (cache'li), suggested_users
+    def _fetch_posts_count():
+        try:
+            return sb.table("posts").select(
+                "id", count="exact", head=True
+            ).eq("user_id", me).eq("is_draft", False).execute().count or 0
+        except Exception:
+            return 0
+
+    def _fetch_followers_count():
+        try:
+            return sb.table("follows").select(
+                "follower_id", count="exact", head=True
+            ).eq("following_id", me).execute().count or 0
+        except Exception:
+            return 0
+
+    def _fetch_following_count():
+        try:
+            return sb.table("follows").select(
+                "following_id", count="exact", head=True
+            ).eq("follower_id", me).execute().count or 0
+        except Exception:
+            return 0
+
+    def _fetch_bio():
+        try:
+            my_bio_row = sb.table("profiles").select("bio").eq("id", me).execute().data
+            return (my_bio_row[0].get("bio") if my_bio_row else None) or None
+        except Exception:
+            return None
+
+    def _fetch_following_ids():
+        try:
+            return {f["following_id"] for f in sb.table("follows").select("following_id")
+                    .eq("follower_id", me).execute().data}
+        except Exception:
+            return set()
+
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        posts_count_fut = executor.submit(_fetch_posts_count)
+        followers_count_fut = executor.submit(_fetch_followers_count)
+        following_count_fut = executor.submit(_fetch_following_count)
+        bio_fut = executor.submit(_fetch_bio)
+        trending_fut = executor.submit(_trending_hashtags, sb, hours=24, limit=5)
+        following_ids_fut = executor.submit(_fetch_following_ids)
+
+        my_posts_count = posts_count_fut.result()
+        my_followers_count = followers_count_fut.result()
+        my_following_count = following_count_fut.result()
+        my_bio = bio_fut.result()
+        trending_tags = trending_fut.result()
+        following_ids = following_ids_fut.result()
+
+        # "kimi takip etmeli" önerisi
+        def _fetch_suggested_users():
+            blocked_ids = blocked_user_ids(sb, me)
+            exclude_ids = following_ids | blocked_ids | {me}
+            query = sb.table("profiles").select("id, username, avatar_url, full_name").eq("is_banned", False)
+            if exclude_ids:
+                query = query.not_.in_("id", list(exclude_ids))
+            try:
+                return query.order("created_at", desc=True).limit(5).execute().data
+            except Exception:
+                return []
+
+        suggested_users = executor.submit(_fetch_suggested_users).result()
+
+    my_stats = {"posts": my_posts_count, "followers": my_followers_count, "following": my_following_count}
+
     return render_template("post_detail.html", post=post, comments=comments,
                            me=session.get("user"), valid_usernames=get_valid_usernames(sb),
-                           view_count=view_count)
+                           view_count=view_count, my_stats=my_stats, my_bio=my_bio,
+                           trending_tags=trending_tags, suggested_users=suggested_users)
 
 
 @bp.route("/post/<post_id>/delete", methods=["POST"])
