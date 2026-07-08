@@ -363,6 +363,30 @@
     }
 
     // --- Konum ---
+    // Önceden konum adı için HER ZAMAN manuel prompt() isteniyordu — bu hem
+    // ekstra bir adımdı hem de bazı tarayıcılarda/ortamlarda prompt() engellenip
+    // sessizce "konum eklenmedi" izlenimi verebiliyordu (kullanıcı raporu:
+    // "konumu direkt çekmeyi denemek istiyorum"). Artık koordinat alınır
+    // alınmaz OpenStreetMap Nominatim ile TERS GEOCODING otomatik denenir
+    // (gerçek yer adı — mahalle/cadde/işletme); sadece bu başarısız olursa
+    // (ağ hatası, API kullanılamıyor) manuel isim için prompt()'a düşülür.
+    async function reverseGeocode(lat, lng) {
+        try {
+            var res = await fetch(
+                'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat +
+                '&lon=' + lng + '&zoom=16&addressdetails=1'
+            );
+            if (!res.ok) return null;
+            var data = await res.json();
+            var addr = data.address || {};
+            return addr.amenity || addr.shop || addr.building || addr.road ||
+                addr.neighbourhood || addr.suburb || addr.town || addr.city ||
+                (data.display_name ? data.display_name.split(',')[0] : null);
+        } catch (err) {
+            return null;
+        }
+    }
+
     if (locationToggleBtn) {
         locationToggleBtn.addEventListener('click', function (e) {
             e.preventDefault();
@@ -370,11 +394,19 @@
                 alert('Tarayıcında Konum özelliği yok.');
                 return;
             }
+            var originalLabel = locationToggleBtn.textContent;
+            locationToggleBtn.disabled = true;
+            locationToggleBtn.textContent = 'Konum alınıyor...';
             navigator.geolocation.getCurrentPosition(
-                function (pos) {
+                async function (pos) {
                     var lat = pos.coords.latitude;
                     var lng = pos.coords.longitude;
-                    var name = prompt('Konum adı (örn: Kahveci, Park):');
+                    var name = await reverseGeocode(lat, lng);
+                    if (!name) {
+                        name = prompt('Konum adı (örn: Kahveci, Park):');
+                    }
+                    locationToggleBtn.disabled = false;
+                    locationToggleBtn.textContent = originalLabel;
                     if (!name) return;
                     if (locationLatInput) locationLatInput.value = lat;
                     if (locationLngInput) locationLngInput.value = lng;
@@ -385,6 +417,8 @@
                     closeAttachMenu();
                 },
                 function (err) {
+                    locationToggleBtn.disabled = false;
+                    locationToggleBtn.textContent = originalLabel;
                     alert('Konum alınamadı: ' + err.message);
                 }
             );

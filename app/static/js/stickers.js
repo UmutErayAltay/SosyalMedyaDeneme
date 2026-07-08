@@ -274,4 +274,38 @@
             })
             .catch(function (e) { console.error('Sticker kaydedilemedi:', e); });
     });
+
+    // --- Profil "Çıkartmalarım" sekmesi: grid'i doldur ---
+    // Bu grid önceden HİÇ doldurulmuyordu — sadece statik "Yükleniyor..."
+    // markup'ı vardı, sonsuza kadar öyle kalıyordu (kullanıcı raporu).
+    // Silme butonu (.sticker-delete-btn, mevcut delegation zaten yukarıda
+    // tanımlı) burada mine_created şartı OLMADAN her sticker'da gösterilir —
+    // bu sekme "koleksiyonumdan kaldır" anlamında, picker'daki "sadece
+    // kendi yüklediğimi silebilirim" kısıtı burada geçerli değil.
+    function renderProfileStickerGrid() {
+        var container = document.getElementById('stickers-profile-grid');
+        if (!container) return;
+
+        fetchStickers(function (stickers) {
+            if (!stickers || stickers.length === 0) {
+                container.innerHTML = '<p class="muted center">Henüz çıkartman yok.</p>';
+                return;
+            }
+            var html = '';
+            stickers.forEach(function (s) {
+                html += '<div class="sticker-item-wrap">' +
+                    '<div class="sticker-item" data-sticker-id="' + s.id + '">' +
+                    '<img src="' + escapeHtml(s.image_url) + '" alt="Sticker" class="sticker-item-img">' +
+                    '<button type="button" class="sticker-delete-btn" aria-label="Koleksiyondan kaldır">🗑</button>' +
+                    '</div></div>';
+            });
+            container.innerHTML = html;
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', renderProfileStickerGrid);
+    } else {
+        renderProfileStickerGrid();
+    }
 })();

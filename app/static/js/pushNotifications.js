@@ -75,21 +75,44 @@
         }
         try {
             var reg = await navigator.serviceWorker.ready;
-            var sub = await reg.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(vapidKey),
-            });
+            var sub;
+            try {
+                sub = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(vapidKey),
+                });
+            } catch (subErr) {
+                // "InvalidStateError: ... different applicationServerKey" — tarayıcıda
+                // ESKİ bir VAPID key'le kurulmuş bayat bir abonelik varsa (örn. .env'deki
+                // anahtar değişti) subscribe() bu hatayla reddeder. Eski aboneliği
+                // kaldırıp AYNI anahtarla yeniden denemek genelde çözer — kullanıcıya
+                // "başarısız" demeden önce bu kurtarma yolu denenir.
+                if (subErr.name === 'InvalidStateError') {
+                    var stale = await reg.pushManager.getSubscription();
+                    if (stale) await stale.unsubscribe();
+                    sub = await reg.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+                    });
+                } else {
+                    throw subErr;
+                }
+            }
             var subJson = sub.toJSON();
             var res = await fetch('/push/subscribe', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
                 body: JSON.stringify(subJson),
             });
-            if (!res.ok) throw new Error('Sunucu kaydı başarısız');
+            if (!res.ok) throw new Error('Sunucu kaydı başarısız (HTTP ' + res.status + ')');
             updateButton(true);
             setStatus('Bildirimler açık.');
         } catch (err) {
-            setStatus('Abonelik başarısız oldu.');
+            // Gerçek tarayıcı hatasını göster — önceden jenerik "Abonelik başarısız
+            // oldu" yazıyordu, hangi adımda/neden başarısız olduğu hiç görünmüyordu
+            // (kullanıcı raporu, teşhis için kritik).
+            console.error('Push abonelik hatası:', err);
+            setStatus('Abonelik başarısız: ' + (err.message || err.name || 'bilinmeyen hata'));
         }
     }
 
@@ -109,7 +132,8 @@
             updateButton(false);
             setStatus('Bildirimler kapatıldı.');
         } catch (err) {
-            setStatus('Kapatma başarısız oldu.');
+            console.error('Push abonelikten çıkma hatası:', err);
+            setStatus('Kapatma başarısız: ' + (err.message || err.name || 'bilinmeyen hata'));
         }
     }
 
