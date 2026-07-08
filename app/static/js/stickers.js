@@ -45,8 +45,11 @@
     }
 
     function renderStickerPicker(btn) {
-        var popover = document.getElementById('sticker-picker-' + Math.random().toString(36).slice(2, 9));
-        var existing = btn.parentNode.querySelector('.sticker-picker');
+        // Buton bir ekleme menüsünün (attach-menu) İÇİNDEYSE picker menünün
+        // DIŞINA konur — menü öğe tıklamasında kapandığı için picker menü
+        // içinde kalırsa onunla birlikte gizlenirdi (sohbet composer'ı)
+        var host = btn.closest('.attach-menu-wrap') || btn;
+        var existing = host.parentNode.querySelector('.sticker-picker');
         if (existing) {
             existing.remove();
             return;
@@ -54,8 +57,9 @@
 
         var pickerDiv = document.createElement('div');
         pickerDiv.className = 'sticker-picker';
+        pickerDiv._triggerBtn = btn; // seçim handler'ı tetikleyen butonu bulabilsin
         pickerDiv.innerHTML = '<p class="muted">Yükleniyor...</p>';
-        btn.parentNode.insertBefore(pickerDiv, btn.nextSibling);
+        host.parentNode.insertBefore(pickerDiv, host.nextSibling);
 
         fetchStickers(function (stickers) {
             pickerDiv.innerHTML = '<div class="sticker-grid">';
@@ -122,7 +126,7 @@
 
         e.preventDefault();
         var stickerId = itemDiv.dataset.stickerId;
-        var btn = pickerId.previousElementSibling;
+        var btn = pickerId._triggerBtn || pickerId.previousElementSibling;
 
         // Form'u bul (button'ın en yakın form parent'ı)
         var form = btn.closest('form');
@@ -225,8 +229,9 @@
                 if (data.id) {
                     invalidateCache();
                     // Picker'ı yeniden render et
-                    var btn = fileInput.closest('.sticker-picker').previousElementSibling;
-                    fileInput.closest('.sticker-picker').remove();
+                    var picker = fileInput.closest('.sticker-picker');
+                    var btn = picker._triggerBtn || picker.previousElementSibling;
+                    picker.remove();
                     renderStickerPicker(btn);
                 }
             })

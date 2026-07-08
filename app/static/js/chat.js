@@ -168,6 +168,45 @@
         var observer = new MutationObserver(function () { formatSharedPosts(stream); });
         observer.observe(stream, { childList: true, subtree: true });
 
+        // --- Ekleme menüsü açma/kapama ---
+        var attachMenuBtn = document.getElementById('msg-attach-menu-btn');
+        var attachMenu = document.getElementById('msg-attach-menu');
+
+        function closeAttachMenu() {
+            if (!attachMenu || attachMenu.hidden) return;
+            attachMenu.hidden = true;
+            if (attachMenuBtn) attachMenuBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        if (attachMenuBtn && attachMenu) {
+            attachMenuBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                if (attachMenu.hidden) {
+                    attachMenu.hidden = false;
+                    attachMenuBtn.setAttribute('aria-expanded', 'true');
+                } else {
+                    closeAttachMenu();
+                }
+            });
+
+            // Dışarıya tıklayınca kapat
+            document.addEventListener('click', function (e) {
+                if (!attachMenu.hidden && !attachMenu.contains(e.target) && e.target !== attachMenuBtn) {
+                    closeAttachMenu();
+                }
+            });
+
+            // Menü öğelerine tıklayınca kapat (GIF/Sticker picker açılırken menü kapanır)
+            attachMenu.addEventListener('click', function (e) {
+                if (e.target.closest('.attach-menu-item')) closeAttachMenu();
+            });
+
+            // ESC tuşu
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && !attachMenu.hidden) closeAttachMenu();
+            });
+        }
+
         // --- Enter = gönder, Shift+Enter = yeni satır (WCAG 2.1.1) ---
         input.addEventListener('keydown', function (e) {
             if (e.key === 'Enter' && !e.shiftKey) {

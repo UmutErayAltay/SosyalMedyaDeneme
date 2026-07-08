@@ -888,8 +888,35 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 .msg-icon-btn[hidden] { display: none; }
 .msg-icon-btn:hover { background: var(--muted); color: var(--card); }
 .msg-icon-btn:active { transform: scale(0.94); }
-.msg-send-btn { background: var(--primary); color: var(--bg); font-size: 16px; }
+
+/* Mesaj formu — ekleme menüsü (feed composer desenine benzer, ama mensajlar için) */
+.msg-attach-wrap { position: relative; }
+.msg-attach-btn {
+    width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); font-size: 20px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, color 0.15s; padding: 0; margin: 0; margin-bottom: 5px;
+}
+.msg-attach-btn:hover, .msg-attach-btn[aria-expanded="true"] { background: var(--border); }
+.msg-attach-menu {
+    position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 20;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 4px 16px rgba(43, 36, 32, 0.15);
+    display: flex; flex-direction: column; min-width: 180px; padding: 6px;
+}
+.msg-attach-menu[hidden] { display: none; }
+
+/* Gönder butonu — primary renkli, SVG içli */
+.msg-send-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 43px; height: 43px; flex-shrink: 0; margin: 0; margin-bottom: 5px;
+    border: none; border-radius: 50%; cursor: pointer;
+    background: var(--primary); color: var(--bg); font-size: 16px;
+    transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+.msg-send-btn[hidden] { display: none; }
 .msg-send-btn:hover { background: var(--primary-hover); }
+.msg-send-btn:active { transform: scale(0.94); }
 .msg-discard-btn:hover { background: var(--danger-bg); color: var(--danger); }
 
 #voice-record-btn.recording { color: var(--danger); animation: pulse-rec 1.2s infinite; }
