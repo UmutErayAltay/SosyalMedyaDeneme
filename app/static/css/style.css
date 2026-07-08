@@ -1650,6 +1650,12 @@ header[role="banner"] {
 .feed-interleave-card { padding: 12px 16px; }
 .feed-interleave-card h2 { font-size: 14px; margin-bottom: 8px; }
 .feed-interleave-tags { display: flex; gap: 12px; flex-wrap: wrap; }
+.feed-interleave-users { display: flex; gap: 16px; flex-wrap: wrap; }
+.feed-interleave-user {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 600; color: var(--text);
+}
+.feed-interleave-user:hover { text-decoration: underline; }
 
 .explore-suggestions-title { font-size: 16px; margin: 24px 0 12px; }
 

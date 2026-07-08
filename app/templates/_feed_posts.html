@@ -14,6 +14,22 @@
     </div>
 </div>
 {% endif %}
+{# Önerilen kişiler 5. postta araya girer — sadece ilk (tam) sayfa render'ında;
+   sonsuz kaydırma partial'ında suggested_users tanımsız, guard bunu korur #}
+{% if suggested_users is defined and suggested_users and loop.index == 5 %}
+<div class="card feed-interleave-card">
+    <h2>👥 Önerilen Kişiler</h2>
+    <div class="feed-interleave-users">
+    {% for u in suggested_users[:3] %}
+        <a href="{{ url_for('routes.profile', username=u.username) }}" class="feed-interleave-user">
+            {% if u.avatar_url %}<img src="{{ u.avatar_url }}" class="avatar avatar-sm" alt="">
+            {% else %}<div class="avatar avatar-sm avatar-placeholder" aria-hidden="true"></div>{% endif %}
+            <span>{{ u.username }}</span>
+        </a>
+    {% endfor %}
+    </div>
+</div>
+{% endif %}
 <article class="card post" data-post-url="{{ url_for('routes.post_detail', post_id=p.id) }}">
     <header class="post-header">
         {% if p.profiles and p.profiles.avatar_url %}
