@@ -83,7 +83,10 @@
         var form = document.getElementById('comment-form');
         if (form) {
             var gifUrlInput = form.querySelector('input[name="gif_url"]');
-            if (gifUrlInput) gifUrlInput.value = url;
+            if (gifUrlInput) {
+                gifUrlInput.value = url;
+                form.requestSubmit();
+            }
         }
         gifPickerCommentPanel.hidden = true;
     }
@@ -96,6 +99,25 @@
             gifSearchTimer = setTimeout(function () { searchGifsComment(q); }, 300);
         });
     }
+
+    // GIF panel dışına tıklayınca kapatma (document-level)
+    document.addEventListener('click', function (e) {
+        if (e.target.closest('#gif-toggle-comment-btn') || e.target.closest('#gif-picker-comment-panel')) {
+            // Buton veya panel içinde — işlem yapma
+            return;
+        }
+        // Diğer yerde tıklandı — ana yorum formu GIF panel'ini kapat
+        if (gifPickerCommentPanel && !gifPickerCommentPanel.hidden) {
+            gifPickerCommentPanel.hidden = true;
+        }
+    });
+
+    // Escape tuşu — GIF panel'i kapat
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && gifPickerCommentPanel) {
+            gifPickerCommentPanel.hidden = true;
+        }
+    });
 
     // --- Ana yorum gönderme ---
     var form = document.getElementById('comment-form');
@@ -123,18 +145,25 @@
                 });
                 if (!res.ok) throw new Error('İstek başarısız');
                 var data = await res.json();
-                // Sticker/GIF'li yorumun optimistic render'ı yok — sunucu
-                // render'ıyla göstermek için sayfayı yenile (basit ve doğru)
-                if (stickerVal || gifVal) {
-                    location.reload();
-                    return;
-                }
                 var emptyMsg = list.querySelector('.muted');
                 if (emptyMsg) emptyMsg.remove();
                 var article = document.createElement('article');
                 article.className = 'card comment';
                 article.dataset.commentId = data.id;
-                article.innerHTML = buildCommentHtml(data, content) +
+                var mediaHtml = '';
+                // Optimistic render: sticker veya GIF göster
+                if (stickerVal) {
+                    var imgUrl = form.querySelector('input[name="sticker_id"]').dataset.imageUrl;
+                    if (imgUrl) {
+                        mediaHtml = '<div class="sticker-wrap">' +
+                            '<img src="' + escapeHtml(imgUrl) + '" class="sticker-rendered comment-sticker" data-sticker-id="' + escapeHtml(stickerVal) + '" alt="Sticker" loading="lazy">' +
+                            '<button type="button" class="sticker-star-btn" data-sticker-id="' + escapeHtml(stickerVal) + '" aria-label="Sticker\'ı kaydet">⭐</button>' +
+                            '</div>';
+                    }
+                } else if (gifVal) {
+                    mediaHtml = '<img src="' + escapeHtml(gifVal) + '" class="comment-gif" alt="GIF" loading="lazy">';
+                }
+                article.innerHTML = buildCommentHtml(data, content) + mediaHtml +
                     '<div class="comment-actions">' +
                     '<button type="button" class="btn btn-ghost small reply-toggle" data-comment-id="' + data.id + '">Yanıtla</button>' +
                     '</div>' +
@@ -143,10 +172,19 @@
                     '<input type="hidden" name="sticker_id" value="">' +
                     '<input type="hidden" name="gif_url" value="">' +
                     '<textarea name="content" placeholder="Yanıtını yaz..." rows="2" aria-label="Yanıt içeriği"></textarea>' +
+                    '<div class="reply-form-actions">' +
+                    '<button type="button" class="btn btn-ghost small" aria-label="Çıkartma ekle" data-sticker-picker-btn data-sticker-autosubmit="1">🏷️</button>' +
+                    '<button type="button" class="reply-gif-toggle-btn btn btn-ghost small" aria-label="GIF ekle">🎬</button>' +
+                    '</div>' +
+                    '<div data-sticker-preview hidden></div>' +
                     '<button type="submit" class="btn btn-primary small">Gönder</button>' +
                     '</form>';
                 list.appendChild(article);
                 input.value = '';
+                // Sticker/GIF inputlarını temizle (sonraki yorum için)
+                form.querySelector('input[name="sticker_id"]').value = '';
+                form.querySelector('input[name="sticker_id"]').dataset.imageUrl = '';
+                form.querySelector('input[name="gif_url"]').value = '';
                 input.focus();
             } catch (err) {
                 console.error('Yorum gönderilemedi:', err);
@@ -157,6 +195,25 @@
             }
         });
     }
+
+    // GIF panel dışına tıklayınca kapatma (dinamik yanıt panelleri için)
+    document.addEventListener('click', function (e) {
+        if (e.target.closest('.reply-gif-toggle-btn') || e.target.closest('.gif-picker-comment-panel')) {
+            // Buton veya panel içinde — işlem yapma
+            return;
+        }
+        // Diğer yerde tıklandı — açık reply GIF panel'lerini kapat
+        var openReplyPanels = document.querySelectorAll('.reply-form .gif-picker-comment-panel:not([hidden])');
+        openReplyPanels.forEach(function (p) { p.hidden = true; });
+    });
+
+    // Escape tuşu — reply GIF panel'lerini kapat
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            var openReplyPanels = document.querySelectorAll('.reply-form .gif-picker-comment-panel:not([hidden])');
+            openReplyPanels.forEach(function (p) { p.hidden = true; });
+        }
+    });
 
     // --- Yanıt toggle + gönderme (event delegation) ---
     document.addEventListener('click', async function (e) {
@@ -297,11 +354,6 @@
             });
             if (!res.ok) throw new Error('İstek başarısız');
             var data = await res.json();
-            // Sticker/GIF'li yanıt optimistic render'da görünmez — sunucu render'ı için yenile
-            if (replyStickerVal || replyGifVal) {
-                location.reload();
-                return;
-            }
 
             var commentEl = replyForm.closest('.comment');
             var repliesDiv = commentEl.querySelector('.replies');
@@ -312,7 +364,20 @@
             }
             var replyArticle = document.createElement('article');
             replyArticle.className = 'comment reply';
-            replyArticle.innerHTML = buildCommentHtml(data, content) +
+            var mediaHtml = '';
+            // Optimistic render: sticker veya GIF göster
+            if (replyStickerVal) {
+                var imgUrl = stickerIdInput.dataset.imageUrl;
+                if (imgUrl) {
+                    mediaHtml = '<div class="sticker-wrap">' +
+                        '<img src="' + escapeHtml(imgUrl) + '" class="sticker-rendered comment-sticker" data-sticker-id="' + escapeHtml(replyStickerVal) + '" alt="Sticker" loading="lazy">' +
+                        '<button type="button" class="sticker-star-btn" data-sticker-id="' + escapeHtml(replyStickerVal) + '" aria-label="Sticker\'ı kaydet">⭐</button>' +
+                        '</div>';
+                }
+            } else if (replyGifVal) {
+                mediaHtml = '<img src="' + escapeHtml(replyGifVal) + '" class="comment-gif" alt="GIF" loading="lazy">';
+            }
+            replyArticle.innerHTML = buildCommentHtml(data, content) + mediaHtml +
                 '<div class="comment-actions">' +
                 '<button type="button" class="btn btn-ghost small comment-like-btn" data-liked="0" ' +
                 'data-like-url="/social/comment/like/' + data.id + '">♥ <span class="like-count">0</span></button>' +
@@ -320,6 +385,10 @@
             repliesDiv.appendChild(replyArticle);
             replyForm.hidden = true;
             ta.value = '';
+            // Sticker/GIF inputlarını temizle (sonraki yanıt için)
+            stickerIdInput.value = '';
+            stickerIdInput.dataset.imageUrl = '';
+            gifUrlInput.value = '';
         } catch (err) {
             console.error('Yanıt gönderilemedi:', err);
             alert('Yanıt gönderilemedi.');

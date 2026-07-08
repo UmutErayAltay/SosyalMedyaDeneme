@@ -84,6 +84,25 @@
         });
     }
 
+    // Picker dışına tıklayınca kapatma (document-level)
+    document.addEventListener('click', function (e) {
+        if (e.target.closest('[data-sticker-picker-btn]') || e.target.closest('.sticker-picker')) {
+            // Buton veya picker içinde — işlem yapma
+            return;
+        }
+        // Diğer yerde tıklandı — açık picker'ları kapat
+        var openPickers = document.querySelectorAll('.sticker-picker');
+        openPickers.forEach(function (p) { p.remove(); });
+    });
+
+    // Escape tuşu — açık picker'ları kapat
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            var openPickers = document.querySelectorAll('.sticker-picker');
+            openPickers.forEach(function (p) { p.remove(); });
+        }
+    });
+
     // Document-level delegation: sticker picker açma/kapama
     document.addEventListener('click', function (e) {
         var btn = e.target.closest('[data-sticker-picker-btn]');

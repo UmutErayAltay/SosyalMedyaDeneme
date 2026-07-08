@@ -39,6 +39,7 @@
         <a href="{{ url_for('routes.profile_edit') }}">✏️ Profili Düzenle</a>
         <a href="{{ url_for('routes.drafts_list') }}">📝 Taslaklarım</a>
         <a href="{{ url_for('close_friends.close_friends_list') }}">💚 Yakın Arkadaşlar</a>
+        <a href="{{ url_for('routes.profile', username=profile_user.username) }}#panel-stickers">🏷️ Çıkartmalarım</a>
     </nav>
 </aside>
 {%- endmacro %}
