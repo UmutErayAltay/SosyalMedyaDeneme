@@ -870,15 +870,19 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 }
 .msg:hover .msg-react-trigger { opacity: 0.7; }
 
-/* Emoji seçim paneli — HER ZAMAN tetikleyici butonun (🙂+) ALTINDA açılır,
-   asla üstte (kullanıcı isteği — önceki "stream kenarına yakınsa üstte aç"
-   fallback'i kaldırıldı). Sol kenar chat.js tarafından tetikleyicinin tam
-   konumuna (`left` inline style) ayarlanır — tıklanan noktadan başlayıp
-   sağa doğru açılır, mesaj kenarına hizalanmaz. .msg position:relative'e
-   göre konumlanır. */
+/* Emoji seçim paneli — position:FIXED (absolute DEĞİL). Önceden .msg'e göre
+   absolute konumlanıyordu; bu, .message-stream'in (overflow-y:auto)
+   scrollHeight'ını büyütüyordu — picker açılınca mesaj listesi "büyüyüp
+   küçülüyormuş" gibi görünüyordu (kullanıcı raporu, gerçek sebep: scroll
+   konteynerinin içerik yüksekliği gerçekten değişiyordu). fixed olduğu için
+   artık stream'in scroll akışına hiç dahil olmuyor, salt viewport üzerinde
+   bir overlay gibi davranıyor (chat.js stream scroll'unda kapatır — fixed
+   olduğu için scroll ile birlikte kaymaz, açık kalırsa mesajdan kopmuş
+   görünürdü). top/left chat.js tarafından `getBoundingClientRect()` ile
+   viewport koordinatlarına göre ayarlanır — HER ZAMAN tetikleyicinin
+   ALTINDA, tam tıklanan noktadan başlar. */
 .msg-react-picker {
-    position: absolute; z-index: 40; display: flex; gap: 4px;
-    top: calc(100% + 4px);
+    position: fixed; z-index: 1000; display: flex; gap: 4px;
     background: var(--card); border: 1px solid var(--border);
     border-radius: var(--radius-full); padding: 4px 8px;
     box-shadow: 0 4px 16px rgba(43, 36, 32, 0.18);

@@ -214,6 +214,11 @@
         scrollToBottom();
         formatSharedPosts(stream);
 
+        // Tepki picker'ı artık position:fixed (viewport koordinatlı) — stream
+        // kaydırılınca konumu güncellenmez, mesajdan kopmuş görünür. Basit ve
+        // standart çözüm: kaydırma başlayınca açık picker'ı kapat.
+        stream.addEventListener('scroll', function () { closeAllReactPickers(); }, { passive: true });
+
         var observer = new MutationObserver(function () { formatSharedPosts(stream); });
         observer.observe(stream, { childList: true, subtree: true });
 
@@ -798,19 +803,26 @@
                 if (picker) {
                     if (picker.hasAttribute('hidden')) {
                         closeAllReactPickers(picker);
-                        // HER ZAMAN tetikleyicinin ALTINDA açılır (kullanıcı isteği
-                        // — asla üstte açılmasın). Sol kenar tam olarak tıklanan
-                        // butonun konumundan başlar (trigger.offsetLeft, .msg'e
-                        // göre — .msg position:relative olduğu için offsetParent'ı
-                        // odur), mesaj kenarına değil.
-                        picker.style.left = trigger.offsetLeft + 'px';
+                        // position:fixed + viewport koordinatları (kullanıcı raporu:
+                        // .msg içinde absolute konumlanınca .message-stream'in
+                        // (overflow-y:auto) scrollHeight'ını büyütüyordu — picker
+                        // açılınca mesaj listesi "büyüyüp küçülüyormuş" gibi
+                        // görünüyordu, çünkü scroll konteynerinin içerik yüksekliği
+                        // gerçekten değişiyordu). fixed olduğu için artık stream'in
+                        // scroll akışına hiç dahil olmuyor, salt viewport üzerinde
+                        // bir overlay gibi davranıyor. HER ZAMAN tetikleyicinin
+                        // ALTINDA açılır, sol kenar tıklanan butonun tam konumundan
+                        // başlar (mesaj kenarına değil).
+                        var rect = trigger.getBoundingClientRect();
+                        picker.style.top = (rect.bottom + 4) + 'px';
+                        picker.style.left = rect.left + 'px';
                         picker.removeAttribute('hidden');
                         // Sağ kenar viewport dışına taşarsa geri çek (görünürlük
                         // garantisi — konum yine tıklanan noktadan başlar, sadece
                         // ekrandan taşmayacak kadar sola kayar).
                         var overflow = picker.getBoundingClientRect().right - window.innerWidth;
                         if (overflow > 0) {
-                            picker.style.left = (trigger.offsetLeft - overflow - 8) + 'px';
+                            picker.style.left = (rect.left - overflow - 8) + 'px';
                         }
                     } else {
                         picker.setAttribute('hidden', '');
