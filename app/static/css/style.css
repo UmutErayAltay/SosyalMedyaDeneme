@@ -240,6 +240,10 @@ textarea:focus-visible, select:focus-visible {
 .nav-links a:hover { color: var(--text); background: var(--border); }
 .nav-links a.logout:hover { color: var(--danger); background: var(--danger-bg); }
 
+/* "Mesajlar" linkindeki rozet için konumlanmış ata (.notif-badge zaten
+   absolute/top/right — bildirim ziliyle aynı rozet class'ı yeniden kullanılıyor) */
+.nav-messages-link { position: relative; }
+
 .nav-profile { display: flex; align-items: center; gap: 6px; }
 .nav-avatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
 
@@ -869,6 +873,18 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     vertical-align: middle;
 }
 .msg:hover .msg-react-trigger { opacity: 0.7; }
+
+/* Mesaj silme butonu — sadece kendi mesajımda render edilir, react-trigger'la
+   aynı hover deseni (kullanıcı isteğiyle eklendi). */
+.msg-delete-btn {
+    opacity: 0; font-size: 13px; background: none; border: none;
+    cursor: pointer; color: var(--text); padding: 0;
+    margin-left: 4px; transition: opacity 0.15s, color 0.15s;
+    font-family: var(--font-body);
+    vertical-align: middle;
+}
+.msg:hover .msg-delete-btn { opacity: 0.7; }
+.msg-delete-btn:hover { color: var(--danger); opacity: 1; }
 
 /* Emoji seçim paneli — position:FIXED (absolute DEĞİL). Önceden .msg'e göre
    absolute konumlanıyordu; bu, .message-stream'in (overflow-y:auto)

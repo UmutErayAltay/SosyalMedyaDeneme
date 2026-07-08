@@ -3,6 +3,16 @@
 {% block content %}
 <h1>Bildirim Tercihleri</h1>
 
+{# Web Push: tarayıcı izni + abonelik JS'te yönetilir (pushNotifications.js).
+   Anahtar sunucuda yoksa (.env VAPID_PRIVATE_KEY) buton "devre dışı" gösterir —
+   feature-flag deseni, GIF/Klipy ile aynı graceful degradation. #}
+<section class="card push-pref-card" aria-label="Anlık bildirimler">
+    <h2>🔔 Anlık Bildirimler (Push)</h2>
+    <p class="muted">Uygulama kapalıyken de bildirim al (tarayıcı izni gerekir).</p>
+    <button type="button" class="btn btn-primary" id="push-toggle-btn">Yükleniyor...</button>
+    <p class="muted small" id="push-status-text"></p>
+</section>
+
 <form method="post" action="{{ url_for('notifications.preferences') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <section class="card pref-list" aria-label="Bildirim tercihleri">
@@ -18,4 +28,5 @@
     </section>
     <button type="submit" class="btn btn-primary">Kaydet</button>
 </form>
+<script src="{{ url_for('static', filename='js/pushNotifications.js') }}"></script>
 {% endblock %}

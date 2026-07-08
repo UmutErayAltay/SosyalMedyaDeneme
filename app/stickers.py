@@ -45,6 +45,30 @@ def get_my_stickers():
         raise
 
 
+@bp.route("/<sticker_id>", methods=["GET"])
+@login_required
+@retry_on_connection_error
+def get_sticker(sticker_id):
+    """Tek bir çıkartmanın görselini döner — Realtime'dan gelen mesaj INSERT
+    payload'ı ham satır olduğu için JOIN içermez (bkz. chat.js); karşı tarafın
+    gönderdiği sticker'ı panel yenilenmeden göstermek için kullanılır.
+    Sticker'lar global okunabilir (save_sticker() ile de aynı varsayım).
+
+    Returns:
+        JSON: {"id", "image_url"} — bulunamazsa 404, tablo yoksa 503
+    """
+    sb = get_sb()
+    try:
+        row = sb.table("stickers").select("id, image_url").eq("id", sticker_id).execute()
+        if not row.data:
+            abort(404)
+        return jsonify(row.data[0])
+    except Exception as e:
+        if "does not exist" in str(e):
+            abort(503)
+        raise
+
+
 @bp.route("/new", methods=["POST"])
 @login_required
 @retry_on_connection_error

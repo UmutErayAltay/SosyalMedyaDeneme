@@ -83,6 +83,24 @@ def create_app() -> Flask:
             count = 0
         return {"unread_notifications": count}
 
+    # Navbar "Mesajlar" rozeti — bildirim ziliyle aynı desen (20sn TTL cache,
+    # messagesBadge.js 25sn polling ile senkron). SADECE 1:1 konuşmalar
+    # sayılır — bkz. unread_message_count() docstring'i (grup mesajlarında
+    # read_at hiç set edilmiyor).
+    @app.context_processor
+    def inject_unread_messages():
+        if not session.get("user"):
+            return {}
+        try:
+            from .supabase_client import get_sb
+            from .cache import get_cached
+            from .messaging._common import unread_message_count
+            user_id = session["user"]["id"]
+            count = get_cached(f"unread_msgs:{user_id}", 20, lambda: unread_message_count(get_sb(), user_id))
+        except Exception:
+            count = 0
+        return {"unread_messages": count}
+
     # Blueprint kayıtları (döngüsel import'u önlemek için fonksiyon içinde)
     from .auth import bp as auth_bp
     from .routes import bp as routes_bp
@@ -99,6 +117,7 @@ def create_app() -> Flask:
     from .close_friends import bp as close_friends_bp
     from .gifs import bp as gifs_bp
     from .stickers import bp as stickers_bp
+    from .push import bp as push_bp
 
     # Emoji reaksiyon ikonları şablonlarda {{ REACTIONS['love'] }} olarak kullanılabilir
     app.jinja_env.globals["REACTIONS"] = REACTIONS
@@ -123,5 +142,6 @@ def create_app() -> Flask:
     app.register_blueprint(close_friends_bp)
     app.register_blueprint(gifs_bp)
     app.register_blueprint(stickers_bp)
+    app.register_blueprint(push_bp)
 
     return app

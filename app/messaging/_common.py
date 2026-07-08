@@ -22,6 +22,37 @@ def _mark_read(sb, conversation_id: str, me: str, messages: list[dict]) -> None:
         pass
 
 
+def unread_message_count(sb, me: str) -> int:
+    """Kullanıcının TÜM 1:1 konuşmalarındaki okunmamış mesaj sayısı (navbar rozeti).
+
+    Grup sohbetleri BİLEREK sayılmaz: read_at grup mesajlarında hiç set
+    edilmiyor (bkz. views.py conversation() — `_mark_read()` SADECE
+    `not is_group` durumunda çağrılıyor, çünkü tek bir read_at kolonu "N
+    kişiden kim okudu" bilgisini tutamaz). Grup mesajlarını dahil etmek
+    sayacı sonsuza kadar büyüyen, hiç sıfırlanmayan yanlış bir rozete
+    yol açardı.
+    """
+    try:
+        parts = sb.table("conversation_participants").select(
+            "conversation_id"
+        ).eq("user_id", me).execute().data
+        cids = [p["conversation_id"] for p in parts]
+        if not cids:
+            return 0
+        try:
+            conv_rows = sb.table("conversations").select("id, is_group").in_("id", cids).execute().data
+            dm_ids = [r["id"] for r in conv_rows if not r.get("is_group")]
+        except Exception:
+            dm_ids = cids  # is_group kolonu yoksa (migration_group_chat.sql uygulanmamış) hepsi 1:1
+        if not dm_ids:
+            return 0
+        return sb.table("messages").select(
+            "id", count="exact", head=True
+        ).in_("conversation_id", dm_ids).neq("sender_id", me).is_("read_at", "null").execute().count or 0
+    except Exception:
+        return 0
+
+
 def _notify_conversation(sb, conversation_id: str, sender_id: str) -> None:
     """Konuşmadaki diğer katılımcı(lar)a yeni mesaj bildirimi gönderir."""
     others = sb.table("conversation_participants").select("user_id").eq(

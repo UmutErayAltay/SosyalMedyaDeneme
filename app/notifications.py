@@ -96,6 +96,24 @@ def notify(sb, *, recipient_id: str, actor_id: str, type_: str,
     from .cache import invalidate
     invalidate(f"unread:{recipient_id}")
 
+    # Web Push (uygulama kapalıyken de bildirim) — VAPID anahtarı yoksa
+    # send_push_to_user() sessizce çıkar, bu blok ASLA bildirim akışını
+    # kesintiye uğratmamalı (bkz. push.py docstring'i).
+    try:
+        from .push import send_push_to_user, VAPID_PRIVATE_KEY
+        if VAPID_PRIVATE_KEY:
+            actor_row = sb.table("profiles").select("username").eq("id", actor_id).execute().data
+            actor_name = actor_row[0]["username"] if actor_row else "Biri"
+            body = f"{actor_name} {_TEXT.get(type_, 'bir etkileşimde bulundu')}"
+            builder = _TARGET_BUILDERS.get(type_)
+            url = builder({
+                "post_id": post_id, "conversation_id": conversation_id,
+                "actor": {"username": actor_name},
+            }) if builder else "/"
+            send_push_to_user(sb, recipient_id, "Sosyal", body, url)
+    except Exception:
+        pass
+
 
 def _annotate(n: dict) -> dict:
     """Bildirime metin + hedef URL ekler (liste sayfası ve slide-in panel ortak kullanır)."""

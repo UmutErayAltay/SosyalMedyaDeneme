@@ -19,6 +19,35 @@
         return '/messages/message/' + msgId + '/react';
     }
 
+    // Karşı taraftan Realtime ile gelen INSERT payload'ı ham satırdır (JOIN
+    // yok) — sticker_id varsa ama sticker objesi yoksa görsel URL'i ayrı bir
+    // istekle çözülür (bkz. stickers.py get_sticker). Konuşmalar arası
+    // paylaşılan cache: aynı sticker birden fazla mesajda kullanılırsa tekrar
+    // istek atılmaz. Kullanıcı raporu: önceden bu panel yenilenince görünüyordu.
+    var stickerCache = {};
+
+    function appendMessageResolvingSticker(appendFn, msg, isMine, opts) {
+        if (msg.sticker || !msg.sticker_id) {
+            appendFn(msg, isMine, opts);
+            return;
+        }
+        if (Object.prototype.hasOwnProperty.call(stickerCache, msg.sticker_id)) {
+            msg.sticker = stickerCache[msg.sticker_id];
+            appendFn(msg, isMine, opts);
+            return;
+        }
+        fetch('/stickers/' + msg.sticker_id)
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+                stickerCache[msg.sticker_id] = data;
+                msg.sticker = data;
+                appendFn(msg, isMine, opts);
+            })
+            .catch(function () {
+                appendFn(msg, isMine, opts); // sticker gösterilmeden en azından mesaj gelsin
+            });
+    }
+
     // Supabase created_at UTC ISO döner ("...+00:00"); önceden ham string'in
     // 11:16 karakterleri kesilip UTC saat yerel saatmiş gibi gösteriliyordu
     // (kullanıcı raporu: 3 saatlik fark). Sabit +3 saat eklenir — sunucu
@@ -92,6 +121,10 @@
             html += '<button type="button" data-emoji="' + em + '" aria-label="' + em + ' tepkisi">' + em + '</button>';
         });
         html += '</div>';
+        // Sadece kendi mesajım silinebilir (sunucu render'ıyla aynı desen)
+        if (isMine) {
+            html += '<button class="msg-delete-btn" aria-label="Mesajı sil" type="button">🗑</button>';
+        }
         html += '</div>';
         return html;
     }
@@ -280,6 +313,7 @@
             imageInput.addEventListener('change', function () {
                 var f = imageInput.files[0];
                 imageName.textContent = f ? f.name : '';
+                if (f) sendTyping(true, 'image');
             });
         }
 
@@ -323,19 +357,27 @@
 
         var myUsername = panel.dataset.myUsername || 'Sen';
 
-        function sendTyping(isTyping) {
+        // activity: 'text' (varsayılan) | 'voice' | 'image' — karşı tarafa
+        // sadece "yazıyor" değil, TAM OLARAK ne yaptığımı gösterebilmek için
+        // (kullanıcı isteği: ses kaydı/görsel seçimi de göstergeyi tetiklesin).
+        // Sticker/GIF seçimi BİLEREK dahil edilmedi: ikisi de seçilir seçilmez
+        // otomatik gönderiliyor (bkz. stickers.js/chat.js autosubmit), mesaj
+        // Realtime'la neredeyse anında gelir — bir "activity" sinyali göstermeye
+        // vakit kalmadan zaten yerini asıl mesaja bırakırdı, görünür bir
+        // fayda sağlamaz.
+        function sendTyping(isTyping, activity) {
             if (!activeChannel) return;
             var now = Date.now();
             if (isTyping && now - lastTypingSentAt < 2000) return; // en fazla 2sn'de bir gönder
             lastTypingSentAt = isTyping ? now : 0;
             activeChannel.send({
                 type: 'broadcast', event: 'typing',
-                payload: { typing: isTyping, username: myUsername },
+                payload: { typing: isTyping, username: myUsername, activity: activity || 'text' },
             });
         }
 
         if (typingIndicator) {
-            input.addEventListener('input', function () { sendTyping(true); });
+            input.addEventListener('input', function () { sendTyping(true, 'text'); });
             input.addEventListener('blur', function () { sendTyping(false); });
         }
 
@@ -415,6 +457,9 @@
                     voiceDiscardBtn.hidden = false;
                     voiceBtn.hidden = true;
                     if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
+                    // Kayıt bitti (gönderilecek mi silinecek mi henüz belli değil) —
+                    // "kaydediyor" göstergesi burada kapatılır, aktif eylem sona erdi
+                    sendTyping(false);
                 };
                 mediaRecorder.start();
                 recordingStartedAt = Date.now();
@@ -423,6 +468,7 @@
                 voiceRecordingStatus.textContent = '🔴 Kaydediliyor... 0:00';
                 voiceBtn.textContent = '⏹';
                 voiceBtn.classList.add('recording');
+                sendTyping(true, 'voice');
                 recordingTimer = setInterval(function () {
                     voiceRecordingStatus.textContent = '🔴 Kaydediliyor... ' + formatElapsed(Date.now() - recordingStartedAt);
                 }, 500);
@@ -647,7 +693,7 @@
                     var isMine = msg.sender_id === window.ME_ID;
                     if (!isMine) {
                         var senderName = isGroup ? (memberMap[msg.sender_id] || 'Bilinmeyen') : null;
-                        appendMessage(msg, isMine, { senderName: senderName });
+                        appendMessageResolvingSticker(appendMessage, msg, isMine, { senderName: senderName });
                     }
                 }).on('postgres_changes', {
                     event: 'UPDATE',
@@ -665,16 +711,39 @@
                         receipt.classList.add('read');
                         receipt.setAttribute('aria-label', 'Okundu');
                     }
+                }).on('postgres_changes', {
+                    event: 'DELETE',
+                    schema: 'public',
+                    table: 'messages',
+                    filter: 'conversation_id=eq.' + conversationId
+                }, function (payload) {
+                    // Karşı taraf bir mesajını sildi — canlı kaldır. DELETE
+                    // payload'ında sadece REPLICA IDENTITY'de olan alanlar
+                    // (varsayılan: primary key) gelir, id her zaman yeterli.
+                    var deletedId = payload.old && payload.old.id;
+                    if (!deletedId) return;
+                    var delEl = stream.querySelector('[data-msg-id="' + deletedId + '"]');
+                    if (delEl) delEl.remove();
                 }).on('broadcast', { event: 'typing' }, function (msg) {
                     if (!typingIndicator) return;
                     var payload = msg.payload || {};
                     if (typingClearTimer) clearTimeout(typingClearTimer);
                     if (payload.typing) {
-                        if (typingIndicator.hidden) {
-                            // Grup sohbetinde KİMİN yazdığını göstermek gerekir (sabit
-                            // "otherUsername" bir grupta anlamsız olurdu) — payload'daki
-                            // gönderen adı kullanılır, 1:1'de de tutarlı çalışır.
-                            typingIndicator.textContent = (payload.username || otherUsername) + ' yazıyor...';
+                        // activity'e göre farklı metin — sadece klavye değil, ses
+                        // kaydı/görsel seçimi de gösterge tetikler (kullanıcı isteği).
+                        var ACTIVITY_TEXT = {
+                            text: 'yazıyor', voice: 'sesli mesaj kaydediyor', image: 'görsel gönderiyor'
+                        };
+                        var verb = ACTIVITY_TEXT[payload.activity] || 'yazıyor';
+                        // Grup sohbetinde KİMİN yazdığını göstermek gerekir (sabit
+                        // "otherUsername" bir grupta anlamsız olurdu) — payload'daki
+                        // gönderen adı kullanılır, 1:1'de de tutarlı çalışır.
+                        var newText = (payload.username || otherUsername) + ' ' + verb + '...';
+                        // Metin değişmiyorsa (aynı activity devam ediyor) yeniden
+                        // yazılmaz — aria-live her keystroke'ta tekrar tekrar
+                        // duyurmasın diye (SADECE durum/activity değişiminde duyurur).
+                        if (typingIndicator.hidden || typingIndicator.textContent !== newText) {
+                            typingIndicator.textContent = newText;
                             typingIndicator.hidden = false;
                         }
                         typingClearTimer = setTimeout(function () {
@@ -851,6 +920,28 @@
             e.preventDefault();
             var chipMsg = chip.closest('.msg');
             if (chipMsg) sendReaction(chipMsg, chip.dataset.reaction);
+            return;
+        }
+
+        // 4. Mesaj silme (sadece kendi mesajım, sunucu tarafında da kontrol edilir)
+        var deleteBtn = e.target.closest('.msg-delete-btn');
+        if (deleteBtn) {
+            e.preventDefault();
+            var deleteMsgEl = deleteBtn.closest('.msg');
+            var deleteMsgId = deleteMsgEl && deleteMsgEl.dataset.msgId;
+            if (!deleteMsgId) return;
+            if (!confirm('Bu mesajı silmek istiyor musun?')) return;
+            var csrfInput = document.querySelector('input[name="csrf_token"]');
+            fetch('/messages/message/' + deleteMsgId + '/delete', {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': csrfInput ? csrfInput.value : '' },
+            })
+            .then(function (res) {
+                if (res.ok) deleteMsgEl.remove();
+            })
+            .catch(function (err) {
+                console.error('Mesaj silinemedi:', err);
+            });
             return;
         }
 

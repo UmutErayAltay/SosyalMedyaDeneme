@@ -72,7 +72,12 @@
 
         <div class="nav-links" id="nav-links">
             <a href="{{ url_for('routes.feed') }}" aria-label="Akış">Akış</a>
-            <a href="{{ url_for('messaging.inbox') }}" aria-label="Mesajlar">Mesajlar</a>
+            <a href="{{ url_for('messaging.inbox') }}" class="nav-messages-link" id="messages-nav-link"
+               aria-label="Mesajlar{% if unread_messages %}, {{ unread_messages }} okunmamış{% endif %}">
+                Mesajlar
+                <span class="notif-badge{{ '' if unread_messages else ' hidden' }}"
+                      id="messages-badge" aria-hidden="true">{{ unread_messages or '' }}</span>
+            </a>
             {% if me.is_admin %}
                 <a href="{{ url_for('admin.dashboard') }}" aria-label="Admin paneli">🛠️ Admin</a>
             {% endif %}
@@ -167,6 +172,7 @@
     <script src="{{ url_for('static', filename='js/lightbox.js') }}"></script>
     <script src="{{ url_for('static', filename='js/postClick.js') }}"></script>
     {% if me %}<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>{% endif %}
+    {% if me %}<script src="{{ url_for('static', filename='js/messagesBadge.js') }}"></script>{% endif %}
 
     {# --- PWA: servis çalışanı kaydı (kök dizinden /sw.js — bkz. app/__init__.py) --- #}
     <script>

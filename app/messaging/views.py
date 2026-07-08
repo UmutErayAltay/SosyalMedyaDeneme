@@ -1,8 +1,8 @@
 """Konuşma listesi (inbox) + tek bir konuşmanın görüntülenmesi."""
 from concurrent.futures import ThreadPoolExecutor
-from flask import render_template, request, session, abort
+from flask import render_template, request, session, abort, jsonify
 from . import bp
-from ._common import _mark_read, _build_convos
+from ._common import _mark_read, _build_convos, unread_message_count
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 
@@ -17,6 +17,16 @@ def inbox():
     convos = _build_convos(sb, me)
     return render_template("messages/inbox.html", convos=convos, active_id=None,
                            me=session["user"])
+
+
+@bp.route("/unread-count")
+@login_required
+@retry_on_connection_error
+def unread_count():
+    """Navbar rozeti için polling ucu — notifications.js'teki desenin aynısı."""
+    sb = get_sb()
+    me = session["user"]["id"]
+    return jsonify({"count": unread_message_count(sb, me)})
 
 
 @bp.route("/<conversation_id>")

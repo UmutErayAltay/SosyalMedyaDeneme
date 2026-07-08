@@ -109,6 +109,20 @@ def send_message(conversation_id):
     return redirect(url_for("messaging.conversation", conversation_id=conversation_id))
 
 
+@bp.route("/message/<message_id>/delete", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def delete_message(message_id):
+    """Kendi mesajını siler (uygulama katmanı sahiplik kontrolü — comments.py
+    delete_comment() ile aynı desen). message_reactions satırları ON DELETE
+    CASCADE ile otomatik temizlenir (bkz. migration_reactions_schedule_location.sql).
+    Realtime DELETE eventi karşı tarafın panelinden de mesajı canlı kaldırır."""
+    sb = get_sb()
+    me = session["user"]["id"]
+    sb.table("messages").delete().eq("id", message_id).eq("sender_id", me).execute()
+    return jsonify(ok=True)
+
+
 @bp.route("/<conversation_id>/share-post/<post_id>", methods=["POST"])
 @login_required
 @retry_on_connection_error

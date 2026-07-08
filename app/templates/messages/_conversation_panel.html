@@ -102,6 +102,10 @@
                 <button type="button" data-emoji="😢" aria-label="Üzül tepkisi">😢</button>
                 <button type="button" data-emoji="🔥" aria-label="Ateş tepkisi">🔥</button>
             </div>
+            {# Sadece kendi mesajım silinebilir (hover'da belirir, react-trigger'la aynı desen) #}
+            {% if m.sender_id == me.id %}
+            <button class="msg-delete-btn" aria-label="Mesajı sil" type="button">🗑</button>
+            {% endif %}
         </div>
         {% else %}
         <p class="muted center">Konuşmaya başla — ilk mesajı sen yaz.</p>
