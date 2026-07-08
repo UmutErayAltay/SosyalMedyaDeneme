@@ -1,7 +1,30 @@
 """Uygulama fabrikası."""
 import secrets
+from datetime import datetime, timedelta, timezone
 from flask import Flask, session, request, abort, send_from_directory
 from .config import Config
+
+# Sabit UTC+3 — Türkiye 2016'dan beri yaz saati uygulamıyor, bu yüzden
+# zoneinfo/tzdata bağımlılığı (Windows'ta IANA veritabanı gelmiyor, ayrıca
+# kurulum gerektirir) yerine sabit offset kullanmak hem yeterli hem daha
+# güvenilir (dağıtım ortamında eksik paket riski yok).
+_LOCAL_TZ = timezone(timedelta(hours=3))
+
+
+def local_time(value, fmt="%Y-%m-%d %H:%M"):
+    """Supabase'in döndürdüğü UTC ISO timestamp'i yerel saate (UTC+3) çevirir.
+    Önceden şablonlar ham UTC string'i `[:16]` ile kesip doğrudan gösteriyordu
+    (kullanıcı raporu: 19:45'te paylaşılan post 16:44 gösteriyordu — tam 3
+    saatlik UTC farkı, hiç dönüşüm yapılmıyordu)."""
+    if not value:
+        return ""
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(_LOCAL_TZ).strftime(fmt)
+    except Exception:
+        return value[:16].replace("T", " ")  # eski davranışa (ham UTC) düş
 
 
 def _csrf_token() -> str:
@@ -83,6 +106,8 @@ def create_app() -> Flask:
     app.jinja_env.filters["linkify_hashtags"] = linkify_hashtags
     # @kullanıcı etiketlerini (sadece gerçekten var olan kullanıcı adlarını) linkler
     app.jinja_env.filters["linkify_mentions"] = linkify_mentions
+    # Ham UTC timestamp'leri yerel saate (Europe/Istanbul) çevirir
+    app.jinja_env.filters["local_time"] = local_time
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(routes_bp)

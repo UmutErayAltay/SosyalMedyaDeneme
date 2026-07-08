@@ -20,7 +20,7 @@
 <article class="card admin-report-card">
     <header class="admin-report-header">
         <span class="admin-report-type">{{ {'post': '📝 Post', 'comment': '💬 Yorum', 'user': '👤 Kullanıcı'}[r.target_type] }}</span>
-        <span class="muted">{{ r.created_at[:16]|replace('T',' ') }}</span>
+        <span class="muted">{{ r.created_at|local_time }}</span>
         <span class="admin-status-badge admin-status-{{ r.status }}">{{ r.status }}</span>
     </header>
 

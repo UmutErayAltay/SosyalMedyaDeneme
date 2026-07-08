@@ -42,7 +42,7 @@
         {% endif %}
         <a href="{{ url_for('routes.profile', username=post.profiles.username) if post.profiles else '#' }}"
            class="username">{{ post.profiles.username if post.profiles else 'Bilinmeyen' }}</a>
-        <span class="time">{{ post.created_at[:16]|replace('T',' ') }}</span>
+        <span class="time">{{ post.created_at|local_time }}</span>
         {% if post.visibility == 'followers' %}
             <span class="visibility-badge" title="Sadece takipçiler görebilir">🔒</span>
         {% endif %}
@@ -101,20 +101,38 @@
 
 <section class="card comment-form">
     <h3>Yorum Yap</h3>
-    <form id="comment-form" data-post-id="{{ post.id }}">
+    {# Mesaj composer'ıyla aynı görsel dil: ikon butonlar + textarea (içeriğe
+       göre otomatik büyür/küçülür, comments.js) + dairesel gönder butonu tek
+       satırda — önceden Gönder butonu textarea'nın hemen altında sıkışık
+       duruyordu, ayrıca Enter=gönder yoktu (ikisi de kullanıcı isteğiyle
+       eklendi, bkz. comments.js). #}
+    <form id="comment-form" class="composer-comment" data-post-id="{{ post.id }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="sticker_id" value="">
         <input type="hidden" name="gif_url" value="">
-        <div class="comment-form-top">
-            <textarea name="content" id="comment-input" placeholder="Yorumunu yaz..." rows="2"
-                      aria-label="Yorum içeriği"></textarea>
-            <div class="comment-form-actions">
-                <button type="button" class="btn btn-ghost small" aria-label="Çıkartma ekle" data-sticker-picker-btn data-sticker-autosubmit="1">🏷️</button>
-                <button type="button" id="gif-toggle-comment-btn" class="btn btn-ghost small" aria-label="GIF ekle">🎬</button>
-            </div>
+        <div class="comment-form-actions">
+            <button type="button" class="comment-icon-btn" aria-label="Çıkartma ekle" data-sticker-picker-btn data-sticker-autosubmit="1">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+            </button>
+            <button type="button" id="gif-toggle-comment-btn" class="comment-icon-btn" aria-label="GIF ekle">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="1"/>
+                    <circle cx="9" cy="15" r="1"/><circle cx="15" cy="9" r="1"/><circle cx="15" cy="15" r="1"/>
+                </svg>
+            </button>
         </div>
+        <textarea name="content" id="comment-input" placeholder="Yorumunu yaz..." rows="1"
+                  aria-label="Yorum içeriği"></textarea>
+        <button type="submit" class="comment-send-btn" aria-label="Yorumu gönder">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M16.6915026,12.4744748 L3.50612381,13.2599618 C3.19218622,13.2599618 3.03521743,13.4170592 3.03521743,13.5741566 L1.15159189,20.0151496 C0.8376543,20.8006365 0.99,21.89 1.77946707,22.52 C2.41,22.99 3.50612381,23.1 4.13399899,22.8429026 L21.714504,14.0454487 C22.6563168,13.5741566 23.1272231,12.6315722 22.9702544,11.6889879 L4.13399899,1.16554995 C3.50612381,-0.1 2.40999899,0.0570974056 1.77946707,0.4744748 C0.994623095,1.10604706 0.837654326,2.0486314 1.15159189,2.99701575 L3.03521743,9.43800871 C3.03521743,9.59510618 3.34915502,9.75220365 3.50612381,9.75220365 L16.6915026,10.5376906 C16.6915026,10.5376906 17.1624089,10.5376906 17.1624089,11.0089827 L17.1624089,12.0515671 C17.1624089,12.5228591 16.6915026,12.4744748 16.6915026,12.4744748 Z"/>
+            </svg>
+        </button>
         <div data-sticker-preview hidden></div>
-        <button type="submit" class="btn btn-primary">Gönder</button>
     </form>
 
     {# GIF mini panel (yorum için) #}
@@ -139,7 +157,7 @@
             <a href="{{ url_for('routes.profile', username=c.profiles.username) if c.profiles else '#' }}" class="username">
                 {{ c.profiles.username if c.profiles else 'Bilinmeyen' }}
             </a>
-            <span class="time">{{ c.created_at[:16]|replace('T',' ') }}</span>
+            <span class="time">{{ c.created_at|local_time }}</span>
         </div>
         {% if c.sticker %}
         <div class="sticker-wrap">
@@ -170,18 +188,34 @@
             {% endif %}
         </div>
 
-        {# --- Yanıt formu (gizli, tıklayınca açılır) --- #}
+        {# --- Yanıt formu (gizli, tıklayınca açılır) — ana yorum composer'ıyla
+           aynı tek satırlık düzen (ikon + textarea + gönder), bkz. yukarıdaki not --- #}
         <form class="reply-form" data-parent-id="{{ c.id }}" data-post-id="{{ post.id }}" hidden>
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="sticker_id" value="">
             <input type="hidden" name="gif_url" value="">
-            <textarea name="content" placeholder="Yanıtını yaz..." rows="2" aria-label="Yanıt içeriği"></textarea>
-            <div class="reply-form-actions">
-                <button type="button" class="btn btn-ghost small" aria-label="Çıkartma ekle" data-sticker-picker-btn data-sticker-autosubmit="1">🏷️</button>
-                <button type="button" class="reply-gif-toggle-btn btn btn-ghost small" aria-label="GIF ekle">🎬</button>
+            <div class="comment-form-actions">
+                <button type="button" class="comment-icon-btn" aria-label="Çıkartma ekle" data-sticker-picker-btn data-sticker-autosubmit="1">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                </button>
+                <button type="button" class="reply-gif-toggle-btn comment-icon-btn" aria-label="GIF ekle">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="1"/>
+                        <circle cx="9" cy="15" r="1"/><circle cx="15" cy="9" r="1"/><circle cx="15" cy="15" r="1"/>
+                    </svg>
+                </button>
             </div>
+            <textarea name="content" placeholder="Yanıtını yaz..." rows="1" aria-label="Yanıt içeriği"></textarea>
+            <button type="submit" class="comment-send-btn" aria-label="Yanıtı gönder">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M16.6915026,12.4744748 L3.50612381,13.2599618 C3.19218622,13.2599618 3.03521743,13.4170592 3.03521743,13.5741566 L1.15159189,20.0151496 C0.8376543,20.8006365 0.99,21.89 1.77946707,22.52 C2.41,22.99 3.50612381,23.1 4.13399899,22.8429026 L21.714504,14.0454487 C22.6563168,13.5741566 23.1272231,12.6315722 22.9702544,11.6889879 L4.13399899,1.16554995 C3.50612381,-0.1 2.40999899,0.0570974056 1.77946707,0.4744748 C0.994623095,1.10604706 0.837654326,2.0486314 1.15159189,2.99701575 L3.03521743,9.43800871 C3.03521743,9.59510618 3.34915502,9.75220365 3.50612381,9.75220365 L16.6915026,10.5376906 C16.6915026,10.5376906 17.1624089,10.5376906 17.1624089,11.0089827 L17.1624089,12.0515671 C17.1624089,12.5228591 16.6915026,12.4744748 16.6915026,12.4744748 Z"/>
+                </svg>
+            </button>
             <div data-sticker-preview hidden></div>
-            <button type="submit" class="btn btn-primary small">Gönder</button>
         </form>
 
         {# --- Yanıtlar --- #}
@@ -198,7 +232,7 @@
                     <a href="{{ url_for('routes.profile', username=r.profiles.username) if r.profiles else '#' }}" class="username">
                         {{ r.profiles.username if r.profiles else 'Bilinmeyen' }}
                     </a>
-                    <span class="time">{{ r.created_at[:16]|replace('T',' ') }}</span>
+                    <span class="time">{{ r.created_at|local_time }}</span>
                 </div>
                 {% if r.sticker %}
                 <div class="sticker-wrap">

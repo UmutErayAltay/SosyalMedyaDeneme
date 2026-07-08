@@ -32,7 +32,7 @@
         {% if profile.full_name %}<p class="muted">{{ profile.full_name }}</p>{% endif %}
         {% if profile.bio %}<p class="bio">{{ profile.bio }}</p>{% endif %}
         {% if profile.created_at %}
-        <p class="muted">📅 {{ profile.created_at[:7]|replace('-',' ') }} tarihinde katıldı</p>
+        <p class="muted">📅 {{ profile.created_at|local_time('%Y %m') }} tarihinde katıldı</p>
         {% endif %}
 
         <div class="profile-stats">

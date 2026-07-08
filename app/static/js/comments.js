@@ -12,6 +12,37 @@
         return meta ? meta.content : '';
     }
 
+    // --- Otomatik büyüyen textarea (chat.js #msg-input deseniyle aynı) ---
+    // Document-level delegation: yanıt formları dinamik olarak eklenir/açılır,
+    // her birine ayrı listener bağlamaya gerek yok. Kullanıcı isteği: önceden
+    // fare ile manuel resize ediliyordu (global textarea{resize:vertical}).
+    document.addEventListener('input', function (e) {
+        var ta = e.target;
+        if (ta.tagName !== 'TEXTAREA') return;
+        if (ta.id !== 'comment-input' && !ta.closest('.reply-form')) return;
+        ta.style.height = 'auto';
+        ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+    });
+
+    // --- Enter = gönder, Shift+Enter = yeni satır (mesaj composer'ıyla aynı
+    // davranış, kullanıcı isteğiyle eklendi) ---
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' || e.shiftKey) return;
+        var ta = e.target;
+        if (ta.tagName !== 'TEXTAREA') return;
+        if (ta.id === 'comment-input') {
+            e.preventDefault();
+            var mainForm = document.getElementById('comment-form');
+            if (mainForm) mainForm.requestSubmit();
+        } else {
+            var replyForm = ta.closest('.reply-form');
+            if (replyForm) {
+                e.preventDefault();
+                replyForm.requestSubmit();
+            }
+        }
+    });
+
     function buildCommentHtml(data, content) {
         var username = data.username || 'Sen';
         var avatarHtml = data.avatar_url
@@ -133,9 +164,12 @@
             if (!content && !stickerVal && !gifVal) return;
             var postId = form.dataset.postId;
             var submitBtn = form.querySelector('button[type="submit"]');
-            var originalText = submitBtn.textContent;
+            // NOT: submitBtn artık sadece SVG ikon içeriyor (metin YOK) —
+            // önceden burada submitBtn.textContent = 'Gönderiliyor...' yapılıyordu,
+            // bu SVG'yi silip yerine düz metin koyardı. disabled + .busy
+            // (opacity) yeterli görsel geri bildirim.
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Gönderiliyor...';
+            submitBtn.classList.add('busy');
             try {
                 var formData = new FormData(form);
                 formData.set('content', content);
@@ -171,16 +205,23 @@
                     '<input type="hidden" name="csrf_token" value="' + csrfToken() + '">' +
                     '<input type="hidden" name="sticker_id" value="">' +
                     '<input type="hidden" name="gif_url" value="">' +
-                    '<textarea name="content" placeholder="Yanıtını yaz..." rows="2" aria-label="Yanıt içeriği"></textarea>' +
-                    '<div class="reply-form-actions">' +
-                    '<button type="button" class="btn btn-ghost small" aria-label="Çıkartma ekle" data-sticker-picker-btn data-sticker-autosubmit="1">🏷️</button>' +
-                    '<button type="button" class="reply-gif-toggle-btn btn btn-ghost small" aria-label="GIF ekle">🎬</button>' +
+                    '<div class="comment-form-actions">' +
+                    '<button type="button" class="comment-icon-btn" aria-label="Çıkartma ekle" data-sticker-picker-btn data-sticker-autosubmit="1">' +
+                    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
+                    '</button>' +
+                    '<button type="button" class="reply-gif-toggle-btn comment-icon-btn" aria-label="GIF ekle">' +
+                    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="1"/><circle cx="9" cy="15" r="1"/><circle cx="15" cy="9" r="1"/><circle cx="15" cy="15" r="1"/></svg>' +
+                    '</button>' +
                     '</div>' +
+                    '<textarea name="content" placeholder="Yanıtını yaz..." rows="1" aria-label="Yanıt içeriği"></textarea>' +
+                    '<button type="submit" class="comment-send-btn" aria-label="Yanıtı gönder">' +
+                    '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.6915026,12.4744748 L3.50612381,13.2599618 C3.19218622,13.2599618 3.03521743,13.4170592 3.03521743,13.5741566 L1.15159189,20.0151496 C0.8376543,20.8006365 0.99,21.89 1.77946707,22.52 C2.41,22.99 3.50612381,23.1 4.13399899,22.8429026 L21.714504,14.0454487 C22.6563168,13.5741566 23.1272231,12.6315722 22.9702544,11.6889879 L4.13399899,1.16554995 C3.50612381,-0.1 2.40999899,0.0570974056 1.77946707,0.4744748 C0.994623095,1.10604706 0.837654326,2.0486314 1.15159189,2.99701575 L3.03521743,9.43800871 C3.03521743,9.59510618 3.34915502,9.75220365 3.50612381,9.75220365 L16.6915026,10.5376906 C16.6915026,10.5376906 17.1624089,10.5376906 17.1624089,11.0089827 L17.1624089,12.0515671 C17.1624089,12.5228591 16.6915026,12.4744748 16.6915026,12.4744748 Z"/></svg>' +
+                    '</button>' +
                     '<div data-sticker-preview hidden></div>' +
-                    '<button type="submit" class="btn btn-primary small">Gönder</button>' +
                     '</form>';
                 list.appendChild(article);
                 input.value = '';
+                input.style.height = 'auto';
                 // Sticker/GIF inputlarını temizle (sonraki yorum için)
                 form.querySelector('input[name="sticker_id"]').value = '';
                 form.querySelector('input[name="sticker_id"]').dataset.imageUrl = '';
@@ -191,7 +232,7 @@
                 alert('Yorum gönderilemedi.');
             } finally {
                 submitBtn.disabled = false;
-                submitBtn.textContent = originalText;
+                submitBtn.classList.remove('busy');
             }
         });
     }
@@ -385,6 +426,7 @@
             repliesDiv.appendChild(replyArticle);
             replyForm.hidden = true;
             ta.value = '';
+            ta.style.height = 'auto';
             // Sticker/GIF inputlarını temizle (sonraki yanıt için)
             stickerIdInput.value = '';
             stickerIdInput.dataset.imageUrl = '';

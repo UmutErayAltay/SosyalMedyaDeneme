@@ -17,7 +17,7 @@
         <span class="notif-text">
             <strong>{{ n.actor_summary }}</strong> {{ n.text }}
         </span>
-        <span class="time">{{ n.created_at[:16]|replace('T',' ') }}</span>
+        <span class="time">{{ n.created_at|local_time }}</span>
     </a>
     {% else %}
     <p class="muted center">Henüz bildirimin yok.</p>

@@ -86,7 +86,7 @@
                 {% endif %}
                 <a href="{{ url_for('routes.profile', username=p.profiles.username) if p.profiles else '#' }}"
                    class="username">{{ p.profiles.username if p.profiles else 'Bilinmeyen' }}</a>
-                <span class="time">{{ p.created_at[:16]|replace('T',' ') }}</span>
+                <span class="time">{{ p.created_at|local_time }}</span>
                 {% if p.visibility == 'followers' %}
                     <span class="visibility-badge" title="Sadece takipçiler görebilir">🔒</span>
                 {% endif %}

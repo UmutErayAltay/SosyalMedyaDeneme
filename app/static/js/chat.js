@@ -19,6 +19,26 @@
         return '/messages/message/' + msgId + '/react';
     }
 
+    // Supabase created_at UTC ISO döner ("...+00:00"); önceden ham string'in
+    // 11:16 karakterleri kesilip UTC saat yerel saatmiş gibi gösteriliyordu
+    // (kullanıcı raporu: 3 saatlik fark). Sabit +3 saat eklenir — sunucu
+    // tarafındaki local_time filtresiyle (app/__init__.py, aynı gerekçe:
+    // Türkiye 2016'dan beri DST uygulamıyor) tutarlı kalması için tarayıcının
+    // Intl saat dilimi listesine (bazı ortamlarda eksik olabilir) güvenilmez.
+    function formatLocalTime(iso) {
+        if (!iso) return 'şimdi';
+        try {
+            var d = new Date(iso);
+            if (isNaN(d.getTime())) return iso.substring(11, 16);
+            var local = new Date(d.getTime() + 3 * 60 * 60 * 1000);
+            var hh = String(local.getUTCHours()).padStart(2, '0');
+            var mm = String(local.getUTCMinutes()).padStart(2, '0');
+            return hh + ':' + mm;
+        } catch (e) {
+            return iso.substring(11, 16);
+        }
+    }
+
     function buildMessageHtml(msg, isMine, opts) {
         opts = opts || {};
         var cls = isMine ? 'mine' : 'theirs';
@@ -56,7 +76,7 @@
         if (msg.content) {
             html += '<p>' + escapeHtml(msg.content) + '</p>';
         }
-        var time = msg.created_at ? msg.created_at.substring(11, 16) : 'şimdi';
+        var time = formatLocalTime(msg.created_at);
         html += '<span class="time">' + time;
         if (isMine) {
             var read = !!msg.read_at;
@@ -576,7 +596,7 @@
                     }
                     var timeEl = node.querySelector('.time');
                     if (timeEl && saved.created_at) {
-                        timeEl.textContent = saved.created_at.substring(11, 16);
+                        timeEl.textContent = formatLocalTime(saved.created_at);
                     }
                 }
 
@@ -778,17 +798,20 @@
                 if (picker) {
                     if (picker.hasAttribute('hidden')) {
                         closeAllReactPickers(picker);
-                        // Varsayılan tetikleyicinin HEMEN ALTINDA açılır. Mesaj
-                        // stream'in görünür ALT kenarına yakınsa (altta ~48px'lik
-                        // yer yoksa) picker stream dışına taşmasın diye üstte açılır.
-                        var streamEl = document.getElementById('stream');
-                        picker.classList.remove('above');
-                        if (streamEl) {
-                            var streamBottom = streamEl.getBoundingClientRect().bottom;
-                            var msgBottom = msg.getBoundingClientRect().bottom;
-                            if (streamBottom - msgBottom < 48) picker.classList.add('above');
-                        }
+                        // HER ZAMAN tetikleyicinin ALTINDA açılır (kullanıcı isteği
+                        // — asla üstte açılmasın). Sol kenar tam olarak tıklanan
+                        // butonun konumundan başlar (trigger.offsetLeft, .msg'e
+                        // göre — .msg position:relative olduğu için offsetParent'ı
+                        // odur), mesaj kenarına değil.
+                        picker.style.left = trigger.offsetLeft + 'px';
                         picker.removeAttribute('hidden');
+                        // Sağ kenar viewport dışına taşarsa geri çek (görünürlük
+                        // garantisi — konum yine tıklanan noktadan başlar, sadece
+                        // ekrandan taşmayacak kadar sola kayar).
+                        var overflow = picker.getBoundingClientRect().right - window.innerWidth;
+                        if (overflow > 0) {
+                            picker.style.left = (trigger.offsetLeft - overflow - 8) + 'px';
+                        }
                     } else {
                         picker.setAttribute('hidden', '');
                     }
