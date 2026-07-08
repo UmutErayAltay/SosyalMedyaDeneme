@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import time as _time
 from flask import render_template, request, redirect, url_for, session, abort, flash, make_response
 from . import bp
-from ._common import _my_id, _attach_post_metrics, fetch_sidebar_context, PAGE_SIZE
+from ._common import _my_id, _attach_post_metrics, fetch_sidebar_context, fetch_stats_and_bio, PAGE_SIZE
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..storage_helper import upload_images, upload_video
@@ -113,36 +113,9 @@ def feed():
     # --- FAZ B: SADECE tam sayfa render'ında gerekli — hikaye çubuğu, gündem,
     # öneriler, sol profil kartı istatistikleri. Hepsi birbirinden (Faz A'nın
     # sonucu olan blocked_ids dışında) bağımsız, tek pool'da paralel.
-    def _fetch_posts_count():
-        try:
-            return sb.table("posts").select(
-                "id", count="exact", head=True
-            ).eq("user_id", me).eq("is_draft", False).execute().count or 0
-        except Exception:
-            return 0
-
-    def _fetch_followers_count():
-        try:
-            return sb.table("follows").select(
-                "follower_id", count="exact", head=True
-            ).eq("following_id", me).execute().count or 0
-        except Exception:
-            return 0
-
-    def _fetch_following_count():
-        try:
-            return sb.table("follows").select(
-                "following_id", count="exact", head=True
-            ).eq("follower_id", me).execute().count or 0
-        except Exception:
-            return 0
-
-    def _fetch_bio():
-        try:
-            my_bio_row = sb.table("profiles").select("bio").eq("id", me).execute().data
-            return (my_bio_row[0].get("bio") if my_bio_row else None) or None
-        except Exception:
-            return None
+    # post/takipçi/takip sayısı + bio: fetch_stats_and_bio() (TEK RPC, bkz.
+    # _common.py) — önceden burada 4 ayrı sorgu vardı, discover()/post_detail()
+    # ile aynı helper'a birleştirildi (Sprint 59).
 
     def _fetch_recent_media():
         """Sol profil kartı için kendi son medyaların mini önizlemesi (3 görsel)."""
@@ -221,10 +194,7 @@ def feed():
         blocked_fut = executor.submit(blocked_user_ids, sb, me)
         memories_fut = executor.submit(get_memories, sb, me) if page == 1 else None
         trending_fut = executor.submit(_trending_hashtags, sb, hours=24, limit=10)
-        posts_count_fut = executor.submit(_fetch_posts_count)
-        followers_count_fut = executor.submit(_fetch_followers_count)
-        following_count_fut = executor.submit(_fetch_following_count)
-        bio_fut = executor.submit(_fetch_bio)
+        stats_bio_fut = executor.submit(fetch_stats_and_bio, sb, me)
         recent_media_fut = executor.submit(_fetch_recent_media)
         close_friends_fut = executor.submit(_fetch_close_friends)
         following_ids_fut = executor.submit(_fetch_following_ids)
@@ -238,10 +208,7 @@ def feed():
 
         memories = memories_fut.result() if memories_fut else []
         trending_tags = trending_fut.result()
-        my_posts_count = posts_count_fut.result()
-        my_followers_count = followers_count_fut.result()
-        my_following_count = following_count_fut.result()
-        my_bio = bio_fut.result()
+        my_stats, my_bio = stats_bio_fut.result()
         my_recent_media = recent_media_fut.result()
         close_friends_preview = close_friends_fut.result()
         stories_bar = stories_fut.result()
@@ -273,7 +240,7 @@ def feed():
                            page=page, has_next=has_next, trending_tags=trending_tags,
                            suggested_users=suggested_users, stories_bar=stories_bar,
                            memories=memories, valid_usernames=valid_usernames,
-                           my_stats={"posts": my_posts_count, "followers": my_followers_count, "following": my_following_count},
+                           my_stats=my_stats,
                            my_recent_media=my_recent_media, close_friends_preview=close_friends_preview,
                            my_bio=my_bio, recent_activity=recent_activity, my_week_stats=my_week_stats,
                            explore_suggestions=explore_suggestions)

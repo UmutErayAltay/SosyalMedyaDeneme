@@ -13,48 +13,77 @@ from ..supabase_client import get_sb
 PAGE_SIZE = 20
 
 
+def fetch_stats_and_bio(sb, me: str) -> tuple[dict, str | None]:
+    """post/takipçi/takip sayısı + bio — TEK RPC çağrısı (sql/migration_sidebar_stats_rpc.sql).
+
+    Önceden feed()/fetch_sidebar_context() içinde 4 ayrı Supabase sorgusuydu
+    (paralel de olsa 4 ayrı round-trip); RPC henüz uygulanmamışsa veya
+    başarısız olursa eski çok-sorgulu yola (fallback) düşülür. feed(),
+    discover() ve post_detail() sidebar'ları HEPSİ bu tek helper'ı kullanır.
+    """
+    try:
+        data = sb.rpc("sidebar_stats", {"p_me": me}).execute().data or {}
+        return {
+            "posts": data.get("posts_count", 0),
+            "followers": data.get("followers_count", 0),
+            "following": data.get("following_count", 0),
+        }, data.get("bio")
+    except Exception:
+        def _posts_count():
+            try:
+                return sb.table("posts").select(
+                    "id", count="exact", head=True
+                ).eq("user_id", me).eq("is_draft", False).execute().count or 0
+            except Exception:
+                return 0
+
+        def _followers_count():
+            try:
+                return sb.table("follows").select(
+                    "follower_id", count="exact", head=True
+                ).eq("following_id", me).execute().count or 0
+            except Exception:
+                return 0
+
+        def _following_count():
+            try:
+                return sb.table("follows").select(
+                    "following_id", count="exact", head=True
+                ).eq("follower_id", me).execute().count or 0
+            except Exception:
+                return 0
+
+        def _bio():
+            try:
+                rows = sb.table("profiles").select("bio").eq("id", me).execute().data
+                return (rows[0].get("bio") if rows else None) or None
+            except Exception:
+                return None
+
+        with ThreadPoolExecutor(max_workers=4) as fb_executor:
+            pc_fut = fb_executor.submit(_posts_count)
+            fc_fut = fb_executor.submit(_followers_count)
+            gc_fut = fb_executor.submit(_following_count)
+            bio_fut = fb_executor.submit(_bio)
+            return {
+                "posts": pc_fut.result(),
+                "followers": fc_fut.result(),
+                "following": gc_fut.result(),
+            }, bio_fut.result()
+
+
 def fetch_sidebar_context(sb, me: str, include_activity: bool = True) -> dict:
     """Feed/keşfet/post detay yan panellerinin ortak verisi — hepsi paralel.
 
     Döner: my_stats, my_bio, close_friends_preview, suggested_users,
     trending_tags, recent_activity. Feed kendi FAZ B bloğunu kullanmaya devam
-    eder (ekstra alanları var); bu helper keşfet + post detay içindir.
+    eder (ekstra alanları var, `fetch_stats_and_bio` ortak); bu helper keşfet
+    + post detay içindir.
     """
     # Lazy import: hashtags.py routes'tan lazy import yapıyor, ters yönde
     # top-level import döngü riskini sıfırlamak için burada da lazy tutulur.
     from ..hashtags import _trending_hashtags
     from ..blocks import blocked_user_ids
-
-    def _posts_count():
-        try:
-            return sb.table("posts").select(
-                "id", count="exact", head=True
-            ).eq("user_id", me).eq("is_draft", False).execute().count or 0
-        except Exception:
-            return 0
-
-    def _followers_count():
-        try:
-            return sb.table("follows").select(
-                "follower_id", count="exact", head=True
-            ).eq("following_id", me).execute().count or 0
-        except Exception:
-            return 0
-
-    def _following_count():
-        try:
-            return sb.table("follows").select(
-                "following_id", count="exact", head=True
-            ).eq("follower_id", me).execute().count or 0
-        except Exception:
-            return 0
-
-    def _bio():
-        try:
-            rows = sb.table("profiles").select("bio").eq("id", me).execute().data
-            return (rows[0].get("bio") if rows else None) or None
-        except Exception:
-            return None
 
     def _close_friends():
         try:
@@ -82,23 +111,15 @@ def fetch_sidebar_context(sb, me: str, include_activity: bool = True) -> dict:
         except Exception:
             return []
 
-    with ThreadPoolExecutor(max_workers=9) as executor:
-        posts_count_fut = executor.submit(_posts_count)
-        followers_count_fut = executor.submit(_followers_count)
-        following_count_fut = executor.submit(_following_count)
-        bio_fut = executor.submit(_bio)
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        stats_bio_fut = executor.submit(fetch_stats_and_bio, sb, me)
         close_friends_fut = executor.submit(_close_friends)
         trending_fut = executor.submit(_trending_hashtags, sb, hours=24, limit=10)
         following_ids_fut = executor.submit(_following_ids)
         blocked_fut = executor.submit(blocked_user_ids, sb, me)
         activity_fut = executor.submit(_recent_activity)
 
-        my_stats = {
-            "posts": posts_count_fut.result(),
-            "followers": followers_count_fut.result(),
-            "following": following_count_fut.result(),
-        }
-        my_bio = bio_fut.result()
+        my_stats, my_bio = stats_bio_fut.result()
         close_friends_preview = close_friends_fut.result()
         trending_tags = trending_fut.result()
         following_ids = following_ids_fut.result()

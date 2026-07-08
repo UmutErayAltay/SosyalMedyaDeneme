@@ -778,15 +778,15 @@
                 if (picker) {
                     if (picker.hasAttribute('hidden')) {
                         closeAllReactPickers(picker);
-                        // Varsayılan balonun ÜSTÜNDE açılır (son mesajda alta
-                        // açılınca stream dışına taşıyordu) — mesaj stream'in
-                        // görünür üst kenarına yakınsa alta açılır.
+                        // Varsayılan tetikleyicinin HEMEN ALTINDA açılır. Mesaj
+                        // stream'in görünür ALT kenarına yakınsa (altta ~48px'lik
+                        // yer yoksa) picker stream dışına taşmasın diye üstte açılır.
                         var streamEl = document.getElementById('stream');
-                        picker.classList.remove('below');
+                        picker.classList.remove('above');
                         if (streamEl) {
-                            var msgTop = msg.getBoundingClientRect().top;
-                            var streamTop = streamEl.getBoundingClientRect().top;
-                            if (msgTop - streamTop < 48) picker.classList.add('below');
+                            var streamBottom = streamEl.getBoundingClientRect().bottom;
+                            var msgBottom = msg.getBoundingClientRect().bottom;
+                            if (streamBottom - msgBottom < 48) picker.classList.add('above');
                         }
                         picker.removeAttribute('hidden');
                     } else {

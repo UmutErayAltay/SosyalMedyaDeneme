@@ -869,18 +869,21 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 }
 .msg:hover .msg-react-trigger { opacity: 0.7; }
 
-/* Emoji seçim paneli — balonun ÜSTÜNDE açılır (.msg position:relative'e
-   göre); mesaj stream'in görünür üst kenarına yakınsa chat.js .below
-   ekleyip altta açar. Kendi balonumda sağa hizalanır. */
+/* Emoji seçim paneli — varsayılan olarak tetikleyici butonun (🙂+) HEMEN
+   ALTINDA açılır (kullanıcı isteği: önceden üstte açılıyordu, sohbetin
+   üstünde beliriyormuş gibi görünüyordu). Mesaj stream'in görünür ALT
+   kenarına yakınsa (altta yeterli yer yoksa) chat.js .above ekleyip üstte
+   açar — .msg position:relative'e göre konumlanır. Kendi balonumda sağa
+   hizalanır. */
 .msg-react-picker {
     position: absolute; z-index: 40; display: flex; gap: 4px;
-    bottom: calc(100% + 4px); left: 0;
+    top: calc(100% + 4px); left: 0;
     background: var(--card); border: 1px solid var(--border);
     border-radius: var(--radius-full); padding: 4px 8px;
     box-shadow: 0 4px 16px rgba(43, 36, 32, 0.18);
 }
 .msg.mine .msg-react-picker { left: auto; right: 0; }
-.msg-react-picker.below { bottom: auto; top: calc(100% + 4px); }
+.msg-react-picker.above { top: auto; bottom: calc(100% + 4px); }
 .msg-react-picker[hidden] { display: none; }
 .msg-react-picker button {
     background: none; border: none; font-size: 18px; cursor: pointer;
