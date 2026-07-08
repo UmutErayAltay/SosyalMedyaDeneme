@@ -2110,3 +2110,54 @@ header[role="banner"] {
 .gif-picker-comment-panel[hidden] { display: none; }
 .reply-form[hidden] { display: none; }
 [data-sticker-preview][hidden] { display: none; }
+
+/* === Profil Aksiyonları Menüleri === */
+
+/* Takip menüsü (takip ediyorsam) */
+.profile-follow-menu-wrap { position: relative; display: inline-block; }
+.profile-follow-menu-btn {
+    padding: 8px 12px; font-size: 14px;
+    white-space: nowrap;
+}
+.profile-follow-menu {
+    position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: 0 4px 16px rgba(43, 36, 32, 0.15);
+    display: flex; flex-direction: column; min-width: 200px; padding: 6px;
+}
+.profile-follow-menu[hidden] { display: none; }
+.profile-follow-menu-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: 8px; cursor: pointer;
+    background: none; border: none; font-size: 14px; color: var(--text);
+    text-align: left; width: 100%; transition: background 0.1s;
+}
+.profile-follow-menu-item:hover { background: var(--border); }
+
+/* ⋯ menüsü (Engelle + Şikayet Et) */
+.profile-actions-menu-wrap { position: relative; display: inline-block; }
+.profile-actions-menu-btn {
+    width: 40px; height: 40px; padding: 0;
+    border-radius: 50%; border: 1px solid var(--border);
+    background: var(--card); color: var(--text);
+    font-size: 16px; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+}
+.profile-actions-menu-btn:hover,
+.profile-actions-menu-btn[aria-expanded="true"] { background: var(--border); }
+.profile-actions-menu {
+    position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 30;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: 0 4px 16px rgba(43, 36, 32, 0.15);
+    display: flex; flex-direction: column; min-width: 160px; padding: 6px;
+}
+.profile-actions-menu[hidden] { display: none; }
+.profile-actions-menu-form { display: contents; }
+.profile-actions-menu-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: 8px; cursor: pointer;
+    background: none; border: none; font-size: 14px; color: var(--text);
+    text-align: left; width: 100%; transition: background 0.1s;
+}
+.profile-actions-menu-item:hover { background: var(--border); }

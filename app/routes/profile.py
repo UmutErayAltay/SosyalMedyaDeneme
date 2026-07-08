@@ -241,12 +241,26 @@ def profile(username):
     # Toplam beğeni (kullanıcının tüm postlarına gelen)
     total_likes = sum(p.get("like_count", 0) for p in posts)
 
+    # Yakın arkadaş durumu (profil menüsünde göstermek için)
+    is_close_friend = False
+    if not is_self and is_following:
+        try:
+            # DİKKAT: tabloda 'id' kolonu YOK (PK owner_id+friend_id) — 'id'
+            # seçmek PostgREST hatası verip durumu hep False gösterirdi
+            cf = sb.table("close_friends").select("owner_id", count="exact", head=True).eq(
+                "owner_id", me).eq("friend_id", prof["id"]).execute()
+            is_close_friend = bool(cf.count and cf.count > 0)
+        except Exception:
+            # Henüz active değilse, graceful degrade
+            pass
+
     return render_template("profile.html", profile=prof, posts=posts,
                            media_posts=media_posts, liked_posts=liked_posts,
                            bookmarked_posts=bookmarked_posts,
                            bookmark_collections=bookmark_collections,
                            is_self=is_self, is_following=is_following,
-                           is_blocked_by_me=is_blocked_by_me, me=session.get("user"),
+                           is_blocked_by_me=is_blocked_by_me, is_close_friend=is_close_friend,
+                           me=session.get("user"),
                            valid_usernames=valid_usernames,
                            highlights=highlights,
                            stats={

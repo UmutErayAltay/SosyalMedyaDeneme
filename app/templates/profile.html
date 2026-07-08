@@ -53,32 +53,83 @@
                     <button type="submit" class="btn btn-ghost">Engeli kaldır</button>
                 </form>
             {% else %}
-                <button type="button"
-                        class="btn follow-btn {{ 'btn-ghost' if is_following else 'btn-primary' }}"
-                        data-following="{{ '1' if is_following else '0' }}"
-                        data-username="{{ profile.username }}"
-                        data-follow-url="{{ url_for('social.toggle_follow', username=profile.username) }}"
-                        aria-label="{{ 'Takipten çık' if is_following else 'Takip et' }}">
-                    {{ 'Takipten çık' if is_following else 'Takip et' }}
-                </button>
+                {# Takip menüsü (takip ediyorsam) ya da takip butonu #}
+                {% if is_following %}
+                    <div class="profile-follow-menu-wrap">
+                        <button type="button"
+                                class="btn btn-ghost profile-follow-menu-btn"
+                                data-username="{{ profile.username }}"
+                                data-user-id="{{ profile.id }}"
+                                data-following="1"
+                                data-follow-url="{{ url_for('social.toggle_follow', username=profile.username) }}"
+                                data-add-close-friend-url="{{ url_for('close_friends.add_close_friend') }}"
+                                data-remove-close-friend-url="{{ url_for('close_friends.remove_close_friend', user_id=profile.id) }}"
+                                data-is-close-friend="{{ '1' if is_close_friend else '0' }}"
+                                aria-label="Takip seçenekleri"
+                                aria-haspopup="menu"
+                                aria-expanded="false">
+                            ✓ Takip ▾
+                        </button>
+                        <div class="profile-follow-menu" role="menu" hidden>
+                            <button type="button" class="profile-follow-menu-item" data-action="unfollow">
+                                ❌ Takipten çık
+                            </button>
+                            <button type="button" class="profile-follow-menu-item" data-action="close-friend">
+                                💚 <span class="close-friend-text">{{ 'Yakın arkadaşlardan çıkar' if is_close_friend else 'Yakın arkadaşlara ekle' }}</span>
+                            </button>
+                        </div>
+                    </div>
+                {% else %}
+                    {# user-id + yakın arkadaş URL'leri: takip sonrası butonun
+                       menüye dönüşümünde (createFollowMenu) taşınmaları gerekir #}
+                    <button type="button"
+                            class="btn btn-primary profile-follow-btn"
+                            data-following="0"
+                            data-username="{{ profile.username }}"
+                            data-user-id="{{ profile.id }}"
+                            data-follow-url="{{ url_for('social.toggle_follow', username=profile.username) }}"
+                            data-add-close-friend-url="{{ url_for('close_friends.add_close_friend') }}"
+                            data-remove-close-friend-url="{{ url_for('close_friends.remove_close_friend', user_id=profile.id) }}"
+                            aria-label="Takip et">
+                        Takip et
+                    </button>
+                {% endif %}
+
                 <form action="{{ url_for('messaging.start_conversation', username=profile.username) }}"
                       method="post" class="inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-ghost">Mesaj gönder</button>
                 </form>
-                <form action="{{ url_for('blocks.toggle_block', username=profile.username) }}"
-                      method="post" class="inline"
-                      onsubmit="return confirm('{{ profile.username }} kullanıcısını engellemek istediğine emin misin?')">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-ghost danger">Engelle</button>
-                </form>
-                <form action="{{ url_for('reports.create_report') }}" method="post" class="inline"
-                      onsubmit="return confirm('{{ profile.username }} kullanıcısını şikayet etmek istediğine emin misin?')">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="target_type" value="user">
-                    <input type="hidden" name="target_id" value="{{ profile.id }}">
-                    <button type="submit" class="btn btn-ghost">🚩 Şikayet et</button>
-                </form>
+
+                {# ⋯ menüsü: Engelle + Şikayet Et #}
+                <div class="profile-actions-menu-wrap">
+                    <button type="button"
+                            class="btn btn-ghost profile-actions-menu-btn"
+                            aria-label="Daha fazla seçenek"
+                            aria-haspopup="menu"
+                            aria-expanded="false">
+                        ⋯
+                    </button>
+                    <div class="profile-actions-menu" role="menu" hidden>
+                        <form action="{{ url_for('blocks.toggle_block', username=profile.username) }}"
+                              method="post" class="profile-actions-menu-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="profile-actions-menu-item"
+                                    onclick="return confirm('{{ profile.username }} kullanıcısını engellemek istediğine emin misin?')">
+                                🚫 Engelle
+                            </button>
+                        </form>
+                        <form action="{{ url_for('reports.create_report') }}" method="post" class="profile-actions-menu-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="target_type" value="user">
+                            <input type="hidden" name="target_id" value="{{ profile.id }}">
+                            <button type="submit" class="profile-actions-menu-item"
+                                    onclick="return confirm('{{ profile.username }} kullanıcısını şikayet etmek istediğine emin misin?')">
+                                🚩 Şikayet et
+                            </button>
+                        </form>
+                    </div>
+                </div>
             {% endif %}
         </div>
     </div>
