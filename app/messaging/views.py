@@ -123,6 +123,28 @@ def conversation(conversation_id):
         for m in messages:
             m["reactions"] = []
 
+    # Sticker'ları bağla — sticker_id sütunu henüz yoksa sessizce boş
+    try:
+        if messages:
+            sticker_ids = [m.get("sticker_id") for m in messages if m.get("sticker_id")]
+            stickers_by_id = {}
+            if sticker_ids:
+                stickers_raw = sb.table("stickers").select(
+                    "id, image_url"
+                ).in_("id", sticker_ids).execute().data
+                for s in stickers_raw:
+                    stickers_by_id[s["id"]] = {"id": s["id"], "image_url": s["image_url"]}
+
+            for m in messages:
+                if m.get("sticker_id") and m.get("sticker_id") in stickers_by_id:
+                    m["sticker"] = stickers_by_id[m["sticker_id"]]
+                else:
+                    m["sticker"] = None
+    except Exception:
+        # stickers tablosu henüz oluşturulmamış — sticker'lar None
+        for m in messages:
+            m["sticker"] = None
+
     other_user = None if is_group else (other_profiles[0] if other_profiles else None)
     # Supabase Realtime INSERT payload'ı sadece ham satırı verir (join yok) —
     # grup sohbetinde yeni mesajın kimden geldiğini göstermek için client-side

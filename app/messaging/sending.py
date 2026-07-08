@@ -26,6 +26,8 @@ def send_message(conversation_id):
     has_image = image_file and image_file.filename
     audio_file = request.files.get("audio")
     has_audio = audio_file and audio_file.filename
+    sticker_id = request.form.get("sticker_id", "").strip()
+    gif_url = request.form.get("gif_url", "").strip()
     wants_json = "application/json" in request.headers.get("Accept", "")
 
     # Engelleme: konuşma bir engellemeden ÖNCE başlamış olabilir — her mesaj
@@ -39,7 +41,23 @@ def send_message(conversation_id):
         flash("Bu kullanıcıyla mesajlaşamazsın.", "error")
         return redirect(url_for("messaging.conversation", conversation_id=conversation_id))
 
-    if not content and not has_image and not has_audio:
+    # Sticker var mı kontrol et
+    if sticker_id:
+        try:
+            sticker = sb.table("stickers").select("id, image_url").eq("id", sticker_id).execute()
+            if not sticker.data:
+                if wants_json:
+                    return jsonify({"error": "sticker_not_found"}), 400
+                flash("Çıkartma bulunamadı.", "error")
+                return redirect(url_for("messaging.conversation", conversation_id=conversation_id))
+        except Exception:
+            sticker_id = None  # Tablo yoksa sticker_id'yi yok say
+
+    # GIF URL kontrolü — sadece Klipy'den kabul et
+    if gif_url and not gif_url.startswith("https://static.klipy.com/"):
+        gif_url = None
+
+    if not content and not has_image and not has_audio and not sticker_id and not gif_url:
         if wants_json:
             return jsonify({"error": "empty"}), 400
         return redirect(url_for("messaging.conversation", conversation_id=conversation_id))
@@ -62,6 +80,11 @@ def send_message(conversation_id):
             flash("Sesli mesaj yüklenemedi (geçersiz format veya 10MB'tan büyük).", "error")
             return redirect(url_for("messaging.conversation", conversation_id=conversation_id))
 
+    # GIF ayrı bir kolona DEĞİL image_url'e yazılır — messages'ta gif_url
+    # kolonu yok ve mevcut görsel render akışı GIF'i olduğu gibi gösterir
+    if gif_url and not image_url:
+        image_url = gif_url
+
     insert_data = {
         "conversation_id": conversation_id,
         "sender_id": me,
@@ -69,11 +92,13 @@ def send_message(conversation_id):
         "image_url": image_url,
     }
     try:
-        # sql/migration_voice_messages.sql henüz uygulanmamışsa 'audio_url'
-        # kolonu yok — mesaj gönderimi bundan etkilenmesin diye kolonsuz dene
+        # Opsiyonel kolonlar: audio_url, sticker_id
+        # Henüz migration uygulanmamışsa bunlar yok — kolonsuz insert'e düş
         data = dict(insert_data)
         if audio_url:
             data["audio_url"] = audio_url
+        if sticker_id:
+            data["sticker_id"] = sticker_id
         inserted = sb.table("messages").insert(data).execute()
     except Exception:
         inserted = sb.table("messages").insert(insert_data).execute()

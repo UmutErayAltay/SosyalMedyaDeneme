@@ -64,19 +64,47 @@ def toggle_like(post_id):
 @retry_on_connection_error
 def add_comment(post_id):
     content = request.form.get("content", "").strip()
-    if not content:
+    sticker_id = request.form.get("sticker_id", "").strip()
+    gif_url = request.form.get("gif_url", "").strip()
+
+    # Sticker var mı kontrol et
+    me = session["user"]
+    sb = get_sb()
+    if sticker_id:
+        try:
+            sticker = sb.table("stickers").select("id").eq("id", sticker_id).execute()
+            if not sticker.data:
+                sticker_id = None
+        except Exception:
+            sticker_id = None
+
+    # GIF URL kontrolü — sadece Klipy'den kabul et
+    if gif_url and not gif_url.startswith("https://static.klipy.com/"):
+        gif_url = None
+
+    # Content veya sticker/gif olmalı
+    if not content and not sticker_id and not gif_url:
         if request.headers.get("X-Requested-With") == "fetch":
             return jsonify(error="Boş yorum yapılamaz"), 400
         flash("Boş yorum yapılamaz.", "error")
         return redirect(url_for("routes.post_detail", post_id=post_id))
 
-    me = session["user"]
-    sb = get_sb()
-    res = sb.table("comments").insert({
+    # Insert data
+    insert_data = {
         "post_id": post_id,
         "user_id": me["id"],
         "content": content,
-    }).execute()
+    }
+    try:
+        # Opsiyonel kolonlar: sticker_id, gif_url
+        data = dict(insert_data)
+        if sticker_id:
+            data["sticker_id"] = sticker_id
+        if gif_url:
+            data["gif_url"] = gif_url
+        res = sb.table("comments").insert(data).execute()
+    except Exception:
+        res = sb.table("comments").insert(insert_data).execute()
     comment_id = res.data[0]["id"] if res.data else None
 
     post = sb.table("posts").select("user_id").eq("id", post_id).execute().data
@@ -157,20 +185,49 @@ def toggle_comment_like(comment_id):
 @retry_on_connection_error
 def reply_comment(post_id, parent_id):
     content = request.form.get("content", "").strip()
-    if not content:
+    sticker_id = request.form.get("sticker_id", "").strip()
+    gif_url = request.form.get("gif_url", "").strip()
+
+    me = session["user"]
+    sb = get_sb()
+
+    # Sticker var mı kontrol et
+    if sticker_id:
+        try:
+            sticker = sb.table("stickers").select("id").eq("id", sticker_id).execute()
+            if not sticker.data:
+                sticker_id = None
+        except Exception:
+            sticker_id = None
+
+    # GIF URL kontrolü — sadece Klipy'den kabul et
+    if gif_url and not gif_url.startswith("https://static.klipy.com/"):
+        gif_url = None
+
+    # Content veya sticker/gif olmalı
+    if not content and not sticker_id and not gif_url:
         if request.headers.get("X-Requested-With") == "fetch":
             return jsonify(error="Boş yorum yapılamaz"), 400
         flash("Boş yorum yapılamaz.", "error")
         return redirect(url_for("routes.post_detail", post_id=post_id))
 
-    me = session["user"]
-    sb = get_sb()
-    res = sb.table("comments").insert({
+    # Insert data
+    insert_data = {
         "post_id": post_id,
         "user_id": me["id"],
         "content": content,
         "parent_comment_id": parent_id,
-    }).execute()
+    }
+    try:
+        # Opsiyonel kolonlar: sticker_id, gif_url
+        data = dict(insert_data)
+        if sticker_id:
+            data["sticker_id"] = sticker_id
+        if gif_url:
+            data["gif_url"] = gif_url
+        res = sb.table("comments").insert(data).execute()
+    except Exception:
+        res = sb.table("comments").insert(insert_data).execute()
     comment_id = res.data[0]["id"] if res.data else None
 
     parent = sb.table("comments").select("user_id").eq("id", parent_id).execute().data

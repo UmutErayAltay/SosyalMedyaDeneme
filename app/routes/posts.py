@@ -528,6 +528,19 @@ def post_detail(post_id):
         c["like_count"] = c["comment_likes"][0]["count"] if c.get("comment_likes") else 0
         c["liked_by_me"] = c["id"] in my_comment_likes
 
+    # Sticker'ları bağla — tek IN sorgusu (N+1 yok), tablo yoksa sessizce None
+    try:
+        sticker_ids = [c["sticker_id"] for c in comments if c.get("sticker_id")]
+        stickers_by_id = {}
+        if sticker_ids:
+            for s in sb.table("stickers").select("id, image_url").in_("id", sticker_ids).execute().data:
+                stickers_by_id[s["id"]] = {"id": s["id"], "image_url": s["image_url"]}
+        for c in comments:
+            c["sticker"] = stickers_by_id.get(c.get("sticker_id"))
+    except Exception:
+        for c in comments:
+            c["sticker"] = None
+
     # Hiyerarşik yapı: ana yorumlar + cevaplar
     top_comments = [c for c in comments if not c.get("parent_comment_id")]
     for tc in top_comments:
