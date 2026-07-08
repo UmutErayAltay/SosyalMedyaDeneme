@@ -113,6 +113,8 @@
         {% if is_self %}
         <button type="button" role="tab" id="tab-bookmarks" aria-selected="false"
                 aria-controls="panel-bookmarks" class="tab-btn" tabindex="-1">Kaydedilenler</button>
+        <button type="button" role="tab" id="tab-stickers" aria-selected="false"
+                aria-controls="panel-stickers" class="tab-btn" tabindex="-1">🏷️ Çıkartmalarım</button>
         {% endif %}
     </div>
 
@@ -192,6 +194,13 @@
             <p class="muted">Henüz kaydedilen post yok.</p>
         {% endfor %}
     </section>
+
+    <section id="panel-stickers" role="tabpanel" aria-labelledby="tab-stickers" class="tabpanel" hidden>
+        <h2 class="sr-only">Çıkartmalarım</h2>
+        <div id="stickers-profile-grid" class="sticker-profile-grid">
+            <p class="muted center">Yükleniyor...</p>
+        </div>
+    </section>
     {% endif %}
 </div>
 
@@ -224,4 +233,108 @@
 <script src="{{ url_for('static', filename='js/collections.js') }}"></script>
 <script src="{{ url_for('static', filename='js/profileTabs.js') }}"></script>
 <script src="{{ url_for('static', filename='js/storyHighlights.js') }}"></script>
+<script src="{{ url_for('static', filename='js/stickers.js') }}"></script>
+<script>
+    // Çıkartmalar sekmesi: lazy yükleme
+    document.addEventListener('click', function (e) {
+        var tab = e.target.closest('#tab-stickers');
+        if (!tab || tab.getAttribute('aria-selected') === 'true') return;
+
+        setTimeout(function () {
+            var grid = document.getElementById('stickers-profile-grid');
+            if (!grid) return;
+
+            grid.innerHTML = '<p class="muted center">Yükleniyor...</p>';
+
+            fetch('/stickers/mine')
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    grid.innerHTML = '';
+
+                    if (!data.stickers || data.stickers.length === 0) {
+                        grid.innerHTML = '<p class="muted center">Henüz çıkartma yok. <button type="button" class="btn btn-ghost small sticker-upload-profile-btn">➕ Yükle</button></p>';
+                        return;
+                    }
+
+                    var itemsHtml = '<div class="sticker-grid">';
+                    data.stickers.forEach(function (s) {
+                        itemsHtml += '<div class="sticker-item-wrap">' +
+                            '<div class="sticker-item" data-sticker-id="' + s.id + '">' +
+                            '<img src="' + s.image_url + '" alt="Sticker" class="sticker-item-img">' +
+                            (s.mine_created ? '<button type="button" class="sticker-delete-profile-btn" data-sticker-id="' + s.id + '" aria-label="Sil">🗑</button>' : '') +
+                            '</div>' +
+                            '</div>';
+                    });
+                    itemsHtml += '<div class="sticker-item-wrap sticker-upload-wrap"><button type="button" class="sticker-upload-profile-btn" aria-label="Sticker yükle">➕ Yükle</button><input type="file" name="sticker-file-profile" accept="image/*" hidden></div>';
+                    itemsHtml += '</div>';
+
+                    grid.innerHTML = itemsHtml;
+                })
+                .catch(function (e) {
+                    console.error('Sticker yüklenemedi:', e);
+                    grid.innerHTML = '<p class="muted">Hata: Sticker yüklenemedi.</p>';
+                });
+        }, 0);
+    });
+
+    // Profil upload ve delete
+    document.addEventListener('change', function (e) {
+        if (e.target.name !== 'sticker-file-profile') return;
+
+        var file = e.target.files[0];
+        if (!file) return;
+
+        var formData = new FormData();
+        formData.append('image', file);
+
+        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        var csrfToken = csrfMeta ? csrfMeta.content : '';
+
+        fetch('/stickers/new', {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': csrfToken },
+            body: formData
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.id) {
+                    // Sekmesini tıkla yeniden yükle
+                    var tab = document.getElementById('tab-stickers');
+                    if (tab) tab.click();
+                }
+            })
+            .catch(function (e) { console.error('Sticker yüklenemedi:', e); });
+    });
+
+    document.addEventListener('click', function (e) {
+        var uploadBtn = e.target.closest('.sticker-upload-profile-btn');
+        if (uploadBtn) {
+            e.preventDefault();
+            var fileInput = uploadBtn.parentNode.querySelector('input[name="sticker-file-profile"]');
+            if (fileInput) fileInput.click();
+        }
+
+        var deleteBtn = e.target.closest('.sticker-delete-profile-btn');
+        if (deleteBtn) {
+            e.preventDefault();
+            var stickerId = deleteBtn.dataset.stickerId;
+            if (!stickerId) return;
+
+            var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+            var csrfToken = csrfMeta ? csrfMeta.content : '';
+
+            fetch('/stickers/' + stickerId + '/remove', {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': csrfToken }
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.ok) {
+                        deleteBtn.closest('.sticker-item').parentNode.remove();
+                    }
+                })
+                .catch(function (e) { console.error('Sticker silinemedi:', e); });
+        }
+    });
+</script>
 {% endblock %}

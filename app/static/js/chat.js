@@ -141,6 +141,12 @@
         var stream = document.getElementById('stream');
         var imageInput = document.getElementById('msg-image-input');
         var imageName = document.getElementById('msg-image-name');
+        var gifToggleBtn = document.getElementById('gif-toggle-msg-btn');
+        var gifPickerPanel = document.getElementById('gif-picker-msg-panel');
+        var gifSearchInput = document.getElementById('gif-search-msg-input');
+        var gifResults = document.getElementById('gif-results-msg');
+        var gifLoadingMsg = document.getElementById('gif-loading-msg-msg');
+        var gifUrlInput = form ? form.querySelector('input[name="gif_url"]') : null;
         if (!panel || !form || !input || !stream) return;
 
         var conversationId = panel.dataset.conversationId;
@@ -340,6 +346,72 @@
             voiceDiscardBtn.addEventListener('click', resetVoiceUI);
         }
 
+        // --- GIF Toggle ve Search ---
+        if (gifToggleBtn && gifPickerPanel) {
+            gifToggleBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (gifPickerPanel.hidden) {
+                    gifPickerPanel.hidden = false;
+                    if (gifSearchInput) gifSearchInput.focus();
+                    // İlk açılışta trending GIF'leri fetch et
+                    if (!gifResults.innerHTML) {
+                        searchGifsMsg('');
+                    }
+                } else {
+                    gifPickerPanel.hidden = true;
+                }
+            });
+        }
+
+        function searchGifsMsg(q) {
+            if (!gifLoadingMsg || !gifResults) return;
+            gifLoadingMsg.hidden = false;
+            gifResults.innerHTML = '';
+            fetch('/gif/search?q=' + encodeURIComponent(q))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    gifLoadingMsg.hidden = true;
+                    if (data.disabled) {
+                        gifPickerPanel.innerHTML = '<p class="muted center">GIF servisi şu anda kullanılamıyor.</p>';
+                        gifToggleBtn.hidden = true;
+                        return;
+                    }
+                    if (!data.gifs || data.gifs.length === 0) {
+                        gifResults.innerHTML = '<p class="muted center">Sonuç bulunamadı.</p>';
+                        return;
+                    }
+                    data.gifs.forEach(function (gif) {
+                        var img = document.createElement('img');
+                        img.src = gif.preview || gif.url;
+                        img.alt = 'GIF';
+                        img.className = 'gif-picker-img';
+                        img.addEventListener('click', function () {
+                            selectGifMsg(gif.url);
+                        });
+                        gifResults.appendChild(img);
+                    });
+                })
+                .catch(function (e) {
+                    gifLoadingMsg.hidden = true;
+                    gifResults.innerHTML = '<p class="muted center">Hata: ' + e.message + '</p>';
+                });
+        }
+
+        function selectGifMsg(url) {
+            if (gifUrlInput) gifUrlInput.value = url;
+            gifPickerPanel.hidden = true;
+            form.requestSubmit();
+        }
+
+        if (gifSearchInput) {
+            var gifSearchTimer = null;
+            gifSearchInput.addEventListener('input', function () {
+                var q = this.value;
+                clearTimeout(gifSearchTimer);
+                gifSearchTimer = setTimeout(function () { searchGifsMsg(q); }, 300);
+            });
+        }
+
         // --- Form submit: AJAX + optimistic UI (görsel VEYA sesli kayıt) ---
         form.addEventListener('submit', async function (e) {
             e.preventDefault();
@@ -379,14 +451,20 @@
 
             var content = input.value.trim();
             var hasImage = imageInput && imageInput.files.length > 0;
-            if (!content && !hasImage) return;
+            var stickerIdInput = form.querySelector('input[name="sticker_id"]');
+            var stickerVal = stickerIdInput ? stickerIdInput.value : '';
+            var gifVal = gifUrlInput ? gifUrlInput.value : '';
+            // Sticker/GIF seçiliyken metin boş olabilir
+            if (!content && !hasImage && !stickerVal && !gifVal) return;
 
             sendTyping(false);
             var submitBtn = form.querySelector('button[type="submit"]');
             submitBtn.disabled = true;
 
             var tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-            var localImageUrl = hasImage ? URL.createObjectURL(imageInput.files[0]) : null;
+            // Optimistic balonda GIF/sticker da görsel olarak gösterilir
+            var localImageUrl = hasImage ? URL.createObjectURL(imageInput.files[0])
+                : (gifVal || (stickerVal && stickerIdInput.dataset.imageUrl) || null);
 
             var node = appendMessage(
                 { content: content, image_url: localImageUrl, created_at: null },
@@ -430,6 +508,13 @@
                 }
 
                 if (imageInput) imageInput.value = '';
+                // Sticker/GIF seçimleri tek kullanımlık — temizlenmezse sonraki
+                // her mesaj aynı sticker'ı/GIF'i tekrar gönderir
+                if (stickerIdInput) {
+                    stickerIdInput.value = '';
+                    delete stickerIdInput.dataset.imageUrl;
+                }
+                if (gifUrlInput) gifUrlInput.value = '';
             } catch (err) {
                 console.error('Mesaj gönderilemedi:', err);
                 if (node) node.remove();

@@ -98,10 +98,29 @@
 <section class="card comment-form">
     <h3>Yorum Yap</h3>
     <form id="comment-form" data-post-id="{{ post.id }}">
-        <textarea name="content" id="comment-input" placeholder="Yorumunu yaz..." rows="2" required
-                  aria-label="Yorum içeriği"></textarea>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="sticker_id" value="">
+        <input type="hidden" name="gif_url" value="">
+        <div class="comment-form-top">
+            <textarea name="content" id="comment-input" placeholder="Yorumunu yaz..." rows="2"
+                      aria-label="Yorum içeriği"></textarea>
+            <div class="comment-form-actions">
+                <button type="button" class="btn btn-ghost small" aria-label="Çıkartma ekle" data-sticker-picker-btn>🏷️</button>
+                <button type="button" id="gif-toggle-comment-btn" class="btn btn-ghost small" aria-label="GIF ekle">🎬</button>
+            </div>
+        </div>
+        <div data-sticker-preview hidden></div>
         <button type="submit" class="btn btn-primary">Gönder</button>
     </form>
+
+    {# GIF mini panel (yorum için) #}
+    <div id="gif-picker-comment-panel" class="gif-picker-comment-panel" hidden>
+        <div class="gif-picker-search">
+            <input type="text" id="gif-search-comment-input" placeholder="GIF ara..." aria-label="GIF ara">
+        </div>
+        <div id="gif-results-comment" class="gif-results-grid"></div>
+        <p id="gif-loading-comment-msg" class="muted center" hidden>Yükleniyor...</p>
+    </div>
 </section>
 
 <section class="comment-list" id="comment-list" aria-label="Yorumlar">
@@ -118,6 +137,15 @@
             </a>
             <span class="time">{{ c.created_at[:16]|replace('T',' ') }}</span>
         </div>
+        {% if c.sticker %}
+        <div class="sticker-wrap">
+            <img src="{{ c.sticker.image_url }}" class="sticker-rendered comment-sticker" data-sticker-id="{{ c.sticker.id }}" alt="Sticker" loading="lazy">
+            <button type="button" class="sticker-star-btn" data-sticker-id="{{ c.sticker.id }}" aria-label="Sticker'ı kaydet">⭐</button>
+        </div>
+        {% endif %}
+        {% if c.gif_url %}
+        <img src="{{ c.gif_url }}" class="comment-gif" alt="GIF" loading="lazy">
+        {% endif %}
         <p>{{ c.content|linkify_mentions(valid_usernames) }}</p>
         <div class="comment-actions">
             <button type="button"
@@ -140,7 +168,15 @@
 
         {# --- Yanıt formu (gizli, tıklayınca açılır) --- #}
         <form class="reply-form" data-parent-id="{{ c.id }}" data-post-id="{{ post.id }}" hidden>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="sticker_id" value="">
+            <input type="hidden" name="gif_url" value="">
             <textarea name="content" placeholder="Yanıtını yaz..." rows="2" aria-label="Yanıt içeriği"></textarea>
+            <div class="reply-form-actions">
+                <button type="button" class="btn btn-ghost small" aria-label="Çıkartma ekle" data-sticker-picker-btn>🏷️</button>
+                <button type="button" class="reply-gif-toggle-btn btn btn-ghost small" aria-label="GIF ekle">🎬</button>
+            </div>
+            <div data-sticker-preview hidden></div>
             <button type="submit" class="btn btn-primary small">Gönder</button>
         </form>
 
@@ -160,6 +196,15 @@
                     </a>
                     <span class="time">{{ r.created_at[:16]|replace('T',' ') }}</span>
                 </div>
+                {% if r.sticker %}
+                <div class="sticker-wrap">
+                    <img src="{{ r.sticker.image_url }}" class="sticker-rendered comment-sticker" data-sticker-id="{{ r.sticker.id }}" alt="Sticker" loading="lazy">
+                    <button type="button" class="sticker-star-btn" data-sticker-id="{{ r.sticker.id }}" aria-label="Sticker'ı kaydet">⭐</button>
+                </div>
+                {% endif %}
+                {% if r.gif_url %}
+                <img src="{{ r.gif_url }}" class="comment-gif" alt="GIF" loading="lazy">
+                {% endif %}
                 <p>{{ r.content|linkify_mentions(valid_usernames) }}</p>
                 <div class="comment-actions">
                     <button type="button"
@@ -240,6 +285,7 @@
     window.POST_ID = "{{ post.id }}";
     window.ME = {{ me|tojson if me else 'null' }};
 </script>
+<script src="{{ url_for('static', filename='js/stickers.js') }}"></script>
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 <script src="{{ url_for('static', filename='js/polls.js') }}"></script>
 <script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>

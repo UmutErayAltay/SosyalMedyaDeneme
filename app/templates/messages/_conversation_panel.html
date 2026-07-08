@@ -39,7 +39,12 @@
             {% if is_group and m.sender_id != me.id %}
                 <span class="msg-sender">{{ m.profiles.username if m.profiles else 'Bilinmeyen' }}</span>
             {% endif %}
-            {% if m.image_url %}
+            {% if m.sticker %}
+                <div class="sticker-wrap">
+                    <img src="{{ m.sticker.image_url }}" class="sticker-rendered msg-sticker" data-sticker-id="{{ m.sticker.id }}" alt="Sticker" loading="lazy">
+                    <button type="button" class="sticker-star-btn" data-sticker-id="{{ m.sticker.id }}" aria-label="Sticker'ı kaydet">⭐</button>
+                </div>
+            {% elif m.image_url %}
                 <img src="{{ m.image_url }}" class="msg-image" alt="Görsel mesaj" loading="lazy">
             {% endif %}
             {% if m.audio_url %}
@@ -94,10 +99,14 @@
 
     <form id="msg-form" class="composer-msg" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="sticker_id" value="">
+        <input type="hidden" name="gif_url" value="">
         <label class="msg-icon-btn" aria-label="Görsel gönder" id="msg-image-label">
             📷
             <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" id="msg-image-input" hidden>
         </label>
+        <button type="button" class="msg-icon-btn" aria-label="Çıkartma gönder" data-sticker-picker-btn data-sticker-autosubmit="1">🏷️</button>
+        <button type="button" id="gif-toggle-msg-btn" class="msg-icon-btn" aria-label="GIF gönder">🎬</button>
         <button type="button" id="voice-record-btn" class="msg-icon-btn" aria-label="Sesli mesaj kaydet" hidden>🎤</button>
 
         {# Aynı kutu: normalde textarea, kayıt sırasında canlı süre, kayıt
@@ -115,6 +124,15 @@
     </form>
     <span id="msg-image-name" class="muted" aria-live="polite"></span>
     <p class="muted drop-hint sr-only" id="drop-hint" aria-live="polite"></p>
+
+    {# GIF mini panel (mesaj için) #}
+    <div id="gif-picker-msg-panel" class="gif-picker-msg-panel" hidden>
+        <div class="gif-picker-search">
+            <input type="text" id="gif-search-msg-input" placeholder="GIF ara..." aria-label="GIF ara">
+        </div>
+        <div id="gif-results-msg" class="gif-results-grid"></div>
+        <p id="gif-loading-msg-msg" class="muted center" hidden>Yükleniyor...</p>
+    </div>
 </div>
 
 {# === GELEN ARAMA MODALI (1:1 Konuşmalar) === #}

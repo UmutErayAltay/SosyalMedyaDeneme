@@ -19,6 +19,7 @@ window.supabaseClient.auth.setSession({
     refresh_token: window.SB_REFRESH_TOKEN
 });
 </script>
+<script src="{{ url_for('static', filename='js/stickers.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 <script src="{{ url_for('static', filename='js/call.js') }}"></script>
 <script src="{{ url_for('static', filename='js/messagesPanel.js') }}"></script>

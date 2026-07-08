@@ -23,6 +23,80 @@
             '<p>' + escapeHtml(content) + '</p>';
     }
 
+    // --- GIF Panel — Ana yorum formu ---
+    var gifToggleCommentBtn = document.getElementById('gif-toggle-comment-btn');
+    var gifPickerCommentPanel = document.getElementById('gif-picker-comment-panel');
+    var gifSearchCommentInput = document.getElementById('gif-search-comment-input');
+    var gifResultsComment = document.getElementById('gif-results-comment');
+    var gifLoadingCommentMsg = document.getElementById('gif-loading-comment-msg');
+
+    if (gifToggleCommentBtn && gifPickerCommentPanel) {
+        gifToggleCommentBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            if (gifPickerCommentPanel.hidden) {
+                gifPickerCommentPanel.hidden = false;
+                if (gifSearchCommentInput) gifSearchCommentInput.focus();
+                if (!gifResultsComment.innerHTML) {
+                    searchGifsComment('');
+                }
+            } else {
+                gifPickerCommentPanel.hidden = true;
+            }
+        });
+    }
+
+    function searchGifsComment(q) {
+        if (!gifLoadingCommentMsg || !gifResultsComment) return;
+        gifLoadingCommentMsg.hidden = false;
+        gifResultsComment.innerHTML = '';
+        fetch('/gif/search?q=' + encodeURIComponent(q))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                gifLoadingCommentMsg.hidden = true;
+                if (data.disabled) {
+                    gifPickerCommentPanel.innerHTML = '<p class="muted center">GIF servisi şu anda kullanılamıyor.</p>';
+                    gifToggleCommentBtn.hidden = true;
+                    return;
+                }
+                if (!data.gifs || data.gifs.length === 0) {
+                    gifResultsComment.innerHTML = '<p class="muted center">Sonuç bulunamadı.</p>';
+                    return;
+                }
+                data.gifs.forEach(function (gif) {
+                    var img = document.createElement('img');
+                    img.src = gif.preview || gif.url;
+                    img.alt = 'GIF';
+                    img.className = 'gif-picker-img';
+                    img.addEventListener('click', function () {
+                        selectGifComment(gif.url);
+                    });
+                    gifResultsComment.appendChild(img);
+                });
+            })
+            .catch(function (e) {
+                gifLoadingCommentMsg.hidden = true;
+                gifResultsComment.innerHTML = '<p class="muted center">Hata: ' + e.message + '</p>';
+            });
+    }
+
+    function selectGifComment(url) {
+        var form = document.getElementById('comment-form');
+        if (form) {
+            var gifUrlInput = form.querySelector('input[name="gif_url"]');
+            if (gifUrlInput) gifUrlInput.value = url;
+        }
+        gifPickerCommentPanel.hidden = true;
+    }
+
+    if (gifSearchCommentInput) {
+        var gifSearchTimer = null;
+        gifSearchCommentInput.addEventListener('input', function () {
+            var q = this.value;
+            clearTimeout(gifSearchTimer);
+            gifSearchTimer = setTimeout(function () { searchGifsComment(q); }, 300);
+        });
+    }
+
     // --- Ana yorum gönderme ---
     var form = document.getElementById('comment-form');
     var input = document.getElementById('comment-input');
@@ -31,21 +105,30 @@
         form.addEventListener('submit', async function (e) {
             e.preventDefault();
             var content = input.value.trim();
-            if (!content) return;
+            var stickerVal = (form.querySelector('input[name="sticker_id"]') || {}).value || '';
+            var gifVal = (form.querySelector('input[name="gif_url"]') || {}).value || '';
+            // Sticker/GIF seçiliyken metin boş olabilir
+            if (!content && !stickerVal && !gifVal) return;
             var postId = form.dataset.postId;
             var submitBtn = form.querySelector('button[type="submit"]');
             var originalText = submitBtn.textContent;
             submitBtn.disabled = true;
             submitBtn.textContent = 'Gönderiliyor...';
             try {
-                var formData = new FormData();
-                formData.append('content', content);
+                var formData = new FormData(form);
+                formData.set('content', content);
                 var res = await fetch('/social/comment/' + postId, {
                     method: 'POST', body: formData,
                     headers: { 'X-Requested-With': 'fetch', 'X-CSRF-Token': csrfToken() },
                 });
                 if (!res.ok) throw new Error('İstek başarısız');
                 var data = await res.json();
+                // Sticker/GIF'li yorumun optimistic render'ı yok — sunucu
+                // render'ıyla göstermek için sayfayı yenile (basit ve doğru)
+                if (stickerVal || gifVal) {
+                    location.reload();
+                    return;
+                }
                 var emptyMsg = list.querySelector('.muted');
                 if (emptyMsg) emptyMsg.remove();
                 var article = document.createElement('article');
@@ -56,7 +139,10 @@
                     '<button type="button" class="btn btn-ghost small reply-toggle" data-comment-id="' + data.id + '">Yanıtla</button>' +
                     '</div>' +
                     '<form class="reply-form" data-parent-id="' + data.id + '" data-post-id="' + postId + '" hidden>' +
-                    '<textarea name="content" placeholder="Yanıtını yaz..." rows="2"></textarea>' +
+                    '<input type="hidden" name="csrf_token" value="' + csrfToken() + '">' +
+                    '<input type="hidden" name="sticker_id" value="">' +
+                    '<input type="hidden" name="gif_url" value="">' +
+                    '<textarea name="content" placeholder="Yanıtını yaz..." rows="2" aria-label="Yanıt içeriği"></textarea>' +
                     '<button type="submit" class="btn btn-primary small">Gönder</button>' +
                     '</form>';
                 list.appendChild(article);
@@ -83,6 +169,67 @@
                 if (!replyForm.hidden) {
                     var ta = replyForm.querySelector('textarea');
                     if (ta) ta.focus();
+                    // GIF toggle butonu setup
+                    var gifToggleBtn = replyForm.querySelector('.reply-gif-toggle-btn');
+                    if (gifToggleBtn && !gifToggleBtn.__setupDone) {
+                        gifToggleBtn.__setupDone = true;
+                        gifToggleBtn.addEventListener('click', function (ev) {
+                            ev.preventDefault();
+                            var gifPanel = document.getElementById('gif-picker-reply-panel-' + replyForm.dataset.parentId);
+                            if (!gifPanel) {
+                                gifPanel = document.createElement('div');
+                                gifPanel.id = 'gif-picker-reply-panel-' + replyForm.dataset.parentId;
+                                gifPanel.className = 'gif-picker-comment-panel';
+                                gifPanel.innerHTML = '<div class="gif-picker-search"><input type="text" class="gif-search-reply" placeholder="GIF ara..." aria-label="GIF ara"></div>' +
+                                    '<div class="gif-results-grid gif-results-reply" style="max-height: 250px; overflow-y: auto;"></div>' +
+                                    '<p class="muted center gif-loading-reply" hidden style="margin-top: 8px;">Yükleniyor...</p>';
+                                replyForm.appendChild(gifPanel);
+                                var searchInput = gifPanel.querySelector('.gif-search-reply');
+                                var resultsDiv = gifPanel.querySelector('.gif-results-reply');
+                                var loadingMsg = gifPanel.querySelector('.gif-loading-reply');
+                                if (searchInput) {
+                                    var timer = null;
+                                    searchInput.addEventListener('input', function () {
+                                        var q = this.value;
+                                        clearTimeout(timer);
+                                        timer = setTimeout(function () {
+                                            loadingMsg.hidden = false;
+                                            resultsDiv.innerHTML = '';
+                                            fetch('/gif/search?q=' + encodeURIComponent(q))
+                                                .then(function (r) { return r.json(); })
+                                                .then(function (data) {
+                                                    loadingMsg.hidden = true;
+                                                    if (!data.gifs || data.gifs.length === 0) {
+                                                        resultsDiv.innerHTML = '<p class="muted center">Sonuç bulunamadı.</p>';
+                                                        return;
+                                                    }
+                                                    data.gifs.forEach(function (gif) {
+                                                        var img = document.createElement('img');
+                                                        img.src = gif.preview || gif.url;
+                                                        img.alt = 'GIF';
+                                                        img.className = 'gif-picker-img';
+                                                        img.addEventListener('click', function () {
+                                                            var gifUrlInput = replyForm.querySelector('input[name="gif_url"]');
+                                                            if (gifUrlInput) gifUrlInput.value = gif.url;
+                                                            gifPanel.hidden = true;
+                                                        });
+                                                        resultsDiv.appendChild(img);
+                                                    });
+                                                })
+                                                .catch(function (e) {
+                                                    loadingMsg.hidden = true;
+                                                    resultsDiv.innerHTML = '<p class="muted center">Hata: ' + e.message + '</p>';
+                                                });
+                                        }, 300);
+                                    });
+                                    searchInput.focus();
+                                    searchInput.dispatchEvent(new Event('input'));
+                                }
+                            } else {
+                                gifPanel.hidden = !gifPanel.hidden;
+                            }
+                        });
+                    }
                 }
             }
             return;
@@ -130,19 +277,31 @@
         e.preventDefault();
         var ta = replyForm.querySelector('textarea');
         var content = ta.value.trim();
-        if (!content) return;
+        var stickerIdInput = replyForm.querySelector('input[name="sticker_id"]');
+        var gifUrlInput = replyForm.querySelector('input[name="gif_url"]');
+        var replyStickerVal = stickerIdInput ? stickerIdInput.value : '';
+        var replyGifVal = gifUrlInput ? gifUrlInput.value : '';
+        // Sticker/GIF seçiliyken metin boş olabilir
+        if (!content && !replyStickerVal && !replyGifVal) return;
         var parentId = replyForm.dataset.parentId;
         var postId = replyForm.dataset.postId;
 
         try {
             var formData = new FormData();
             formData.append('content', content);
+            if (replyStickerVal) formData.append('sticker_id', replyStickerVal);
+            if (replyGifVal) formData.append('gif_url', replyGifVal);
             var res = await fetch('/social/comment/' + postId + '/reply/' + parentId, {
                 method: 'POST', body: formData,
                 headers: { 'X-Requested-With': 'fetch', 'X-CSRF-Token': csrfToken() },
             });
             if (!res.ok) throw new Error('İstek başarısız');
             var data = await res.json();
+            // Sticker/GIF'li yanıt optimistic render'da görünmez — sunucu render'ı için yenile
+            if (replyStickerVal || replyGifVal) {
+                location.reload();
+                return;
+            }
 
             var commentEl = replyForm.closest('.comment');
             var repliesDiv = commentEl.querySelector('.replies');
