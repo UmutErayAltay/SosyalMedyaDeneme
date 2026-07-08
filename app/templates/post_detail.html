@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_post_card.html" as pc %}
 {% import "_profile_summary_card.html" as psc %}
+{% import "_sidebar_cards.html" as sc %}
 {% set author = post.profiles.username if post.profiles else 'Bilinmeyen' %}
 {% set first_image = post.image_urls[0] if post.image_urls else post.image_url %}
 {% block title %}{{ author }}: {{ post.content[:40] if post.content else 'Görsel gönderisi' }}{% endblock %}
@@ -24,8 +25,11 @@
 </script>
 {% endblock %}
 {% block content %}
-{# Sol kenar çubuğu: profil kartı #}
-{{ psc.profile_summary_card(me, my_stats, my_bio) }}
+{# Sol kenar çubuğu: profil kartı + yakın arkadaşlar (feed ile aynı düzen) #}
+<div class="feed-left-col">
+    {{ psc.profile_summary_card(me, my_stats, my_bio) }}
+    {{ sc.close_friends_card(close_friends_preview) }}
+</div>
 
 {# Orta alan: post detay + yorumlar #}
 <div class="post-detail-layout">
@@ -233,51 +237,11 @@
 </section>
 </div>
 
-{# Sağ kenar çubuğu: gündem + önerilen kişiler #}
+{# Sağ kenar çubuğu — kart sırası feed ile aynı: önerilen kişiler + gündem
+   (önceden burada sıra tersti, kullanıcı isteğiyle eşitlendi). #}
 <aside class="post-detail-sidebar" aria-label="Önerilen kişiler ve gündemdeki etiketler">
-    {% if trending_tags %}
-    <div class="card trending-sidebar-card">
-        <h2>🔥 Gündemde</h2>
-        {% for t in trending_tags[:5] %}
-            <a href="{{ url_for('hashtags.hashtag_posts', tag=t.tag) }}" class="trending-tag-row">
-                <span class="trending-tag">#{{ t.tag }}</span>
-                <span class="muted">{{ t.count }} post</span>
-            </a>
-        {% else %}
-            <p class="muted">Son 24 saatte gündemde bir şey yok.</p>
-        {% endfor %}
-        {% if trending_tags|length > 5 %}
-            <a href="{{ url_for('hashtags.trending_all') }}" class="trending-viewall">Tümünü gör →</a>
-        {% endif %}
-    </div>
-    {% endif %}
-    {% if suggested_users %}
-    <div class="card suggested-users-card">
-        <h2>👥 Kimi takip etmeli?</h2>
-        {% for u in suggested_users %}
-            <div class="suggested-user-row">
-                <a href="{{ url_for('routes.profile', username=u.username) }}" class="suggested-user-link">
-                    {% if u.avatar_url %}
-                        <img src="{{ u.avatar_url }}" class="avatar avatar-sm" alt="">
-                    {% else %}
-                        <div class="avatar avatar-sm avatar-placeholder" aria-hidden="true"></div>
-                    {% endif %}
-                    <span class="suggested-user-info">
-                        <strong>{{ u.username }}</strong>
-                        {% if u.full_name %}<span class="muted">{{ u.full_name }}</span>{% endif %}
-                    </span>
-                </a>
-                <button type="button" class="btn btn-primary small follow-btn"
-                        data-following="0"
-                        data-username="{{ u.username }}"
-                        data-follow-url="{{ url_for('social.toggle_follow', username=u.username) }}"
-                        aria-label="{{ u.username }} kullanıcısını takip et">
-                    Takip et
-                </button>
-            </div>
-        {% endfor %}
-    </div>
-    {% endif %}
+    {{ sc.suggested_users_card(suggested_users) }}
+    {{ sc.trending_card(trending_tags) }}
 </aside>
 
 <script>

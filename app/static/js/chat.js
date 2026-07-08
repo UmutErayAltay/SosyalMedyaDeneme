@@ -13,16 +13,36 @@
         return div.innerHTML;
     }
 
+    var REACT_EMOJIS = ['❤️', '😂', '👍', '😮', '😢', '🔥'];
+
+    function reactUrlFor(msgId) {
+        return '/messages/message/' + msgId + '/react';
+    }
+
     function buildMessageHtml(msg, isMine, opts) {
         opts = opts || {};
         var cls = isMine ? 'mine' : 'theirs';
         var tempAttr = opts.tempId ? ' data-temp-id="' + opts.tempId + '"' : '';
-        var html = '<div class="msg ' + cls + '" data-msg-id="' + (msg.id || '') + '"' + tempAttr + '>';
+        var reactAttr = msg.id ? ' data-react-url="' + reactUrlFor(msg.id) + '"' : '';
+        var html = '<div class="msg ' + cls + '" data-msg-id="' + (msg.id || '') + '"' + tempAttr + reactAttr + '>';
 
         if (opts.senderName) {
             html += '<span class="msg-sender">' + escapeHtml(opts.senderName) + '</span>';
         }
-        if (msg.image_url) {
+        if (msg.sticker && msg.sticker.image_url) {
+            // Sunucu render'ıyla (_conversation_panel.html) birebir aynı yapı:
+            // optimistic balon aksi halde küçük düz görsel olarak görünüyor,
+            // yıldız (kaydet) butonu ancak sayfa yenilenince geliyordu.
+            html += '<div class="sticker-wrap">';
+            html += '<img src="' + escapeHtml(msg.sticker.image_url) + '" class="sticker-rendered msg-sticker"'
+                + (msg.sticker.id ? ' data-sticker-id="' + escapeHtml(msg.sticker.id) + '"' : '')
+                + ' alt="Sticker">';
+            if (msg.sticker.id) {
+                html += '<button type="button" class="sticker-star-btn" data-sticker-id="'
+                    + escapeHtml(msg.sticker.id) + '" aria-label="Sticker&#39;ı kaydet">⭐</button>';
+            }
+            html += '</div>';
+        } else if (msg.image_url) {
             html += '<div class="msg-image-wrapper' + (opts.uploading ? ' uploading' : '') + '">';
             html += '<img src="' + escapeHtml(msg.image_url) + '" class="msg-image" alt="Görsel mesaj" loading="lazy">';
             if (opts.uploading) {
@@ -43,7 +63,16 @@
             html += ' <span class="read-receipt' + (read ? ' read' : '') + '" aria-label="' + (read ? 'Okundu' : 'İletildi') + '">'
                 + (read ? '✓✓' : '✓') + '</span>';
         }
-        html += '</span></div>';
+        html += '</span>';
+        // Sunucu render'ındaki tepki tetikleyicisi + picker — bunlar olmadan
+        // yeni gönderilen/gelen mesajlara sayfa yenilenmeden tepki verilemezdi
+        html += '<button class="msg-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>';
+        html += '<div class="msg-react-picker" hidden>';
+        REACT_EMOJIS.forEach(function (em) {
+            html += '<button type="button" data-emoji="' + em + '" aria-label="' + em + ' tepkisi">' + em + '</button>';
+        });
+        html += '</div>';
+        html += '</div>';
         return html;
     }
 
@@ -501,12 +530,16 @@
             submitBtn.disabled = true;
 
             var tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-            // Optimistic balonda GIF/sticker da görsel olarak gösterilir
-            var localImageUrl = hasImage ? URL.createObjectURL(imageInput.files[0])
-                : (gifVal || (stickerVal && stickerIdInput.dataset.imageUrl) || null);
+            // Optimistic balonda GIF görsel olarak, sticker ise sunucu
+            // render'ıyla aynı sticker-wrap yapısıyla gösterilir
+            var localImageUrl = hasImage ? URL.createObjectURL(imageInput.files[0]) : (gifVal || null);
+            var optimisticMsg = { content: content, image_url: localImageUrl, created_at: null };
+            if (stickerVal && stickerIdInput.dataset.imageUrl) {
+                optimisticMsg.sticker = { id: stickerVal, image_url: stickerIdInput.dataset.imageUrl };
+            }
 
             var node = appendMessage(
-                { content: content, image_url: localImageUrl, created_at: null },
+                optimisticMsg,
                 true,
                 { tempId: tempId, uploading: hasImage }
             );
@@ -532,6 +565,7 @@
 
                 if (node) {
                     node.dataset.msgId = saved.id;
+                    node.dataset.reactUrl = reactUrlFor(saved.id);
                     var wrapper = node.querySelector('.msg-image-wrapper');
                     if (wrapper) {
                         wrapper.classList.remove('uploading');
@@ -645,11 +679,96 @@
 
     // === Mesaj Tepkileri (Emoji Reactions) — Document Delegation ===
     // Picker tetikleme, emoji seçimi, chip tıklaması (panel AJAX geçişlerinden bağımsız)
+
+    function closeAllReactPickers(except) {
+        document.querySelectorAll('.msg-react-picker:not([hidden])').forEach(function (p) {
+            if (p !== except) p.setAttribute('hidden', '');
+        });
+    }
+
+    function setChipCount(chip, count) {
+        if (count <= 0) {
+            chip.remove();
+            return;
+        }
+        chip.dataset.count = count;
+        chip.textContent = chip.dataset.reaction + ' ' + count;
+        chip.title = count + ' kişi';
+    }
+
+    // Sunucu yanıtına göre chip'leri günceller. newReaction = benim aktif
+    // tepkim (null → kaldırıldı). Backend "farklı emojiye geçiş"te eski
+    // tepkiyi silip yenisini yazar — eski "mine" chip'i de burada düşürülür,
+    // yoksa mesajda iki emojiyi birden atmışım gibi görünür (kullanıcı raporu).
+    function applyReactionResult(msg, emoji, newReaction) {
+        if (newReaction) {
+            msg.querySelectorAll('.msg-reaction-chip.mine').forEach(function (old) {
+                if (old.dataset.reaction !== newReaction) {
+                    old.classList.remove('mine');
+                    setChipCount(old, parseInt(old.dataset.count || 1, 10) - 1);
+                }
+            });
+            var chip = msg.querySelector('.msg-reaction-chip[data-reaction="' + newReaction + '"]');
+            if (!chip) {
+                var reactionsDiv = msg.querySelector('.msg-reactions');
+                if (!reactionsDiv) {
+                    reactionsDiv = document.createElement('div');
+                    reactionsDiv.className = 'msg-reactions';
+                    var timeEl = msg.querySelector('.time');
+                    if (timeEl) timeEl.insertAdjacentElement('afterend', reactionsDiv);
+                    else msg.appendChild(reactionsDiv);
+                }
+                chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'msg-reaction-chip mine';
+                chip.dataset.reaction = newReaction;
+                reactionsDiv.appendChild(chip);
+                setChipCount(chip, 1);
+            } else if (!chip.classList.contains('mine')) {
+                chip.classList.add('mine');
+                setChipCount(chip, parseInt(chip.dataset.count || 1, 10) + 1);
+            }
+        } else {
+            var removed = msg.querySelector('.msg-reaction-chip[data-reaction="' + emoji + '"]');
+            if (removed) {
+                removed.classList.remove('mine');
+                setChipCount(removed, parseInt(removed.dataset.count || 1, 10) - 1);
+            }
+        }
+    }
+
+    function sendReaction(msg, emoji) {
+        var reactUrl = msg.dataset.reactUrl;
+        if (!msg.dataset.msgId || !reactUrl) return;
+
+        var csrfInput = document.querySelector('input[name="csrf_token"]');
+        fetch(reactUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfInput ? csrfInput.value : ''
+            },
+            body: JSON.stringify({ reaction: emoji })
+        })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            if (!data.ok) return;
+            applyReactionResult(msg, emoji, data.reaction);
+        })
+        .catch(function (err) {
+            console.error('Tepki gönderilemedi:', err);
+        });
+    }
+
     document.addEventListener('click', function (e) {
         var panel = e.target.closest('#conversation-panel');
-        if (!panel) return; // yalnız messaging panel içindeki tıklamalar işlenir
+        if (!panel) {
+            // Panel dışına tıklandı — açık picker'ları kapat
+            closeAllReactPickers();
+            return;
+        }
 
-        // 1. Tetik butonu: picker açma/kapama
+        // 1. Tetik butonu: picker açma/kapama (aynı anda tek picker açık kalır)
         var trigger = e.target.closest('.msg-react-trigger');
         if (trigger) {
             e.preventDefault();
@@ -658,6 +777,17 @@
                 var picker = msg.querySelector('.msg-react-picker');
                 if (picker) {
                     if (picker.hasAttribute('hidden')) {
+                        closeAllReactPickers(picker);
+                        // Varsayılan balonun ÜSTÜNDE açılır (son mesajda alta
+                        // açılınca stream dışına taşıyordu) — mesaj stream'in
+                        // görünür üst kenarına yakınsa alta açılır.
+                        var streamEl = document.getElementById('stream');
+                        picker.classList.remove('below');
+                        if (streamEl) {
+                            var msgTop = msg.getBoundingClientRect().top;
+                            var streamTop = streamEl.getBoundingClientRect().top;
+                            if (msgTop - streamTop < 48) picker.classList.add('below');
+                        }
                         picker.removeAttribute('hidden');
                     } else {
                         picker.setAttribute('hidden', '');
@@ -671,111 +801,31 @@
         var emojiBtn = e.target.closest('.msg-react-picker button[data-emoji]');
         if (emojiBtn) {
             e.preventDefault();
-            var msg = emojiBtn.closest('.msg');
-            var picker = emojiBtn.closest('.msg-react-picker');
-            if (msg && picker) {
-                var msgId = msg.dataset.msgId;
-                var emoji = emojiBtn.dataset.emoji;
-                var reactUrl = msg.dataset.reactUrl;
-                picker.setAttribute('hidden', '');
-
-                if (!msgId || !reactUrl) return;
-
-                // POST /messages/message/<msgId>/react
-                var csrfInput = document.querySelector('input[name="csrf_token"]');
-                fetch(reactUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrfInput ? csrfInput.value : ''
-                    },
-                    body: JSON.stringify({ reaction: emoji })
-                })
-                .then(function (res) { return res.json(); })
-                .then(function (data) {
-                    if (!data.ok) return;
-
-                    var reactionsDiv = msg.querySelector('.msg-reactions');
-                    var chip = msg.querySelector('.msg-reaction-chip[data-reaction="' + emoji + '"]');
-
-                    if (data.reaction) {
-                        // Tepki eklendi: yeni chip veya sayı arttır
-                        if (!chip) {
-                            if (!reactionsDiv) {
-                                reactionsDiv = document.createElement('div');
-                                reactionsDiv.className = 'msg-reactions';
-                                // time span'ından sonra ekle
-                                var timeEl = msg.querySelector('.time');
-                                if (timeEl) timeEl.insertAdjacentElement('afterend', reactionsDiv);
-                                else msg.appendChild(reactionsDiv);
-                            }
-                            chip = document.createElement('button');
-                            chip.type = 'button';
-                            chip.className = 'msg-reaction-chip mine';
-                            chip.dataset.reaction = emoji;
-                            chip.dataset.count = 1;
-                            chip.textContent = emoji + ' 1';
-                            chip.title = '1 kişi';
-                            reactionsDiv.appendChild(chip);
-                        } else {
-                            chip.classList.add('mine');
-                            var count = parseInt(chip.dataset.count || 1, 10);
-                            count += 1;
-                            chip.dataset.count = count;
-                            chip.textContent = emoji + ' ' + count;
-                            chip.title = count + ' kişi';
-                        }
-                    } else {
-                        // Tepki kaldırıldı: sayı azalt veya chip'i sil
-                        if (chip) {
-                            var count = parseInt(chip.dataset.count || 1, 10);
-                            count -= 1;
-                            if (count <= 0) {
-                                chip.remove();
-                            } else {
-                                chip.classList.remove('mine');
-                                chip.dataset.count = count;
-                                chip.textContent = emoji + ' ' + count;
-                                chip.title = count + ' kişi';
-                            }
-                        }
-                    }
-                })
-                .catch(function (err) {
-                    console.error('Tepki gönderilemedi:', err);
-                });
+            var msgEl = emojiBtn.closest('.msg');
+            var pickerEl = emojiBtn.closest('.msg-react-picker');
+            if (msgEl && pickerEl) {
+                pickerEl.setAttribute('hidden', '');
+                sendReaction(msgEl, emojiBtn.dataset.emoji);
             }
             return;
         }
 
-        // 3. Chip tıklaması: kendi tepkimi toggle et (hızlı tıkla)
+        // 3. Chip tıklaması: o emojiyi toggle et (benimse kaldır, değilse ekle/geç)
         var chip = e.target.closest('.msg-reaction-chip');
         if (chip && !chip.closest('.msg-react-picker')) {
             e.preventDefault();
-            var msg = chip.closest('.msg');
-            if (msg && chip.classList.contains('mine')) {
-                var emoji = chip.dataset.reaction;
-                var reactUrl = msg.dataset.reactUrl;
-                var msgId = msg.dataset.msgId;
-
-                if (!msgId || !reactUrl) return;
-
-                var csrfInput = document.querySelector('input[name="csrf_token"]');
-                fetch(reactUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrfInput ? csrfInput.value : ''
-                    },
-                    body: JSON.stringify({ reaction: emoji })
-                })
-                .then(function (res) { return res.json(); })
-                .catch(function (err) {
-                    console.error('Tepki toggle başarısız:', err);
-                });
-            }
+            var chipMsg = chip.closest('.msg');
+            if (chipMsg) sendReaction(chipMsg, chip.dataset.reaction);
             return;
         }
+
+        // Panel içinde ama picker/tetik dışında bir yere tıklandı — kapat
+        closeAllReactPickers();
+    });
+
+    // Escape tuşu — açık tepki picker'larını kapat
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeAllReactPickers();
     });
 
     // İlk sayfa yüklemesinde çalıştır (AJAX geçişlerinde messagesPanel.js çağırır)

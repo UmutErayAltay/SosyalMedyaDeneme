@@ -6,10 +6,127 @@ barındırır (bkz. `app/routes/__init__.py`'nin bunları neden re-export ettiğ
 import ediyor, `from .routes import _attach_post_metrics` şeklinde — bu paket
 haline gelince de aynı import yolu çalışmaya devam etmeli).
 """
+from concurrent.futures import ThreadPoolExecutor
 from flask import session
 from ..supabase_client import get_sb
 
 PAGE_SIZE = 20
+
+
+def fetch_sidebar_context(sb, me: str, include_activity: bool = True) -> dict:
+    """Feed/keşfet/post detay yan panellerinin ortak verisi — hepsi paralel.
+
+    Döner: my_stats, my_bio, close_friends_preview, suggested_users,
+    trending_tags, recent_activity. Feed kendi FAZ B bloğunu kullanmaya devam
+    eder (ekstra alanları var); bu helper keşfet + post detay içindir.
+    """
+    # Lazy import: hashtags.py routes'tan lazy import yapıyor, ters yönde
+    # top-level import döngü riskini sıfırlamak için burada da lazy tutulur.
+    from ..hashtags import _trending_hashtags
+    from ..blocks import blocked_user_ids
+
+    def _posts_count():
+        try:
+            return sb.table("posts").select(
+                "id", count="exact", head=True
+            ).eq("user_id", me).eq("is_draft", False).execute().count or 0
+        except Exception:
+            return 0
+
+    def _followers_count():
+        try:
+            return sb.table("follows").select(
+                "follower_id", count="exact", head=True
+            ).eq("following_id", me).execute().count or 0
+        except Exception:
+            return 0
+
+    def _following_count():
+        try:
+            return sb.table("follows").select(
+                "following_id", count="exact", head=True
+            ).eq("follower_id", me).execute().count or 0
+        except Exception:
+            return 0
+
+    def _bio():
+        try:
+            rows = sb.table("profiles").select("bio").eq("id", me).execute().data
+            return (rows[0].get("bio") if rows else None) or None
+        except Exception:
+            return None
+
+    def _close_friends():
+        try:
+            cf_rows = sb.table("close_friends").select(
+                "profiles!close_friends_friend_id_fkey(id, username, avatar_url)"
+            ).eq("owner_id", me).order("created_at", desc=True).limit(6).execute().data
+            return [r["profiles"] for r in cf_rows if r.get("profiles")]
+        except Exception:
+            return []
+
+    def _following_ids():
+        try:
+            return {f["following_id"] for f in sb.table("follows").select("following_id")
+                    .eq("follower_id", me).execute().data}
+        except Exception:
+            return set()
+
+    def _recent_activity():
+        if not include_activity:
+            return []
+        try:
+            return sb.table("notifications").select(
+                "type, post_id, created_at, profiles!notifications_actor_id_fkey(username, avatar_url)"
+            ).eq("recipient_id", me).order("created_at", desc=True).limit(5).execute().data
+        except Exception:
+            return []
+
+    with ThreadPoolExecutor(max_workers=9) as executor:
+        posts_count_fut = executor.submit(_posts_count)
+        followers_count_fut = executor.submit(_followers_count)
+        following_count_fut = executor.submit(_following_count)
+        bio_fut = executor.submit(_bio)
+        close_friends_fut = executor.submit(_close_friends)
+        trending_fut = executor.submit(_trending_hashtags, sb, hours=24, limit=10)
+        following_ids_fut = executor.submit(_following_ids)
+        blocked_fut = executor.submit(blocked_user_ids, sb, me)
+        activity_fut = executor.submit(_recent_activity)
+
+        my_stats = {
+            "posts": posts_count_fut.result(),
+            "followers": followers_count_fut.result(),
+            "following": following_count_fut.result(),
+        }
+        my_bio = bio_fut.result()
+        close_friends_preview = close_friends_fut.result()
+        trending_tags = trending_fut.result()
+        following_ids = following_ids_fut.result()
+        blocked_ids = blocked_fut.result()
+        recent_activity = activity_fut.result()
+
+        def _suggested_users():
+            exclude_ids = following_ids | blocked_ids | {me}
+            query = sb.table("profiles").select(
+                "id, username, avatar_url, full_name"
+            ).eq("is_banned", False)
+            if exclude_ids:
+                query = query.not_.in_("id", list(exclude_ids))
+            try:
+                return query.order("created_at", desc=True).limit(5).execute().data
+            except Exception:
+                return []
+
+        suggested_users = executor.submit(_suggested_users).result()
+
+    return {
+        "my_stats": my_stats,
+        "my_bio": my_bio,
+        "close_friends_preview": close_friends_preview,
+        "suggested_users": suggested_users,
+        "trending_tags": trending_tags,
+        "recent_activity": recent_activity,
+    }
 
 
 def _profile(username: str | None = None, uid: str | None = None) -> dict | None:

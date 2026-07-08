@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from flask import render_template, request, session, redirect, url_for
 from . import bp
-from ._common import _my_id, _attach_post_metrics
+from ._common import _my_id, _attach_post_metrics, fetch_sidebar_context
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..mentions import get_valid_usernames
@@ -191,5 +191,9 @@ def discover():
         posts.sort(key=lambda p: p["_score"], reverse=True)
         posts = posts[:20]
 
+    # Yan paneller feed ile aynı (sol: profil özeti + yakın arkadaşlar,
+    # sağ: öneri + gündem + aktivite) — kullanıcı isteği, Sprint 58
+    sidebar = fetch_sidebar_context(sb, me)
+
     return render_template("discover.html", posts=posts, me=session.get("user"),
-                           valid_usernames=get_valid_usernames(sb))
+                           valid_usernames=get_valid_usernames(sb), **sidebar)

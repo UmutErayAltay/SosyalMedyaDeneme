@@ -1,26 +1,46 @@
 {% extends "base.html" %}
 {% import "_post_card.html" as pc with context %}
+{% import "_profile_summary_card.html" as psc %}
+{% import "_sidebar_cards.html" as sc %}
 {% block title %}Keşfet{% endblock %}
 {% block description %}Takip etmediğin kişilerden popüler postlar{% endblock %}
+{% block container_class %}feed-page{% endblock %}
 {% block content %}
-<nav class="feed-tabs" aria-label="Akış sekmeleri">
-    <a href="{{ url_for('routes.feed') }}" class="feed-tab">Akış</a>
-    <a href="{{ url_for('routes.discover') }}" class="feed-tab active" aria-current="page">🧭 Keşfet</a>
-</nav>
+{# Feed ile aynı 3 kolonlu düzen — önceden Keşfet'e geçince yan paneller
+   kayboluyordu (kullanıcı raporu). Sol: profil özeti + yakın arkadaşlar. #}
+<div class="feed-left-col">
+    {{ psc.profile_summary_card(me, my_stats, my_bio) }}
+    {{ sc.close_friends_card(close_friends_preview) }}
+</div>
 
-<h1>🧭 Keşfet</h1>
-<p class="muted">Son 7 günde, takip etmediğin kişilerin en popüler herkese açık postları.</p>
+<div class="feed-layout">
+    <nav class="feed-tabs" aria-label="Akış sekmeleri">
+        <a href="{{ url_for('routes.feed') }}" class="feed-tab">Akış</a>
+        <a href="{{ url_for('routes.discover') }}" class="feed-tab active" aria-current="page">🧭 Keşfet</a>
+    </nav>
 
-<section class="post-list">
-    {% for p in posts %}
-        {{ pc.post_card(p, p.profiles.username if p.profiles else 'Bilinmeyen',
-                     p.profiles.avatar_url if p.profiles else none, false) }}
-    {% else %}
-        <p class="muted center">Şu an gösterilecek bir şey yok — belki herkesi zaten takip ediyorsun!</p>
-    {% endfor %}
-</section>
+    <h1>🧭 Keşfet</h1>
+    <p class="muted">Son 7 günde, takip etmediğin kişilerin en popüler herkese açık postları.</p>
+
+    <section class="post-list">
+        {% for p in posts %}
+            {{ pc.post_card(p, p.profiles.username if p.profiles else 'Bilinmeyen',
+                         p.profiles.avatar_url if p.profiles else none, false) }}
+        {% else %}
+            <p class="muted center">Şu an gösterilecek bir şey yok — belki herkesi zaten takip ediyorsun!</p>
+        {% endfor %}
+    </section>
+</div>
+
+<aside class="feed-sidebar" aria-label="Önerilen kişiler ve gündemdeki etiketler">
+    {{ sc.suggested_users_card(suggested_users) }}
+    {{ sc.trending_card(trending_tags) }}
+    {{ sc.activity_card(recent_activity) }}
+</aside>
 
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 <script src="{{ url_for('static', filename='js/polls.js') }}"></script>
 <script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
+{# Sağ sidebar'daki "Takip et" butonları için — yoksa butonlar ölü kalır #}
+<script src="{{ url_for('static', filename='js/follow.js') }}"></script>
 {% endblock %}

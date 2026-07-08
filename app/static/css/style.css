@@ -628,9 +628,19 @@ main.feed-page {
    4 satır olarak gözlemlendi). Tek grid öğesi + align-items:start ile bu
    sorun hiç oluşmaz — üç kolon da doğal olarak TEK satırda üst hizalanır. */
 .flash-container { grid-column: 1 / -1; }
-main.feed-page .feed-profile-card { grid-column: 1; }
+main.feed-page .feed-left-col { grid-column: 1; }
 main.feed-page .feed-layout { grid-column: 2; }
 main.feed-page .feed-sidebar { grid-column: 3; }
+/* Sol kolon sarmalayıcısı: profil kartı + yakın arkadaşlar kartı TEK grid
+   öğesi olarak (yukarıdaki "her kolonda tek öğe" kuralı) — sticky davranışı
+   karttan buraya taşındı. */
+.feed-left-col {
+    display: flex; flex-direction: column; gap: 12px;
+    position: sticky;
+    top: calc(var(--navbar-height) + 16px);
+    transition: top 0.25s ease;
+}
+body.navbar-hidden .feed-left-col { top: 16px; }
 /* top: sadece 24px olsaydı navbar (73px) geri kayınca (yukarı scroll) kenar
    çubuğunun üst kısmının üzerine biner (navbar z-index:10 ile daha üstte) —
    navbar yüksekliği + boşluk olarak hesaplanmalı. navbar.js scroll'a göre
@@ -650,11 +660,7 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
     align-items: center;
     text-align: center;
     gap: 8px;
-    position: sticky;
-    top: calc(var(--navbar-height) + 16px);
-    transition: top 0.25s ease;
 }
-body.navbar-hidden .feed-profile-card { top: 16px; }
 .feed-profile-avatar-link { display: block; }
 .feed-profile-username { font-weight: 600; font-family: var(--font-display); }
 .feed-profile-bio { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.4; }
@@ -699,7 +705,7 @@ body.navbar-hidden .feed-profile-card { top: 16px; }
 .close-friends-sidebar-card h2 { font-size: 16px; margin-bottom: 12px; }
 @media (max-width: 1100px) {
     main.feed-page { grid-template-columns: 1fr 280px; max-width: 920px; }
-    .feed-profile-card { display: none; }
+    main.feed-page .feed-left-col { display: none; }
 }
 @media (max-width: 900px) {
     main.feed-page { grid-template-columns: 1fr; max-width: var(--max-width); }
@@ -713,7 +719,7 @@ main.post-detail-page {
     align-items: start;
 }
 .flash-container { grid-column: 1 / -1; }
-main.post-detail-page .feed-profile-card { grid-column: 1; }
+main.post-detail-page .feed-left-col { grid-column: 1; }
 main.post-detail-page .post-detail-layout { grid-column: 2; }
 main.post-detail-page .post-detail-sidebar { grid-column: 3; }
 .post-detail-layout { display: flex; flex-direction: column; }
@@ -726,7 +732,7 @@ main.post-detail-page .post-detail-sidebar { grid-column: 3; }
 body.navbar-hidden .post-detail-sidebar { top: 16px; }
 @media (max-width: 1100px) {
     main.post-detail-page { grid-template-columns: 1fr 280px; max-width: 920px; }
-    .feed-profile-card { display: none; }
+    main.post-detail-page .feed-left-col { display: none; }
 }
 @media (max-width: 900px) {
     main.post-detail-page { grid-template-columns: 1fr; max-width: var(--max-width); }
@@ -801,7 +807,10 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     background: var(--card); border: 1px solid var(--border);
     border-radius: var(--radius); margin-bottom: 12px;
 }
-.msg { max-width: 70%; margin-bottom: 10px; padding: 8px 12px; border-radius: var(--radius); word-wrap: break-word; overflow-wrap: break-word; }
+/* position:relative ŞART — .msg-react-picker absolute konumlanır; bu olmadan
+   picker en yakın konumlanmış ataya (sayfa gövdesi) göre yerleşip sayfanın
+   en altında beliriyordu (kullanıcı raporu). */
+.msg { position: relative; max-width: 70%; margin-bottom: 10px; padding: 8px 12px; border-radius: var(--radius); word-wrap: break-word; overflow-wrap: break-word; }
 .msg p { font-size: 14px; }
 .msg .time { display: block; font-size: 11px; margin: 2px 0 0; }
 .msg.mine {
@@ -824,8 +833,11 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 }
 
 /* === Mesaj Tepkileri (Emoji Reactions) === */
+/* inline-flex: tepki chip'leri ile 🙂+ tetik butonu AYNI satırda kalmalı —
+   display:flex (blok) tetikleyiciyi bir alt satıra itiyordu (kullanıcı raporu) */
 .msg-reactions {
-    display: flex; gap: 4px; margin-top: 2px; flex-wrap: wrap;
+    display: inline-flex; gap: 4px; margin-top: 2px; flex-wrap: wrap;
+    vertical-align: middle;
 }
 
 .msg-reaction-chip {
@@ -840,6 +852,12 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     color: var(--bg);
 }
 .msg-reaction-chip.mine:hover { opacity: 0.9; }
+/* Kendi balonum (primary zemin) içinde "mine" chip'i primary zeminle
+   kaynaşıp görünmez olurdu — ters renklerle ayrıştırılır ki hangi emojiyi
+   attığım belli olsun (kullanıcı isteği). */
+.msg.mine .msg-reaction-chip.mine {
+    background: var(--bg); color: var(--primary); border-color: var(--bg);
+}
 
 /* Emoji seçim tetik butonu (hover'da belirir) */
 .msg-react-trigger {
@@ -847,17 +865,22 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     cursor: pointer; color: var(--text); padding: 0;
     margin-left: 4px; transition: opacity 0.15s;
     font-family: var(--font-body);
+    vertical-align: middle;
 }
 .msg:hover .msg-react-trigger { opacity: 0.7; }
 
-/* Emoji seçim paneli */
+/* Emoji seçim paneli — balonun ÜSTÜNDE açılır (.msg position:relative'e
+   göre); mesaj stream'in görünür üst kenarına yakınsa chat.js .below
+   ekleyip altta açar. Kendi balonumda sağa hizalanır. */
 .msg-react-picker {
     position: absolute; z-index: 40; display: flex; gap: 4px;
+    bottom: calc(100% + 4px); left: 0;
     background: var(--card); border: 1px solid var(--border);
     border-radius: var(--radius-full); padding: 4px 8px;
     box-shadow: 0 4px 16px rgba(43, 36, 32, 0.18);
-    margin-top: 4px;
 }
+.msg.mine .msg-react-picker { left: auto; right: 0; }
+.msg-react-picker.below { bottom: auto; top: calc(100% + 4px); }
 .msg-react-picker[hidden] { display: none; }
 .msg-react-picker button {
     background: none; border: none; font-size: 18px; cursor: pointer;
