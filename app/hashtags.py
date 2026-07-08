@@ -242,33 +242,41 @@ def _trending_hashtags(sb, hours: int = 24, limit: int = 10) -> list[dict]:
     TTL ile cache'lenir.
     """
     from .cache import get_cached
-    cache_key = f"trending:{hours}:{limit}"
+    # Cache anahtarı limit'ten BAĞIMSIZ: her sayfa farklı limit istiyor
+    # (feed 10, post detay 5, /gundem 50) — anahtar limit içerince her
+    # sayfa ayrı anda hesaplanan ayrı kopyalar görüyordu ve biri boşken
+    # diğeri dolu olabiliyordu (kullanıcı raporu). Tek liste (50) cache'lenir,
+    # limit sadece dilimler.
+    cache_key = f"trending:{hours}"
 
     def _fetch():
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-        try:
-            recent_posts = sb.table("posts").select("id").gte(
-                "created_at", cutoff
-            ).eq("visibility", "public").execute().data
-            post_ids = [p["id"] for p in recent_posts]
-            if not post_ids:
-                return []
+        # try/except BİLEREK yok: geçici bir sorgu hatası [] dönerse o boş
+        # liste 120sn cache'lenip gündemi "rastgele kayboluyor" gösteriyordu —
+        # exception yukarı çıkar, get_cached cache'e yazmaz, dışarıda yakalanır.
+        recent_posts = sb.table("posts").select("id").gte(
+            "created_at", cutoff
+        ).eq("visibility", "public").execute().data
+        post_ids = [p["id"] for p in recent_posts]
+        if not post_ids:
+            return []
 
-            rows = sb.table("post_hashtags").select("hashtag_id").in_("post_id", post_ids).execute().data
-            counts: dict = {}
-            for r in rows:
-                counts[r["hashtag_id"]] = counts.get(r["hashtag_id"], 0) + 1
-            if not counts:
-                return []
+        rows = sb.table("post_hashtags").select("hashtag_id").in_("post_id", post_ids).execute().data
+        counts: dict = {}
+        for r in rows:
+            counts[r["hashtag_id"]] = counts.get(r["hashtag_id"], 0) + 1
+        if not counts:
+            return []
 
-            top_ids = sorted(counts, key=lambda hid: counts[hid], reverse=True)[:limit]
-            tags = sb.table("hashtags").select("id, tag").in_("id", top_ids).execute().data
-            tag_by_id = {t["id"]: t["tag"] for t in tags}
-            return [
-                {"tag": tag_by_id[hid], "count": counts[hid]}
-                for hid in top_ids if hid in tag_by_id
-            ]
-        except Exception:
-            return []  # migration_hashtags.sql veya migration_post_visibility.sql henüz uygulanmamış olabilir
+        top_ids = sorted(counts, key=lambda hid: counts[hid], reverse=True)[:50]
+        tags = sb.table("hashtags").select("id, tag").in_("id", top_ids).execute().data
+        tag_by_id = {t["id"]: t["tag"] for t in tags}
+        return [
+            {"tag": tag_by_id[hid], "count": counts[hid]}
+            for hid in top_ids if hid in tag_by_id
+        ]
 
-    return get_cached(cache_key, 120, _fetch)
+    try:
+        return get_cached(cache_key, 120, _fetch)[:limit]
+    except Exception:
+        return []  # migration eksik veya geçici hata — sayfa kırılmasın, cache'lenmez

@@ -1015,10 +1015,12 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
    sadece intrinsic oran bilinmediğinde kullanılır). Sabit width/height HTML
    attribute'u için görsel boyutunun upload anında DB'ye yazılması gerekirdi
    — bu daha büyük bir değişiklik, şimdilik CSS-only yaklaşım tercih edildi. */
+/* Fotoğraf doğal oranında gösterilir (kırpma/bant YOK): genişlik karta
+   sığar, dikey fotoğrafta post en fazla 600px uzar, taşan küçültülür */
 .post-image {
-    width: 100%; border-radius: 8px; margin: 8px 0 12px;
-    display: block; max-height: 600px; aspect-ratio: 4 / 3; object-fit: contain;
-    background: var(--bg); cursor: zoom-in;
+    max-width: 100%; width: auto; max-height: 600px;
+    border-radius: 8px; margin: 8px auto 12px;
+    display: block; cursor: zoom-in;
 }
 .post-image-tile { cursor: zoom-in; }
 .post-video {
@@ -1657,7 +1659,11 @@ header[role="banner"] {
 .admin-badge-banned { background: var(--danger-bg); color: var(--danger); }
 .admin-user-row { justify-content: space-between; }
 .admin-user-actions { display: flex; gap: 8px; flex-shrink: 0; }
-.post-images-1 .post-image-tile { aspect-ratio: 16/9; max-height: 500px; }
+/* Tek görselli grid: sabit 16/9 kırpma yerine doğal oran (bkz. .post-image) */
+.post-images-1 .post-image-tile {
+    aspect-ratio: auto; object-fit: unset;
+    width: auto; max-width: 100%; max-height: 600px; margin: 0 auto;
+}
 
 /* =========================
    FEED SEKMELER VE SIDEBAR
