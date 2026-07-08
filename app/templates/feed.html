@@ -216,7 +216,7 @@
     {% if recent_activity %}
     <div class="card activity-sidebar-card">
         <h2>⚡ Son Aktiviteler</h2>
-        {% for a in recent_activity[:5] %}
+        {% for a in recent_activity[:3] %}
         <div class="activity-row">
             {% if a.profiles and a.profiles.avatar_url %}<img src="{{ a.profiles.avatar_url }}" class="avatar avatar-sm" alt="">
             {% else %}<div class="avatar avatar-sm avatar-placeholder" aria-hidden="true"></div>{% endif %}

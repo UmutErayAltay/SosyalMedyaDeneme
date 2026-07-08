@@ -314,8 +314,8 @@ def create_post():
             flash("Görsel yüklenemedi (geçersiz format veya 5MB'tan büyük).", "error")
             return redirect(url_for("routes.feed"))
     elif gif_url and not video_file:
-        # GIF URL'si: tenor domain'inden olmalı ve https:// ile başlamalı
-        if gif_url.startswith("https://media.tenor.com/"):
+        # GIF URL'si: Klipy CDN'inden olmalı (SSRF/keyfi URL engeli)
+        if gif_url.startswith("https://static.klipy.com/"):
             image_urls = [gif_url]
     if has_video:
         video_url = upload_video(video_file, folder="posts")
