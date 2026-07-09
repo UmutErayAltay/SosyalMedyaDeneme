@@ -43,6 +43,22 @@
         }
     });
 
+    // Yeni (AJAX ile eklenen) yorum/yanıtlara emoji tepki UI'ı ekler —
+    // server-render edilen yorumlarla aynı markup (post_detail.html), boş
+    // reaksiyon listesiyle başlar (yeni yorumda henüz kimse tepki vermemiştir).
+    function buildReactWrapHtml(commentId) {
+        return '<div class="comment-react-wrap" data-react-url="/social/comment/' + commentId + '/react">' +
+            '<button class="comment-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>' +
+            '<div class="comment-react-picker" hidden>' +
+            '<button type="button" data-emoji="❤️" aria-label="Kalp tepkisi">❤️</button>' +
+            '<button type="button" data-emoji="😂" aria-label="Gül tepkisi">😂</button>' +
+            '<button type="button" data-emoji="👍" aria-label="Beğen tepkisi">👍</button>' +
+            '<button type="button" data-emoji="😮" aria-label="Şaşır tepkisi">😮</button>' +
+            '<button type="button" data-emoji="😢" aria-label="Üzül tepkisi">😢</button>' +
+            '<button type="button" data-emoji="🔥" aria-label="Ateş tepkisi">🔥</button>' +
+            '</div></div>';
+    }
+
     function buildCommentHtml(data, content) {
         var username = data.username || 'Sen';
         var avatarHtml = data.avatar_url
@@ -200,6 +216,7 @@
                 article.innerHTML = buildCommentHtml(data, content) + mediaHtml +
                     '<div class="comment-actions">' +
                     '<button type="button" class="btn btn-ghost small reply-toggle" data-comment-id="' + data.id + '">Yanıtla</button>' +
+                    buildReactWrapHtml(data.id) +
                     '</div>' +
                     '<form class="reply-form" data-parent-id="' + data.id + '" data-post-id="' + postId + '" hidden>' +
                     '<input type="hidden" name="csrf_token" value="' + csrfToken() + '">' +
@@ -422,6 +439,7 @@
                 '<div class="comment-actions">' +
                 '<button type="button" class="btn btn-ghost small comment-like-btn" data-liked="0" ' +
                 'data-like-url="/social/comment/like/' + data.id + '">♥ <span class="like-count">0</span></button>' +
+                buildReactWrapHtml(data.id) +
                 '</div>';
             repliesDiv.appendChild(replyArticle);
             replyForm.hidden = true;
@@ -436,4 +454,142 @@
             alert('Yanıt gönderilemedi.');
         }
     });
+
+    // === Yorum Emoji Tepkileri — Document Delegation ===
+    // chat.js'teki mesaj reaksiyon bloğunun (chat.js:774-924) yorumlara
+    // uyarlanmış hali. Fark: chip'ler/trigger/picker burada .comment-react-wrap
+    // içinde toplu duruyor (mesajlarda doğrudan .msg altında). position:fixed
+    // kullanılıyor — sebep aynı: absolute konumlanma sayfayı büyütmesin.
+
+    function closeAllCommentReactPickers(except) {
+        document.querySelectorAll('.comment-react-picker:not([hidden])').forEach(function (p) {
+            if (p !== except) p.setAttribute('hidden', '');
+        });
+    }
+
+    function setCommentChipCount(chip, count) {
+        if (count <= 0) {
+            chip.remove();
+            return;
+        }
+        chip.dataset.count = count;
+        chip.textContent = chip.dataset.reaction + ' ' + count;
+        chip.title = count + ' kişi';
+    }
+
+    function applyCommentReactionResult(wrap, emoji, newReaction) {
+        if (newReaction) {
+            wrap.querySelectorAll('.comment-reaction-chip.mine').forEach(function (old) {
+                if (old.dataset.reaction !== newReaction) {
+                    old.classList.remove('mine');
+                    setCommentChipCount(old, parseInt(old.dataset.count || 1, 10) - 1);
+                }
+            });
+            var chip = wrap.querySelector('.comment-reaction-chip[data-reaction="' + newReaction + '"]');
+            if (!chip) {
+                var reactionsDiv = wrap.querySelector('.comment-reactions');
+                if (!reactionsDiv) {
+                    reactionsDiv = document.createElement('div');
+                    reactionsDiv.className = 'comment-reactions';
+                    wrap.insertBefore(reactionsDiv, wrap.firstChild);
+                }
+                chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'comment-reaction-chip mine';
+                chip.dataset.reaction = newReaction;
+                reactionsDiv.appendChild(chip);
+                setCommentChipCount(chip, 1);
+            } else if (!chip.classList.contains('mine')) {
+                chip.classList.add('mine');
+                setCommentChipCount(chip, parseInt(chip.dataset.count || 1, 10) + 1);
+            }
+        } else {
+            var removed = wrap.querySelector('.comment-reaction-chip[data-reaction="' + emoji + '"]');
+            if (removed) {
+                removed.classList.remove('mine');
+                setCommentChipCount(removed, parseInt(removed.dataset.count || 1, 10) - 1);
+            }
+        }
+    }
+
+    function sendCommentReaction(wrap, emoji) {
+        var reactUrl = wrap.dataset.reactUrl;
+        if (!reactUrl) return;
+
+        fetch(reactUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken()
+            },
+            body: JSON.stringify({ reaction: emoji })
+        })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            if (!data.ok) return;
+            applyCommentReactionResult(wrap, emoji, data.reaction);
+        })
+        .catch(function (err) {
+            console.error('Yorum tepkisi gönderilemedi:', err);
+        });
+    }
+
+    document.addEventListener('click', function (e) {
+        var list = e.target.closest('#comment-list');
+        if (!list) {
+            closeAllCommentReactPickers();
+            return;
+        }
+
+        var trigger = e.target.closest('.comment-react-trigger');
+        if (trigger) {
+            e.preventDefault();
+            var wrap = trigger.closest('.comment-react-wrap');
+            if (wrap) {
+                var picker = wrap.querySelector('.comment-react-picker');
+                if (picker) {
+                    if (picker.hasAttribute('hidden')) {
+                        closeAllCommentReactPickers(picker);
+                        var rect = trigger.getBoundingClientRect();
+                        picker.style.top = (rect.bottom + 4) + 'px';
+                        picker.style.left = rect.left + 'px';
+                        picker.removeAttribute('hidden');
+                        var overflow = picker.getBoundingClientRect().right - window.innerWidth;
+                        if (overflow > 0) {
+                            picker.style.left = (rect.left - overflow - 8) + 'px';
+                        }
+                    } else {
+                        picker.setAttribute('hidden', '');
+                    }
+                }
+            }
+            return;
+        }
+
+        var emojiBtn = e.target.closest('.comment-react-picker button[data-emoji]');
+        if (emojiBtn) {
+            e.preventDefault();
+            var wrapEl = emojiBtn.closest('.comment-react-wrap');
+            var pickerEl = emojiBtn.closest('.comment-react-picker');
+            if (wrapEl && pickerEl) {
+                pickerEl.setAttribute('hidden', '');
+                sendCommentReaction(wrapEl, emojiBtn.dataset.emoji);
+            }
+            return;
+        }
+
+        var chip = e.target.closest('.comment-reaction-chip');
+        if (chip && !chip.closest('.comment-react-picker')) {
+            e.preventDefault();
+            var chipWrap = chip.closest('.comment-react-wrap');
+            if (chipWrap) sendCommentReaction(chipWrap, chip.dataset.reaction);
+        }
+    });
+
+    // Sayfa scroll'unda açık picker'ları kapat — position:fixed olduğu için
+    // scroll ile birlikte kaymaz (chat.js'teki #stream scroll listener'ının
+    // eşdeğeri, burada scroll konteyneri sayfanın kendisi).
+    window.addEventListener('scroll', function () {
+        closeAllCommentReactPickers();
+    }, { passive: true });
 })();

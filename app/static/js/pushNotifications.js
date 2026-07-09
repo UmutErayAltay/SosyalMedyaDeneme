@@ -64,6 +64,15 @@
     }
 
     async function subscribe() {
+        // Push API yalnızca HTTPS veya localhost'ta çalışır. Güvensiz origin'de
+        // (ör. LAN IP'siyle erişim, http://192.168.x.x:5000) tarayıcı
+        // pushManager.subscribe()'ı kriptik "Registration failed - push service
+        // error" ile reddeder — kullanıcı bunu anahtar/kod hatası sanıyordu,
+        // gerçek sebep ortam kısıtı. Denemeden önce net uyarı ver (Sprint 65).
+        if (!window.isSecureContext) {
+            setStatus('Bildirimler yalnızca HTTPS veya localhost üzerinden çalışır. Şu an güvenli olmayan bir adrestesin (ör. LAN IP) — sunucu HTTPS ile yayına alınınca çalışacak.');
+            return;
+        }
         if (Notification.permission === 'denied') {
             setStatus('Bildirim izni tarayıcı ayarlarından engellenmiş — açmak için site ayarlarını kontrol et.');
             return;

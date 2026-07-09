@@ -508,6 +508,27 @@ def post_detail(post_id):
         for c in comments:
             c["sticker"] = None
 
+    # Emoji tepkileri bağla — tek IN sorgusu, gruplayıp count+mine hesapla
+    # (messaging/views.py'deki mesaj reaksiyon enrichment'ıyla aynı desen).
+    # comment_reactions tablosu yoksa (migration henüz uygulanmadıysa) sessizce boş kalır.
+    try:
+        reactions_by_comment = {}
+        if comment_ids:
+            rows = sb.table("comment_reactions").select("comment_id, user_id, reaction") \
+                .in_("comment_id", comment_ids).execute().data
+            for r in rows:
+                bucket = reactions_by_comment.setdefault(r["comment_id"], {})
+                bucket.setdefault(r["reaction"], []).append(r["user_id"])
+        for c in comments:
+            grouped = reactions_by_comment.get(c["id"], {})
+            c["reactions"] = [
+                {"reaction": emoji, "count": len(users), "mine": me in users}
+                for emoji, users in grouped.items()
+            ]
+    except Exception:
+        for c in comments:
+            c["reactions"] = []
+
     # Hiyerarşik yapı: ana yorumlar + cevaplar
     top_comments = [c for c in comments if not c.get("parent_comment_id")]
     for tc in top_comments:

@@ -186,6 +186,28 @@
                 <button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>
             </form>
             {% endif %}
+            <div class="comment-react-wrap" data-react-url="{{ url_for('social.react_comment', comment_id=c.id) }}">
+                {% if c.reactions %}
+                <div class="comment-reactions">
+                    {% for r in c.reactions %}
+                    <button class="comment-reaction-chip {{ 'mine' if r.mine }}"
+                            data-reaction="{{ r.reaction }}" data-count="{{ r.count }}"
+                            title="{{ r.count }} kişi" type="button">
+                        {{ r.reaction }} {{ r.count }}
+                    </button>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <button class="comment-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>
+                <div class="comment-react-picker" hidden>
+                    <button type="button" data-emoji="❤️" aria-label="Kalp tepkisi">❤️</button>
+                    <button type="button" data-emoji="😂" aria-label="Gül tepkisi">😂</button>
+                    <button type="button" data-emoji="👍" aria-label="Beğen tepkisi">👍</button>
+                    <button type="button" data-emoji="😮" aria-label="Şaşır tepkisi">😮</button>
+                    <button type="button" data-emoji="😢" aria-label="Üzül tepkisi">😢</button>
+                    <button type="button" data-emoji="🔥" aria-label="Ateş tepkisi">🔥</button>
+                </div>
+            </div>
         </div>
 
         {# --- Yanıt formu (gizli, tıklayınca açılır) — ana yorum composer'ıyla
@@ -259,6 +281,28 @@
                         <button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>
                     </form>
                     {% endif %}
+                    <div class="comment-react-wrap" data-react-url="{{ url_for('social.react_comment', comment_id=r.id) }}">
+                        {% if r.reactions %}
+                        <div class="comment-reactions">
+                            {% for rr in r.reactions %}
+                            <button class="comment-reaction-chip {{ 'mine' if rr.mine }}"
+                                    data-reaction="{{ rr.reaction }}" data-count="{{ rr.count }}"
+                                    title="{{ rr.count }} kişi" type="button">
+                                {{ rr.reaction }} {{ rr.count }}
+                            </button>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <button class="comment-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>
+                        <div class="comment-react-picker" hidden>
+                            <button type="button" data-emoji="❤️" aria-label="Kalp tepkisi">❤️</button>
+                            <button type="button" data-emoji="😂" aria-label="Gül tepkisi">😂</button>
+                            <button type="button" data-emoji="👍" aria-label="Beğen tepkisi">👍</button>
+                            <button type="button" data-emoji="😮" aria-label="Şaşır tepkisi">😮</button>
+                            <button type="button" data-emoji="😢" aria-label="Üzül tepkisi">😢</button>
+                            <button type="button" data-emoji="🔥" aria-label="Ateş tepkisi">🔥</button>
+                        </div>
+                    </div>
                 </div>
             </article>
             {% endfor %}

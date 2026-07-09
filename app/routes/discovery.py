@@ -47,10 +47,15 @@ def search():
     # type filtresine göre gereksiz sorgu atlanır.
     users = []
     if search_type in ("all", "users"):
-        # Kullanıcı ara (username ILIKE)
+        # Kullanıcı ara — username VEYA full_name ILIKE (önceden sadece
+        # username aranıyordu, "Ahmet" gibi tam adla arayan kullanıcı sonuç
+        # bulamıyordu; PostgREST or_ syntax'ı virgülle ayrılmış koşullar alır).
+        q_escaped = q.replace(",", "").replace(")", "")
         users = sb.table("profiles").select(
             "id, username, full_name, avatar_url"
-        ).ilike("username", f"%{q}%").limit(20).execute().data
+        ).or_(
+            f"username.ilike.%{q_escaped}%,full_name.ilike.%{q_escaped}%"
+        ).limit(20).execute().data
         users = [u for u in users if u["id"] not in blocked_ids]
 
     posts = []

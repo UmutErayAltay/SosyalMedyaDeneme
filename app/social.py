@@ -178,6 +178,71 @@ def toggle_comment_like(comment_id):
     return redirect(request.referrer or url_for("routes.feed"))
 
 
+# ----------------------- YORUM EMOJİ TEPKİSİ -----------------------
+# messaging/reactions.py react_message() ile birebir aynı toggle deseni,
+# yorumlara uyarlanmış. comment_likes (♥) tablosundan AYRI bir katman.
+
+@bp.route("/comment/<comment_id>/react", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def react_comment(comment_id):
+    """Yoruma emoji tepkisi ekle/değiştir/sil (toggle).
+
+    Request body: {"reaction": "❤️"}
+    comment_reactions tablosu henüz oluşturulmadıysa 503 döner.
+    """
+    sb = get_sb()
+    me = session["user"]["id"]
+
+    try:
+        data = request.get_json() or {}
+    except Exception:
+        return jsonify({"error": "invalid_json"}), 400
+
+    reaction = data.get("reaction", "").strip()
+    if not reaction:
+        return jsonify({"error": "empty_reaction"}), 400
+
+    c = sb.table("comments").select("id, user_id, post_id").eq("id", comment_id).execute()
+    if not c.data:
+        abort(404)  # Enumeration koruması
+    comment_owner_id = c.data[0]["user_id"]
+    post_id = c.data[0]["post_id"]
+
+    try:
+        existing = sb.table("comment_reactions").select().eq(
+            "comment_id", comment_id
+        ).eq("user_id", me).execute()
+
+        if existing.data:
+            existing_reaction = existing.data[0].get("reaction")
+            if existing_reaction == reaction:
+                sb.table("comment_reactions").delete().eq(
+                    "comment_id", comment_id
+                ).eq("user_id", me).execute()
+                return jsonify(ok=True, reaction=None), 200
+            else:
+                sb.table("comment_reactions").update({"reaction": reaction}).eq(
+                    "comment_id", comment_id
+                ).eq("user_id", me).execute()
+                return jsonify(ok=True, reaction=reaction), 200
+        else:
+            sb.table("comment_reactions").insert({
+                "comment_id": comment_id,
+                "user_id": me,
+                "reaction": reaction,
+            }).execute()
+            if comment_owner_id != me:
+                notify(sb, recipient_id=comment_owner_id, actor_id=me,
+                       type_="comment_reaction", post_id=post_id, comment_id=comment_id)
+            return jsonify(ok=True, reaction=reaction), 201
+
+    except Exception as e:
+        if "comment_reactions" in str(e) or "does not exist" in str(e):
+            return jsonify({"error": "feature_not_yet_active"}), 503
+        raise
+
+
 # ----------------------- YORUM YANITLAMA -----------------------
 
 @bp.route("/comment/<post_id>/reply/<parent_id>", methods=["POST"])
