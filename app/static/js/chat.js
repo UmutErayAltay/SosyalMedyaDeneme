@@ -627,16 +627,7 @@
             // Sticker/GIF seçiliyken metin boş olabilir
             if (!content && !hasImage && !stickerVal && !gifVal) return;
 
-            // Çift gönderim koruması: aynı metin 1.2sn içinde ikinci kez
-            // gönderilemez (çift Enter / çift tıklama / yavaş ağda sabırsızlık)
-            var nowTs = Date.now();
-            if (content && content === form._lastContent && nowTs - (form._lastSentAt || 0) < 1200) return;
-            form._lastContent = content;
-            form._lastSentAt = nowTs;
-
             sendTyping(false);
-            var submitBtn = form.querySelector('button[type="submit"]');
-            submitBtn.disabled = true;
 
             var tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2);
             // Optimistic balonda GIF görsel olarak, sticker ise sunucu
@@ -653,59 +644,60 @@
                 { tempId: tempId, uploading: hasImage }
             );
 
-            var sentContent = content;
+            // Gönderilecek veriyi HEMEN yakala ve inputları HEMEN temizle —
+            // kullanıcı bir sonraki mesajı beklemeden yazabilir (bekletme yok);
+            // ağ isteği kuyruğa girer (sıra korunur, ard arda gönderimde
+            // mesajlar sunucuya doğru sırayla ulaşır — beğeni deseninin aynısı)
+            var formData = new FormData(form);
+            formData.set('content', content);
+            if (!hasImage) formData.delete('image');
+
             input.value = '';
             input.style.height = 'auto';
             if (imageName) imageName.textContent = '';
-
-            try {
-                var formData = new FormData(form);
-                formData.set('content', sentContent);
-                if (!hasImage) formData.delete('image');
-
-                var res = await fetch(sendUrl, {
-                    method: 'POST',
-                    headers: { 'Accept': 'application/json' },
-                    body: formData,
-                });
-                if (!res.ok) throw new Error('İstek başarısız: ' + res.status);
-
-                var saved = await res.json();
-
-                if (node) {
-                    node.dataset.msgId = saved.id;
-                    node.dataset.reactUrl = reactUrlFor(saved.id);
-                    var wrapper = node.querySelector('.msg-image-wrapper');
-                    if (wrapper) {
-                        wrapper.classList.remove('uploading');
-                        var spinner = wrapper.querySelector('.upload-spinner');
-                        if (spinner) spinner.remove();
-                        var img = wrapper.querySelector('.msg-image');
-                        if (img && saved.image_url) img.src = saved.image_url;
-                    }
-                    var timeEl = node.querySelector('.time');
-                    if (timeEl && saved.created_at) {
-                        timeEl.textContent = formatLocalTime(saved.created_at);
-                    }
-                }
-
-                if (imageInput) imageInput.value = '';
-                // Sticker/GIF seçimleri tek kullanımlık — temizlenmezse sonraki
-                // her mesaj aynı sticker'ı/GIF'i tekrar gönderir
-                if (stickerIdInput) {
-                    stickerIdInput.value = '';
-                    delete stickerIdInput.dataset.imageUrl;
-                }
-                if (gifUrlInput) gifUrlInput.value = '';
-            } catch (err) {
-                console.error('Mesaj gönderilemedi:', err);
-                if (node) node.remove();
-                alert('Mesaj gönderilemedi.');
-            } finally {
-                if (localImageUrl) URL.revokeObjectURL(localImageUrl);
-                submitBtn.disabled = false;
-                input.focus();
+            if (imageInput) imageInput.value = '';
+            if (stickerIdInput) {
+                stickerIdInput.value = '';
+                delete stickerIdInput.dataset.imageUrl;
             }
+            if (gifUrlInput) gifUrlInput.value = '';
+            input.focus();
+
+            form._sendChain = (form._sendChain || Promise.resolve()).then(async function () {
+                try {
+                    var res = await fetch(sendUrl, {
+                        method: 'POST',
+                        headers: { 'Accept': 'application/json' },
+                        body: formData,
+                    });
+                    if (!res.ok) throw new Error('İstek başarısız: ' + res.status);
+
+                    var saved = await res.json();
+
+                    if (node) {
+                        node.dataset.msgId = saved.id;
+                        node.dataset.reactUrl = reactUrlFor(saved.id);
+                        var wrapper = node.querySelector('.msg-image-wrapper');
+                        if (wrapper) {
+                            wrapper.classList.remove('uploading');
+                            var spinner = wrapper.querySelector('.upload-spinner');
+                            if (spinner) spinner.remove();
+                            var img = wrapper.querySelector('.msg-image');
+                            if (img && saved.image_url) img.src = saved.image_url;
+                        }
+                        var timeEl = node.querySelector('.time');
+                        if (timeEl && saved.created_at) {
+                            timeEl.textContent = formatLocalTime(saved.created_at);
+                        }
+                    }
+                } catch (err) {
+                    console.error('Mesaj gönderilemedi:', err);
+                    if (node) node.remove();
+                    alert('Mesaj gönderilemedi.');
+                } finally {
+                    if (localImageUrl) URL.revokeObjectURL(localImageUrl);
+                }
+            });
         });
 
         // --- Supabase Realtime: önceki kanalı kapat, yeni konuşmaya abone ol ---
