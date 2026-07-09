@@ -12,10 +12,12 @@
         localStream: null,
         remoteStream: null,
         signalingChannel: null, // aktif channel (chat.js'den paylaşılan)
+        callsChannel: null, // calls:<meId> kanalı (global arama dinlemesi)
         callState: 'idle', // idle, ringing, active, ended
         callStartedAt: null,
         iceCandidateQueue: [], // answer set edilmeden önce gelen ICE adayları
         callDurationInterval: null,
+        noAnswerTimeout: null, // arayan tarafında 30sn sonra timeout
     };
 
     // --- Yardımcı Fonksiyonlar ---
@@ -34,6 +36,47 @@
         var m = Math.floor(totalSec / 60);
         var s = totalSec % 60;
         return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    // Gelen arama modal ve arama overlay DOM'unu oluştur (panel yoksa)
+    function ensureCallDOM() {
+        if (!document.getElementById('call-modal-incoming')) {
+            var modalHtml = '<div class="modal-overlay" id="call-modal-incoming" role="dialog" aria-modal="true" aria-labelledby="call-modal-incoming-title" hidden>\n' +
+                '    <div class="modal">\n' +
+                '        <div class="modal-header">\n' +
+                '            <h2 id="call-modal-incoming-title">Gelen Arama</h2>\n' +
+                '        </div>\n' +
+                '        <div class="modal-body call-modal-body">\n' +
+                '            <p id="incoming-call-name" style="text-align: center; font-weight: 600; margin-bottom: 16px;"></p>\n' +
+                '            <div style="display: flex; gap: 12px; justify-content: center;">\n' +
+                '                <button type="button" class="btn btn-primary" id="incoming-call-accept-btn">✓ Kabul Et</button>\n' +
+                '                <button type="button" class="btn btn-ghost danger" id="incoming-call-reject-btn">✗ Reddet</button>\n' +
+                '            </div>\n' +
+                '        </div>\n' +
+                '    </div>\n' +
+                '</div>';
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+        }
+
+        if (!document.getElementById('call-overlay')) {
+            var overlayHtml = '<div class="call-overlay" id="call-overlay" hidden>\n' +
+                '    <div class="call-remote-avatar" id="call-remote-avatar" hidden>\n' +
+                '        <div class="avatar avatar-large" style="background: var(--border); width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px;">👤</div>\n' +
+                '        <p id="call-voice-info" style="margin-top: 16px; color: var(--card); font-size: 16px;">Sesli Arama</p>\n' +
+                '    </div>\n' +
+                '    <video id="call-remote-video" class="call-remote-video" autoplay playsinline></video>\n' +
+                '    <video id="call-local-video" class="call-local-video" autoplay playsinline muted></video>\n' +
+                '    <div class="call-controls-bar">\n' +
+                '        <span id="call-duration" class="call-duration"></span>\n' +
+                '        <div class="call-controls">\n' +
+                '            <button type="button" class="call-btn" id="call-controls-mic" aria-label="Mikrofonu aç/kapat" title="Mikrofon">🎙</button>\n' +
+                '            <button type="button" class="call-btn" id="call-controls-camera" aria-label="Kamerayı aç/kapat" title="Kamera">📷</button>\n' +
+                '            <button type="button" class="call-btn call-btn-danger" id="call-controls-hangup" aria-label="Aramayı sonlandır" title="Kapat">📵</button>\n' +
+                '        </div>\n' +
+                '    </div>\n' +
+                '</div>';
+            document.body.insertAdjacentHTML('beforeend', overlayHtml);
+        }
     }
 
     // UI elemanları
@@ -62,6 +105,17 @@
         };
     }
 
+    // TURN + STUN sunucuları ICE candidate bulma için (internet üzerinden çalışmasını sağlar)
+    function getIceServers() {
+        return [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun.relay.metered.ca:80' },
+            { urls: 'turn:standard.relay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:standard.relay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turns:standard.relay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+        ];
+    }
+
     // --- Arama Durumu Yönetimi ---
 
     async function startCall(isVideo) {
@@ -86,9 +140,9 @@
         }
 
         try {
-            // RTCPeerConnection kur
+            // RTCPeerConnection kur (TURN + STUN sunucularıyla)
             state.peerConnection = new RTCPeerConnection({
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                iceServers: getIceServers()
             });
 
             // Local stream'i bağla
@@ -118,6 +172,16 @@
                         sdpMLineIndex: event.candidate.sdpMLineIndex,
                         sdpMid: event.candidate.sdpMid
                     });
+                }
+            };
+
+            // ICE bağlantı durumunu dinle — başarısız olursa aramayı sonlandır
+            state.peerConnection.oniceconnectionstatechange = function () {
+                log('ICE bağlantı durumu: ' + state.peerConnection.iceConnectionState);
+                if (state.peerConnection && state.peerConnection.iceConnectionState === 'failed') {
+                    log('ICE bağlantı başarısız');
+                    showAlert('Bağlantı kurulamadı. TURN sunucusu yardımcı olamadı.');
+                    endCall();
                 }
             };
 
@@ -130,7 +194,9 @@
                 type: 'offer',
                 sdp: offer.sdp,
                 video: isVideo,
-                callerName: panel ? panel.dataset.myUsername : ''
+                callerName: panel ? panel.dataset.myUsername : '',
+                conversation_id: state.conversationId,
+                to: state.otherId
             });
 
             // Overlay'i göster
@@ -138,6 +204,16 @@
 
             state.callState = 'ringing';
             startDurationTimer();
+
+            // 30 saniye sonra cevap yoksa aramayı sonlandır
+            if (state.noAnswerTimeout) clearTimeout(state.noAnswerTimeout);
+            state.noAnswerTimeout = setTimeout(function () {
+                if (state.callState === 'ringing') {
+                    log('Cevap yok, arama sonlandırılıyor');
+                    showAlert('Cevap yok.');
+                    endCall();
+                }
+            }, 30000);
 
         } catch (err) {
             log('Arama başlatma hatası: ' + err.message);
@@ -147,6 +223,12 @@
     }
 
     async function acceptCall(offerSdp) {
+        // Timeout'u temizle (karşı taraf cevap verdi)
+        if (state.noAnswerTimeout) {
+            clearTimeout(state.noAnswerTimeout);
+            state.noAnswerTimeout = null;
+        }
+
         state.callState = 'active';
 
         try {
@@ -154,9 +236,9 @@
             var config = getUserMediaConfig(state.isVideoCall);
             state.localStream = await navigator.mediaDevices.getUserMedia(config);
 
-            // RTCPeerConnection kur
+            // RTCPeerConnection kur (TURN + STUN sunucularıyla)
             state.peerConnection = new RTCPeerConnection({
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                iceServers: getIceServers()
             });
 
             // Local stream'i bağla
@@ -186,6 +268,16 @@
                         sdpMLineIndex: event.candidate.sdpMLineIndex,
                         sdpMid: event.candidate.sdpMid
                     });
+                }
+            };
+
+            // ICE bağlantı durumunu dinle — başarısız olursa aramayı sonlandır
+            state.peerConnection.oniceconnectionstatechange = function () {
+                log('ICE bağlantı durumu: ' + state.peerConnection.iceConnectionState);
+                if (state.peerConnection && state.peerConnection.iceConnectionState === 'failed') {
+                    log('ICE bağlantı başarısız');
+                    showAlert('Bağlantı kurulamadı. TURN sunucusu yardımcı olamadı.');
+                    endCall();
                 }
             };
 
@@ -233,6 +325,12 @@
         if (!state.peerConnection) {
             log('Answer alındı ama peer connection yok');
             return;
+        }
+
+        // Timeout'u temizle (karşı taraf cevap verdi)
+        if (state.noAnswerTimeout) {
+            clearTimeout(state.noAnswerTimeout);
+            state.noAnswerTimeout = null;
         }
 
         try {
@@ -311,6 +409,12 @@
             state.callDurationInterval = null;
         }
         if (elem.callDuration) elem.callDuration.textContent = '';
+
+        // No-answer timeout'u temizle
+        if (state.noAnswerTimeout) {
+            clearTimeout(state.noAnswerTimeout);
+            state.noAnswerTimeout = null;
+        }
     }
 
     function rejectCall() {
@@ -331,17 +435,47 @@
 
     // --- Sinyalleşme ---
 
+    // TÜM çağrı sinyalleri kullanıcı-bazlı kanallardan akar: gönderen
+    // calls:<hedefId> kanalına yazar, herkes kendi calls:<meId> kanalını
+    // dinler (global listener). Konuşma kanalı kullanılmaz — karşı taraf
+    // sohbeti açık tutmak zorunda değil (inbox'tayken de telefon çalar,
+    // answer/ice inbox'tan da gidebilir).
+    //
+    // DİKKAT: supabase-js'te abone OLUNMAMIŞ kanala send() çalışmaz — kanal
+    // hedef başına bir kez kurulup SUBSCRIBED olana dek beklenir (cache'li).
+    var _outboundChannels = {};
+    function getOutboundChannel(targetId) {
+        if (_outboundChannels[targetId]) return _outboundChannels[targetId];
+        _outboundChannels[targetId] = new Promise(function (resolve, reject) {
+            if (!window.supabaseClient) { reject(new Error('supabase yok')); return; }
+            var ch = window.supabaseClient.channel('calls:' + targetId, {
+                config: { broadcast: { self: false } }
+            });
+            ch.subscribe(function (status) {
+                if (status === 'SUBSCRIBED') resolve(ch);
+                else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    delete _outboundChannels[targetId]; // sonraki denemede yeniden kur
+                    reject(new Error('kanal kurulamadı: ' + status));
+                }
+            });
+        });
+        return _outboundChannels[targetId];
+    }
+
     function sendSignal(payload) {
-        if (!state.signalingChannel) {
-            log('Sinyalleşme kanalı hazır değil');
+        var targetId = payload.to || state.otherId;
+        if (!targetId) {
+            log('Sinyal hedefi yok (otherId boş)');
             return;
         }
-
-        var signal = Object.assign({ from: state.meId }, payload);
-        state.signalingChannel.send({
-            type: 'broadcast',
-            event: 'call-signal',
-            payload: signal
+        var signal = Object.assign({
+            from: state.meId,
+            conversation_id: state.conversationId
+        }, payload);
+        getOutboundChannel(targetId).then(function (ch) {
+            ch.send({ type: 'broadcast', event: 'call-signal', payload: signal });
+        }).catch(function (err) {
+            log('Sinyal gönderilemedi: ' + err.message);
         });
     }
 
@@ -353,9 +487,12 @@
 
         if (signal.type === 'offer') {
             if (state.callState !== 'idle') {
-                sendSignal({ type: 'reject' });
+                // Meşgulüm — reddi ARAYANA gönder (aktif görüşmedeki kişiye değil)
+                sendSignal({ type: 'reject', to: signal.from });
                 return;
             }
+            // Cevap verirken hedefimiz arayan; konuşma bağlamı payload'dan gelir
+            state.conversationId = signal.conversation_id || state.conversationId;
 
             state.otherId = signal.from;
             state.isVideoCall = signal.video || false;
@@ -469,6 +606,44 @@
         }
     }
 
+    // --- Global Arama Dinleyicisi (inbox'ta da çalışsın) ---
+
+    window.initGlobalCallListener = function (meId) {
+        if (!meId || window._globalCallListenerInitialized) return;
+        window._globalCallListenerInitialized = true;
+
+        // Inbox'ta (aktif konuşma yokken) gelen aramayı cevaplayabilmek için
+        // meId burada da set edilir — initCallSystem hiç çalışmamış olabilir
+        state.meId = meId;
+
+        ensureCallDOM();
+
+        if (!window.supabaseClient) {
+            log('Supabase client mevcut değil, global call listener yapılamıyor');
+            return;
+        }
+
+        try {
+            state.callsChannel = window.supabaseClient.channel('calls:' + meId, {
+                config: { broadcast: { self: false } }
+            });
+
+            state.callsChannel.on('broadcast', { event: 'call-signal' }, function (msg) {
+                // TÜM sinyal türleri artık kullanıcı kanalından akar
+                // (offer/answer/ice/hangup/reject) — bkz. sendSignal
+                handleSignal(msg.payload || {});
+            }).subscribe(function (status) {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    log('Global call channel bağlantı sorunu, durum: ' + status);
+                }
+            });
+
+            log('Global call listener başlatıldı: calls:' + meId);
+        } catch (err) {
+            log('Global call listener başlatılamadı: ' + err.message);
+        }
+    };
+
     // --- Global Başlatma (chat.js konuşma geçişlerinde çağrılır) ---
 
     window.initCallSystem = function (conversationId, meId, signalingChannel, otherUserId) {
@@ -476,6 +651,13 @@
         state.meId = meId;
         state.signalingChannel = signalingChannel;
         state.otherId = otherUserId;
+
+        ensureCallDOM();
+
+        // Global call listener'ı ilk seferinde başlat (inbox'ta da gelen aramalar çalışsın)
+        if (meId && !window._globalCallListenerInitialized) {
+            window.initGlobalCallListener(meId);
+        }
 
         var elem = getElements();
 
@@ -513,23 +695,26 @@
             elem.callControlsHangup.onclick = function () { endCall(); };
         }
 
-        // Sinyalleşme: broadcast event'lerini dinle
-        if (signalingChannel) {
-            signalingChannel.on('broadcast', { event: 'call-signal' }, function (msg) {
-                var payload = msg.payload || {};
-                handleSignal(payload);
-            });
-        }
-
-        // Sayfa kapatılırken hangup gönder
-        window.addEventListener('beforeunload', function () {
-            if (state.callState !== 'idle') {
-                sendSignal({ type: 'hangup' });
-            }
-        });
+        // NOT: konuşma kanalında 'call-signal' aboneliği BİLEREK yok — tüm
+        // çağrı sinyalleri kullanıcı-bazlı calls:<id> kanallarından akar
+        // (bkz. sendSignal). Konuşma kanalına da bağlanmak aynı sinyalin iki
+        // kez işlenmesine (çift setRemoteDescription hatası) yol açardı.
 
         log('Başlatıldı: ' + conversationId);
     };
+
+    // Sayfa kapatılırken hangup gönder (tek sefer, initCallSystem dışında —
+    // her konuşma geçişinde tekrar tekrar bağlanmasın)
+    window.addEventListener('beforeunload', function () {
+        if (state.callState !== 'idle') {
+            sendSignal({ type: 'hangup' });
+        }
+    });
+
+    // Sayfa yüklenir yüklenmez global dinleyici: inbox'ta da telefon çalar
+    if (window.ME_ID) {
+        window.initGlobalCallListener(window.ME_ID);
+    }
 
     // beforeunload geri dönüş değeri (browser uyarı gösterir)
     window.addEventListener('beforeunload', function (e) {
