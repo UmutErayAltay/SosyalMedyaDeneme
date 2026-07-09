@@ -31,12 +31,12 @@
         </a>
         <div class="admin-user-actions">
             <form action="{{ url_for('admin.toggle_admin', user_id=u.id) }}" method="post" class="inline"
-                  onsubmit="return confirm('{{ u.username }} için admin yetkisini değiştirmek istiyor musun?')">
+                  data-confirm="{{ u.username }} için admin yetkisini değiştirmek istiyor musun?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-ghost small">{{ 'Adminliği kaldır' if u.is_admin else 'Admin yap' }}</button>
             </form>
             <form action="{{ url_for('admin.toggle_ban', user_id=u.id) }}" method="post" class="inline"
-                  onsubmit="return confirm('{{ u.username }} için yasak durumunu değiştirmek istiyor musun?')">
+                  data-confirm="{{ u.username }} için yasak durumunu değiştirmek istiyor musun?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-ghost small danger">{{ 'Yasağı kaldır' if u.is_banned else 'Yasakla' }}</button>
             </form>

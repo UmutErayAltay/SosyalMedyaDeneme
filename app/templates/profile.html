@@ -112,19 +112,19 @@
                     </button>
                     <div class="profile-actions-menu" role="menu" hidden>
                         <form action="{{ url_for('blocks.toggle_block', username=profile.username) }}"
-                              method="post" class="profile-actions-menu-form">
+                              method="post" class="profile-actions-menu-form"
+                              data-confirm="{{ profile.username }} kullanıcısını engellemek istediğine emin misin?">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="profile-actions-menu-item"
-                                    onclick="return confirm('{{ profile.username }} kullanıcısını engellemek istediğine emin misin?')">
+                            <button type="submit" class="profile-actions-menu-item">
                                 🚫 Engelle
                             </button>
                         </form>
-                        <form action="{{ url_for('reports.create_report') }}" method="post" class="profile-actions-menu-form">
+                        <form action="{{ url_for('reports.create_report') }}" method="post" class="profile-actions-menu-form"
+                              data-confirm="{{ profile.username }} kullanıcısını şikayet etmek istediğine emin misin?">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="target_type" value="user">
                             <input type="hidden" name="target_id" value="{{ profile.id }}">
-                            <button type="submit" class="profile-actions-menu-item"
-                                    onclick="return confirm('{{ profile.username }} kullanıcısını şikayet etmek istediğine emin misin?')">
+                            <button type="submit" class="profile-actions-menu-item">
                                 🚩 Şikayet et
                             </button>
                         </form>
@@ -286,47 +286,57 @@
 <script src="{{ url_for('static', filename='js/storyHighlights.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stickers.js') }}"></script>
 <script>
-    // Çıkartmalar sekmesi: lazy yükleme
-    document.addEventListener('click', function (e) {
-        var tab = e.target.closest('#tab-stickers');
-        if (!tab || tab.getAttribute('aria-selected') === 'true') return;
+    // Çıkartmalar sekmesi: her tıklamada yükle. ÖNCEKİ sürüm "aria-selected
+    // zaten true ise yükleme" diyordu ama sekme script'i aria-selected'ı bu
+    // dinleyiciden ÖNCE 'true' yaptığı için yükleyici HİÇ çalışmıyor, panel
+    // statik 'Yükleniyor...' yazısında kalıyordu (kullanıcı raporu).
+    function loadProfileStickers() {
+        var grid = document.getElementById('stickers-profile-grid');
+        if (!grid) return;
 
-        setTimeout(function () {
-            var grid = document.getElementById('stickers-profile-grid');
-            if (!grid) return;
+        grid.innerHTML = '<p class="muted center">Yükleniyor...</p>';
 
-            grid.innerHTML = '<p class="muted center">Yükleniyor...</p>';
+        fetch('/stickers/mine')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                grid.innerHTML = '';
 
-            fetch('/stickers/mine')
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    grid.innerHTML = '';
+                if (!data.stickers || data.stickers.length === 0) {
+                    grid.innerHTML = '<p class="muted center">Henüz çıkartma yok. <button type="button" class="btn btn-ghost small sticker-upload-profile-btn">➕ Yükle</button><input type="file" name="sticker-file-profile" accept="image/*" hidden></p>';
+                    return;
+                }
 
-                    if (!data.stickers || data.stickers.length === 0) {
-                        grid.innerHTML = '<p class="muted center">Henüz çıkartma yok. <button type="button" class="btn btn-ghost small sticker-upload-profile-btn">➕ Yükle</button></p>';
-                        return;
-                    }
-
-                    var itemsHtml = '<div class="sticker-grid">';
-                    data.stickers.forEach(function (s) {
-                        itemsHtml += '<div class="sticker-item-wrap">' +
-                            '<div class="sticker-item" data-sticker-id="' + s.id + '">' +
-                            '<img src="' + s.image_url + '" alt="Sticker" class="sticker-item-img">' +
-                            (s.mine_created ? '<button type="button" class="sticker-delete-profile-btn" data-sticker-id="' + s.id + '" aria-label="Sil">🗑</button>' : '') +
-                            '</div>' +
-                            '</div>';
-                    });
-                    itemsHtml += '<div class="sticker-item-wrap sticker-upload-wrap"><button type="button" class="sticker-upload-profile-btn" aria-label="Sticker yükle">➕ Yükle</button><input type="file" name="sticker-file-profile" accept="image/*" hidden></div>';
-                    itemsHtml += '</div>';
-
-                    grid.innerHTML = itemsHtml;
-                })
-                .catch(function (e) {
-                    console.error('Sticker yüklenemedi:', e);
-                    grid.innerHTML = '<p class="muted">Hata: Sticker yüklenemedi.</p>';
+                var itemsHtml = '<div class="sticker-grid">';
+                data.stickers.forEach(function (s) {
+                    itemsHtml += '<div class="sticker-item-wrap">' +
+                        '<div class="sticker-item" data-sticker-id="' + s.id + '">' +
+                        '<img src="' + s.image_url + '" alt="Sticker" class="sticker-item-img">' +
+                        (s.mine_created ? '<button type="button" class="sticker-delete-profile-btn" data-sticker-id="' + s.id + '" aria-label="Sil">🗑</button>' : '') +
+                        '</div>' +
+                        '</div>';
                 });
-        }, 0);
+                itemsHtml += '<div class="sticker-item-wrap sticker-upload-wrap"><button type="button" class="sticker-upload-profile-btn" aria-label="Sticker yükle">➕ Yükle</button><input type="file" name="sticker-file-profile" accept="image/*" hidden></div>';
+                itemsHtml += '</div>';
+
+                grid.innerHTML = itemsHtml;
+            })
+            .catch(function (e) {
+                console.error('Sticker yüklenemedi:', e);
+                var g = document.getElementById('stickers-profile-grid');
+                if (g) g.innerHTML = '<p class="muted">Hata: Sticker yüklenemedi.</p>';
+            });
+    }
+
+    document.addEventListener('click', function (e) {
+        if (e.target.closest('#tab-stickers')) loadProfileStickers();
     });
+
+    // Profil kartındaki "Çıkartmalarım" linki #panel-stickers fragment'iyle
+    // gelir — sekmeyi otomatik aç ve yükle
+    if (window.location.hash === '#panel-stickers') {
+        var stickersTab = document.getElementById('tab-stickers');
+        if (stickersTab) stickersTab.click();
+    }
 
     // Profil upload ve delete
     document.addEventListener('change', function (e) {

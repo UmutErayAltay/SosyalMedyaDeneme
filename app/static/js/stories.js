@@ -317,7 +317,7 @@
     if (deleteBtn) {
         deleteBtn.addEventListener('click', async function () {
             if (!currentStories.length) return;
-            if (!window.confirm('Bu hikayeyi silmek istiyor musun?')) return;
+            if (!await window.appConfirm('Bu hikayeyi silmek istiyor musun?')) return;
             var storyId = currentStories[currentIndex].id;
             try {
                 var res = await fetch('/stories/' + storyId + '/delete', {

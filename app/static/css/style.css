@@ -837,6 +837,15 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     padding: 0 4px 6px;
 }
 
+/* "Yeni mesajlar" ayırıcısı — sohbet okunmamış ilk mesajdan başlar */
+.unread-divider {
+    display: flex; align-items: center; gap: 8px;
+    margin: 12px 0; color: var(--primary); font-size: 12px; font-weight: 600;
+}
+.unread-divider::before, .unread-divider::after {
+    content: ""; flex: 1; border-top: 1px solid var(--primary); opacity: 0.4;
+}
+
 /* === Mesaj Tepkileri (Emoji Reactions) === */
 /* inline-flex: tepki chip'leri ile 🙂+ tetik butonu AYNI satırda kalmalı —
    display:flex (blok) tetikleyiciyi bir alt satıra itiyordu (kullanıcı raporu) */
@@ -1807,10 +1816,12 @@ header[role="banner"] {
 .feed-interleave-tags { display: flex; gap: 12px; flex-wrap: wrap; }
 /* Instagram tarzı öneri kartları: avatar üstte/ortada, altında kullanıcı adı,
    altında takip butonu — her biri eşit genişlikte dikey bir kart. */
-.feed-interleave-users { display: flex; gap: 12px; flex-wrap: wrap; }
+/* 5 kart TEK satırda karta sığar: nowrap + esnek genişlik (sabit 96px
+   yerine), taşma/alt satıra kayma yok (kullanıcı isteği) */
+.feed-interleave-users { display: flex; gap: 8px; flex-wrap: nowrap; overflow: hidden; }
 .feed-interleave-user-card {
     display: flex; flex-direction: column; align-items: center; gap: 6px;
-    width: 96px; text-align: center; padding: 12px 8px;
+    flex: 1 1 0; min-width: 0; text-align: center; padding: 12px 6px;
     border: 1px solid var(--border); border-radius: var(--radius);
 }
 .feed-interleave-avatar-link .avatar { width: 56px; height: 56px; }
@@ -2324,3 +2335,39 @@ header[role="banner"] {
     text-align: left; width: 100%; transition: background 0.1s;
 }
 .profile-actions-menu-item:hover { background: var(--border); }
+
+/* === Özel Onay Modal (tarayıcı confirm() yerine) === */
+
+.app-confirm-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 300; display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+}
+
+.app-confirm-overlay[hidden] { display: none; }
+
+.app-confirm-box {
+    background: var(--card); border-radius: var(--radius-lg);
+    box-shadow: 0 4px 24px rgba(43, 36, 32, 0.2);
+    max-width: 360px; width: 100%; padding: 24px;
+    animation: slideUp 0.2s ease-out;
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.app-confirm-message {
+    margin: 0 0 20px; font-size: 15px; line-height: 1.5;
+    color: var(--text);
+}
+
+.app-confirm-buttons {
+    display: flex; gap: 12px; justify-content: flex-end;
+}
+
+.app-confirm-buttons button {
+    flex: 0 1 auto; min-width: 100px;
+}

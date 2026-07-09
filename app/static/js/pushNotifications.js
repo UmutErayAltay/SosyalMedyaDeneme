@@ -121,7 +121,18 @@
             // oldu" yazıyordu, hangi adımda/neden başarısız olduğu hiç görünmüyordu
             // (kullanıcı raporu, teşhis için kritik).
             console.error('Push abonelik hatası:', err);
-            setStatus('Abonelik başarısız: ' + (err.message || err.name || 'bilinmeyen hata'));
+            var msg = String(err.message || '');
+            if (msg.indexOf('push service error') !== -1) {
+                // Anahtarlar/kod değil, TARAYICININ push servisine (FCM) bağlantısı
+                // sorunlu: Brave'de Google push servisleri varsayılan KAPALI;
+                // VPN/güvenlik duvarı mtalk.google.com'u engelliyor olabilir.
+                setStatus('Tarayıcın push servisine bağlanamadı (anahtar sorunu değil). ' +
+                    'Brave kullanıyorsan Ayarlar → Gizlilik → "Use Google services for push messaging" seçeneğini aç. ' +
+                    'VPN/güvenlik duvarı kullanıyorsan Google push servisini engelliyor olabilir. ' +
+                    'Tarayıcıyı yeniden başlatıp tekrar dene.');
+            } else {
+                setStatus('Abonelik başarısız: ' + (msg || err.name || 'bilinmeyen hata'));
+            }
         }
     }
 

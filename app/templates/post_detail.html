@@ -181,7 +181,7 @@
                     data-comment-id="{{ c.id }}" aria-label="Yanıtla">Yanıtla</button>
             {% if me and c.user_id == me.id %}
             <form action="{{ url_for('social.delete_comment', comment_id=c.id) }}" method="post"
-                  onsubmit="return confirm('Yorumu sil?')">
+                  data-confirm="Yorumu sil?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>
             </form>
@@ -276,7 +276,7 @@
                     </button>
                     {% if me and r.user_id == me.id %}
                     <form action="{{ url_for('social.delete_comment', comment_id=r.id) }}" method="post"
-                          onsubmit="return confirm('Yorumu sil?')">
+                          data-confirm="Yorumu sil?">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>
                     </form>

@@ -215,7 +215,7 @@
     if (hlDeleteBtn) {
         hlDeleteBtn.addEventListener('click', async function () {
             if (!currentHighlightId) return;
-            if (!window.confirm('Bu öne çıkanı silmek istiyor musun?')) return;
+            if (!await window.appConfirm('Bu öne çıkanı silmek istiyor musun?')) return;
             try {
                 var res = await fetch('/stories/highlights/' + currentHighlightId + '/delete', {
                     method: 'POST',

@@ -248,7 +248,27 @@
         function scrollToBottom() {
             stream.scrollTop = stream.scrollHeight;
         }
-        scrollToBottom();
+
+        // Başlangıç konumu: okunmamış ilk mesajın çapası varsa oradan,
+        // yoksa en son mesajdan. Görsel/sticker'lar geç yüklenince
+        // scrollHeight büyüyüp konum "ortada" kalıyordu (kullanıcı raporu) —
+        // kullanıcı elle kaydırana dek her görsel yüklemesinde konum tazelenir.
+        var userScrolled = false;
+        function scrollToStart() {
+            if (userScrolled) return;
+            var anchor = document.getElementById('first-unread-msg');
+            if (anchor) {
+                stream.scrollTop = anchor.offsetTop - stream.offsetTop - 8;
+            } else {
+                scrollToBottom();
+            }
+        }
+        scrollToStart();
+        stream.querySelectorAll('img').forEach(function (im) {
+            if (!im.complete) im.addEventListener('load', scrollToStart, { once: true });
+        });
+        stream.addEventListener('wheel', function () { userScrolled = true; }, { passive: true, once: true });
+        stream.addEventListener('touchmove', function () { userScrolled = true; }, { passive: true, once: true });
         formatSharedPosts(stream);
 
         // Tepki picker'ı artık position:fixed (viewport koordinatlı) — stream
@@ -940,18 +960,20 @@
             var deleteMsgEl = deleteBtn.closest('.msg');
             var deleteMsgId = deleteMsgEl && deleteMsgEl.dataset.msgId;
             if (!deleteMsgId) return;
-            if (!confirm('Bu mesajı silmek istiyor musun?')) return;
-            var csrfInput = document.querySelector('input[name="csrf_token"]');
-            fetch('/messages/message/' + deleteMsgId + '/delete', {
-                method: 'POST',
-                headers: { 'X-CSRF-Token': csrfInput ? csrfInput.value : '' },
-            })
-            .then(function (res) {
-                if (res.ok) deleteMsgEl.remove();
-            })
-            .catch(function (err) {
-                console.error('Mesaj silinemedi:', err);
-            });
+            (async function() {
+                if (!await window.appConfirm('Bu mesajı silmek istiyor musun?')) return;
+                var csrfInput = document.querySelector('input[name="csrf_token"]');
+                fetch('/messages/message/' + deleteMsgId + '/delete', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfInput ? csrfInput.value : '' },
+                })
+                .then(function (res) {
+                    if (res.ok) deleteMsgEl.remove();
+                })
+                .catch(function (err) {
+                    console.error('Mesaj silinemedi:', err);
+                });
+            })();
             return;
         }
 

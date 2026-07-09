@@ -24,7 +24,7 @@
 <div class="card feed-interleave-card">
     <h2>👥 Önerilen Kişiler</h2>
     <div class="feed-interleave-users">
-    {% for u in suggested_users[:3] %}
+    {% for u in suggested_users[:5] %}
         <div class="feed-interleave-user-card">
             <a href="{{ url_for('routes.profile', username=u.username) }}" class="feed-interleave-avatar-link">
                 {% if u.avatar_url %}<img src="{{ u.avatar_url }}" class="avatar" alt="">
@@ -113,13 +113,13 @@
         {% if me and p.user_id == me.id %}
             <a href="{{ url_for('routes.edit_post', post_id=p.id) }}" class="btn btn-ghost" aria-label="Postu düzenle">Düzenle</a>
             <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
-                onsubmit="return confirm('Bu postu silmek istiyor musun?')">
+                data-confirm="Bu postu silmek istiyor musun?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-ghost danger" aria-label="Postu sil">Sil</button>
             </form>
         {% else %}
             <form action="{{ url_for('reports.create_report') }}" method="post" class="inline"
-                  onsubmit="return confirm('Bu postu şikayet etmek istiyor musun?')">
+                  data-confirm="Bu postu şikayet etmek istiyor musun?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="target_type" value="post">
                 <input type="hidden" name="target_id" value="{{ p.id }}">

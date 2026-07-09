@@ -161,11 +161,19 @@ def conversation(conversation_id):
     # bir id→username haritası gerekiyor (bkz. chat.js, data-member-map).
     member_map = {p["id"]: p["username"] for p in other_profiles if p.get("id")}
 
+    # Okunmamış ilk mesaj — _mark_read read_at'i güncellemeden ÖNCE hesaplanmalı;
+    # template bu mesaja çapa koyar, chat.js sohbeti oradan başlatır (yoksa en alttan)
+    first_unread_id = None
     if not is_group:
+        for m in messages:
+            if m.get("sender_id") != me and not m.get("read_at"):
+                first_unread_id = m["id"]
+                break
         # Grupta "okundu" bilgisi anlamsız (bkz. modül docstring'i) — sadece 1:1'de işaretlenir
         _mark_read(sb, conversation_id, me, messages)
 
-    ctx = dict(messages=messages, other_user=other_user, is_group=is_group,
+    ctx = dict(messages=messages, first_unread_id=first_unread_id,
+               other_user=other_user, is_group=is_group,
                group_name=group_name, group_members=other_profiles, member_map=member_map,
                conversation_id=conversation_id, me=session["user"],
                my_is_admin=my_is_admin if is_group else False)

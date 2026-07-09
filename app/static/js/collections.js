@@ -76,7 +76,7 @@
     document.addEventListener('click', async function (e) {
         var delBtn = e.target.closest('.collection-delete-btn');
         if (!delBtn) return;
-        if (!window.confirm('Bu klasörü silmek istiyor musun? İçindeki kayıtlar "Genel"e taşınır.')) return;
+        if (!await window.appConfirm('Bu klasörü silmek istiyor musun? İçindeki kayıtlar "Genel"e taşınır.')) return;
 
         var collectionId = delBtn.dataset.collectionId;
         try {

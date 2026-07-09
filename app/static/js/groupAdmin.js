@@ -142,7 +142,7 @@
     }
 
     async function removeMember(userId) {
-        if (!confirm('Bu kişiyi gruptan çıkarmak istiyor musun?')) return;
+        if (!await window.appConfirm('Bu kişiyi gruptan çıkarmak istiyor musun?')) return;
         var convId = getConversationId();
         if (!convId) return;
         try {
@@ -179,7 +179,7 @@
     }
 
     async function leaveGroup() {
-        if (!confirm('Bu gruptan ayrılmak istediğine emin misin?')) return;
+        if (!await window.appConfirm('Bu gruptan ayrılmak istediğine emin misin?')) return;
         var convId = getConversationId();
         if (!convId) return;
         try {

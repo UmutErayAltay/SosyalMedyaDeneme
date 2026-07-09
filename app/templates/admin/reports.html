@@ -61,7 +61,7 @@
         </form>
         {% if r.target_type in ('post', 'comment') and r.target %}
         <form action="{{ url_for('admin.delete_report_target', report_id=r.id) }}" method="post" class="inline"
-              onsubmit="return confirm('Bu içeriği kalıcı olarak silmek istiyor musun?')">
+              data-confirm="Bu içeriği kalıcı olarak silmek istiyor musun?">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-ghost danger">🗑 İçeriği sil</button>
         </form>
