@@ -2446,3 +2446,37 @@ header[role="banner"] {
 .app-confirm-buttons button {
     flex: 0 1 auto; min-width: 100px;
 }
+
+/* === Giden Arama Kartı (kabul edilene kadar tam ekran arayüz yerine) === */
+.call-outgoing-panel {
+    position: fixed; bottom: 24px; right: 24px; z-index: 250;
+    display: flex; align-items: center; gap: 12px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px;
+    box-shadow: 0 8px 28px rgba(43, 36, 32, 0.25);
+    animation: call-slide-in 0.25s ease;
+}
+.call-outgoing-panel[hidden] { display: none; }
+.call-outgoing-text { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.call-outgoing-pulse {
+    width: 44px; height: 44px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; background: var(--primary); color: var(--bg);
+    animation: call-pulse 1.2s ease-in-out infinite;
+}
+@keyframes call-pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.15); }
+    50% { transform: scale(1.08); box-shadow: 0 0 0 8px rgba(0, 0, 0, 0.05); }
+}
+@keyframes call-slide-in {
+    from { transform: translateY(12px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+/* "aranıyor..." noktaları sırayla yanıp söner */
+.call-dots span { animation: call-dot-blink 1.4s infinite; }
+.call-dots span:nth-child(2) { animation-delay: 0.2s; }
+.call-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes call-dot-blink {
+    0%, 60%, 100% { opacity: 0.2; }
+    30% { opacity: 1; }
+}

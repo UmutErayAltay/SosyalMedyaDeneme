@@ -58,6 +58,23 @@
             document.body.insertAdjacentHTML('beforeend', modalHtml);
         }
 
+        // Giden arama kartı: karşı taraf kabul edene kadar tam ekran arayüz
+        // YERİNE gösterilen, siteye uygun küçük kart (kullanıcı isteği)
+        if (!document.getElementById('call-outgoing-panel')) {
+            var outgoingHtml = '<div class="call-outgoing-panel" id="call-outgoing-panel" role="status" hidden>\n' +
+                '    <div class="call-outgoing-pulse" aria-hidden="true">📞</div>\n' +
+                '    <div class="call-outgoing-text">\n' +
+                '        <strong id="call-outgoing-name"></strong>\n' +
+                '        <span class="muted">aranıyor<span class="call-dots"><span>.</span><span>.</span><span>.</span></span></span>\n' +
+                '    </div>\n' +
+                '    <button type="button" class="btn btn-danger small" id="call-outgoing-cancel">Vazgeç</button>\n' +
+                '</div>';
+            document.body.insertAdjacentHTML('beforeend', outgoingHtml);
+            document.getElementById('call-outgoing-cancel').addEventListener('click', function () {
+                endCall();
+            });
+        }
+
         if (!document.getElementById('call-overlay')) {
             var overlayHtml = '<div class="call-overlay" id="call-overlay" hidden>\n' +
                 '    <div class="call-remote-avatar" id="call-remote-avatar" hidden>\n' +
@@ -199,11 +216,12 @@
                 to: state.otherId
             });
 
-            // Overlay'i göster
-            showCallUI();
+            // Karşı taraf KABUL EDENE KADAR tam ekran arayüze girilmez —
+            // küçük "aranıyor" kartı gösterilir (kullanıcı isteği). Tam ekran
+            // + süre sayacı answer gelince başlar (handleAnswerSignal).
+            showOutgoingRinging(panel ? (panel.dataset.otherUsername || '') : '');
 
             state.callState = 'ringing';
-            startDurationTimer();
 
             // 30 saniye sonra cevap yoksa aramayı sonlandır
             if (state.noAnswerTimeout) clearTimeout(state.noAnswerTimeout);
@@ -359,6 +377,13 @@
             await state.peerConnection.setRemoteDescription(answer);
             state.callState = 'active';
 
+            // Karşı taraf kabul etti — "aranıyor" kartını kapat, TAM EKRAN
+            // arayüze şimdi geç, süre sayacı da kabul anından başlasın
+            hideOutgoingRinging();
+            state.callStartedAt = Date.now();
+            showCallUI();
+            startDurationTimer();
+
             // Daha önce gelen ICE adaylarını ekle
             state.iceCandidateQueue.forEach(function (cand) {
                 if (state.peerConnection) {
@@ -415,6 +440,7 @@
             state.peerConnection = null;
         }
 
+        hideOutgoingRinging();
         state.remoteStream = null;
         state.callState = 'idle';
         state.callStartedAt = null;
@@ -554,6 +580,20 @@
     }
 
     // --- UI Gösterileri ---
+
+    // Giden arama kartı (kabul edilene kadarki bekleme durumu)
+    function showOutgoingRinging(name) {
+        ensureCallDOM();
+        var p = document.getElementById('call-outgoing-panel');
+        var n = document.getElementById('call-outgoing-name');
+        if (n) n.textContent = name || 'Kullanıcı';
+        if (p) p.removeAttribute('hidden');
+    }
+
+    function hideOutgoingRinging() {
+        var p = document.getElementById('call-outgoing-panel');
+        if (p) p.setAttribute('hidden', '');
+    }
 
     function showCallUI() {
         var elem = getElements();
