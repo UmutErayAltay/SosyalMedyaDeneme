@@ -14,31 +14,23 @@ window.supabaseClient = window.supabase.createClient(
     window.SUPABASE_URL,
     window.SUPABASE_KEY
 );
-// Token rotasyonu: supabase-js token'ı yenilediğinde (refresh token TEK
-// kullanımlık!) yeni çift Flask session'ına geri yazılır — yazılmazsa bir
-// sonraki sayfa yüklemesi tüketilmiş token'la kurulur ve Realtime olayları
-// RLS'e takılıp sessizce kesilir (kullanıcı raporu: F5'siz mesaj düşmüyor).
-window.supabaseClient.auth.onAuthStateChange(function (event, session) {
-    if (!session || !session.access_token) return;
-    if (session.access_token === window.SB_ACCESS_TOKEN) return;
-    window.SB_ACCESS_TOKEN = session.access_token;
-    var meta = document.querySelector('meta[name="csrf-token"]');
-    fetch('/auth/sync-tokens', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': meta ? meta.content : ''
-        },
-        body: JSON.stringify({
-            access_token: session.access_token,
-            refresh_token: session.refresh_token
+// Token yenileme SADECE sunucuda yapılır (auth.refresh_session_tokens) —
+// tarayıcıda setSession/auto-refresh KULLANILMAZ: tek kullanımlık refresh
+// token iki taraf (tarayıcı + Flask) arasında tüketilip 400 üretiyor,
+// Realtime kimliksiz kalıp mesaj olayları sessizce kesiliyordu (kullanıcı
+// konsol raporu: "POST /auth/v1/token?grant_type=refresh_token 400").
+// Realtime'ın ihtiyacı olan tek şey geçerli bir access token: setAuth yeter.
+window.supabaseClient.realtime.setAuth(window.SB_ACCESS_TOKEN);
+// Uzun süre açık kalan sekmede token bayatlar — 30 dakikada bir sunucudan
+// taze token alıp Realtime'a uygula
+setInterval(function () {
+    fetch('/auth/realtime-token')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (d.access_token) window.supabaseClient.realtime.setAuth(d.access_token);
         })
-    }).catch(function () { /* bir sonraki yenilemede tekrar denenir */ });
-});
-window.supabaseClient.auth.setSession({
-    access_token: window.SB_ACCESS_TOKEN,
-    refresh_token: window.SB_REFRESH_TOKEN
-});
+        .catch(function () { /* bir sonraki turda tekrar denenir */ });
+}, 30 * 60 * 1000);
 </script>
 <script src="{{ url_for('static', filename='js/stickers.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>

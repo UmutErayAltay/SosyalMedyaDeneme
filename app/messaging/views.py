@@ -5,6 +5,7 @@ from . import bp
 from ._common import _mark_read, _build_convos, unread_message_count
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
+from ..auth import refresh_session_tokens
 
 
 @bp.route("/")
@@ -14,6 +15,8 @@ def inbox():
     """Konuşma listesi (en son mesaja göre sıralı). Sağ panel boş/placeholder."""
     sb = get_sb()
     me = session["user"]["id"]
+    # Realtime kurulumu taze access token'la yapılmalı (bkz. _realtime_init.html)
+    refresh_session_tokens()
     convos = _build_convos(sb, me)
     return render_template("messages/inbox.html", convos=convos, active_id=None,
                            me=session["user"])
@@ -39,6 +42,9 @@ def conversation(conversation_id):
     sağ paneli döner — messagesPanel.js bunu tam sayfa yenilemeden DOM'a enjekte
     eder. Normal (tam sayfa) istekte ise sol liste + sağ panel birlikte render edilir.
     """
+    # Tam sayfa render'da Realtime taze token'la kurulur (bkz. _realtime_init.html)
+    if request.headers.get("X-Requested-With") != "fetch":
+        refresh_session_tokens()
     sb = get_sb()
     me = session["user"]["id"]
 

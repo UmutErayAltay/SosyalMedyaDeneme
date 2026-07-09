@@ -263,3 +263,62 @@ def sync_tokens():
     session["access_token"] = access
     session["refresh_token"] = refresh
     return jsonify(ok=True)
+
+
+def _access_token_exp(token: str) -> float:
+    """JWT'nin exp claim'ini İMZA DOĞRULAMADAN okur (sadece 'yenileme zamanı
+    geldi mi' kararı için — yetki kontrolü değil)."""
+    import base64
+    import json as _json
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return float(_json.loads(base64.urlsafe_b64decode(payload)).get("exp", 0))
+    except Exception:
+        return 0
+
+
+def refresh_session_tokens(force: bool = False) -> str | None:
+    """Session'daki Supabase access token'ının süresi yaklaştıysa SUNUCU
+    TARAFINDA yeniler ve yeni çifti session'a yazar.
+
+    Token yenileme TEK yazarlıdır (yalnızca burası) — önceden tarayıcıdaki
+    supabase-js de yeniliyordu ve tek kullanımlık refresh token iki taraf
+    arasında tüketilip 400 (Bad Request) üretiyordu; Realtime kimliksiz
+    kalıp mesaj olayları sessizce kesiliyordu (kullanıcı konsol raporu).
+    """
+    import requests as _rq
+    access = session.get("access_token")
+    refresh = session.get("refresh_token")
+    if not access or not refresh:
+        return None
+    if not force and _access_token_exp(access) - time.time() > 300:
+        return access  # hâlâ 5+ dk geçerli
+    try:
+        r = _rq.post(
+            current_app.config["SUPABASE_URL"] + "/auth/v1/token?grant_type=refresh_token",
+            headers={"apikey": current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+                     "Content-Type": "application/json"},
+            json={"refresh_token": refresh},
+            timeout=6,
+        )
+        if r.status_code == 200:
+            d = r.json()
+            if d.get("access_token"):
+                session["access_token"] = d["access_token"]
+                if d.get("refresh_token"):
+                    session["refresh_token"] = d["refresh_token"]
+                return session["access_token"]
+    except Exception:
+        pass
+    return access  # yenilenemedi — eski token'la devam (kullanıcı yeniden girmeli)
+
+
+@bp.route("/auth/realtime-token")
+def realtime_token():
+    """Uzun süre açık kalan sekmeler için taze access token (chat.js/init
+    periyodik çağırır, realtime.setAuth ile uygular)."""
+    from flask import jsonify
+    if "user" not in session:
+        return jsonify(error="unauthorized"), 401
+    return jsonify(access_token=refresh_session_tokens() or "")

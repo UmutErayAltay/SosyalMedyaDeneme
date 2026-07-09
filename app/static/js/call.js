@@ -231,11 +231,32 @@
 
         state.callState = 'active';
 
+        // Medya iznini AYRI ele al: görüntülü aramada kamera izni/aygıt hatası
+        // en sık kabul-sonrası-red sebebiydi (kullanıcı raporu) — net mesaj ver,
+        // görüntülüde kamera açılamazsa SES ile devam etmeyi dene
         try {
-            // Medya izni al
             var config = getUserMediaConfig(state.isVideoCall);
             state.localStream = await navigator.mediaDevices.getUserMedia(config);
+        } catch (mediaErr) {
+            log('getUserMedia hatası (kabul): ' + mediaErr.name + ' ' + mediaErr.message);
+            if (state.isVideoCall) {
+                try {
+                    state.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                    state.isVideoCall = false; // kameras覺z devam — sesli aramaya düş
+                    showAlert('Kamera açılamadı (' + mediaErr.name + ') — arama SESLİ olarak devam ediyor.');
+                } catch (audioErr) {
+                    showAlert('Mikrofon/kamera izni alınamadı: ' + audioErr.name + '. Tarayıcı site izinlerini kontrol et.');
+                    rejectCall();
+                    return;
+                }
+            } else {
+                showAlert('Mikrofon izni alınamadı: ' + mediaErr.name + '. Tarayıcı site izinlerini kontrol et.');
+                rejectCall();
+                return;
+            }
+        }
 
+        try {
             // RTCPeerConnection kur (TURN + STUN sunucularıyla)
             state.peerConnection = new RTCPeerConnection({
                 iceServers: getIceServers()
@@ -518,10 +539,16 @@
             endCall();
 
         } else if (signal.type === 'reject') {
-            log('Arama reddedildi');
-            if (state.callState === 'ringing') {
-                showAlert('Arama reddedildi.');
+            // SADECE ben ararken (ringing) anlamlı — görüşme kurulduktan sonra
+            // gelen bayat bir reject (başka sekmedeki modal, geç ulaşan sinyal)
+            // aktif aramayı ÖLDÜRMESİN (kullanıcı raporu: kabul edilen arama
+            // 'reddedildi' diye kapanıyordu)
+            if (state.callState !== 'ringing') {
+                log('reject yok sayıldı (durum: ' + state.callState + ')');
+                return;
             }
+            log('Arama reddedildi');
+            showAlert('Arama reddedildi.');
             endCall();
         }
     }
