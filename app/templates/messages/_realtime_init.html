@@ -14,6 +14,27 @@ window.supabaseClient = window.supabase.createClient(
     window.SUPABASE_URL,
     window.SUPABASE_KEY
 );
+// Token rotasyonu: supabase-js token'ı yenilediğinde (refresh token TEK
+// kullanımlık!) yeni çift Flask session'ına geri yazılır — yazılmazsa bir
+// sonraki sayfa yüklemesi tüketilmiş token'la kurulur ve Realtime olayları
+// RLS'e takılıp sessizce kesilir (kullanıcı raporu: F5'siz mesaj düşmüyor).
+window.supabaseClient.auth.onAuthStateChange(function (event, session) {
+    if (!session || !session.access_token) return;
+    if (session.access_token === window.SB_ACCESS_TOKEN) return;
+    window.SB_ACCESS_TOKEN = session.access_token;
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    fetch('/auth/sync-tokens', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': meta ? meta.content : ''
+        },
+        body: JSON.stringify({
+            access_token: session.access_token,
+            refresh_token: session.refresh_token
+        })
+    }).catch(function () { /* bir sonraki yenilemede tekrar denenir */ });
+});
 window.supabaseClient.auth.setSession({
     access_token: window.SB_ACCESS_TOKEN,
     refresh_token: window.SB_REFRESH_TOKEN

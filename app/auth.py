@@ -238,3 +238,28 @@ def reset_password():
         return redirect(url_for("auth.login"))
 
     return render_template("auth/reset_password.html")
+
+
+@bp.route("/auth/sync-tokens", methods=["POST"])
+def sync_tokens():
+    """Tarayıcıdaki supabase-js token'ı YENİLEDİĞİNDE (rotasyon) yeni çifti
+    Flask session'ına yazar.
+
+    Bu olmadan: refresh token TEK KULLANIMLIK — tarayıcı ilk yenilemede
+    session'daki çifti tüketiyor, ama Flask session'da ESKİ çift kalıyordu.
+    Sonraki her sayfa yüklemesi Realtime'ı geçersiz token'la kuruyor ve
+    postgres_changes olayları RLS'e takılıp SESSİZCE gelmiyordu (kullanıcı
+    raporu: "mesajlar bana realtime düşmüyor, F5 gerekiyor; yeni giriş yapan
+    arkadaşlarımda çalışıyor").
+    """
+    from flask import jsonify
+    if "user" not in session:
+        return jsonify(error="unauthorized"), 401
+    data = request.get_json(silent=True) or {}
+    access = (data.get("access_token") or "").strip()
+    refresh = (data.get("refresh_token") or "").strip()
+    if not access or not refresh:
+        return jsonify(error="missing_tokens"), 400
+    session["access_token"] = access
+    session["refresh_token"] = refresh
+    return jsonify(ok=True)

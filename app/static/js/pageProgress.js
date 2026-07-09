@@ -19,7 +19,17 @@
     // Sekme kapanıyor/sayfa değişiyor — yeni sayfa gelene kadar çubuk görünür kalır
     window.addEventListener('beforeunload', start);
 
-    // Aynı-origin link tıklamalarında hemen başlat (yeni sekme/indirme/sadece-hash hariç)
+    function hide() {
+        bar.style.transition = 'opacity 0.2s';
+        bar.style.opacity = '0';
+        bar.style.width = '0%';
+    }
+
+    // Aynı-origin link tıklamalarında başlat (yeni sekme/indirme/sadece-hash hariç).
+    // KONTROL setTimeout(0) İÇİNDE: bildirim zili / mesaj listesi / dropdown gibi
+    // linkleri BAŞKA bir JS preventDefault ile yakalıyor — bar başlatılıp
+    // navigasyon hiç olmayınca %75-80'de takılı kalıyordu (kullanıcı raporu).
+    // Dispatch bittikten sonra defaultPrevented kesinleşir.
     document.addEventListener('click', function (e) {
         var a = e.target.closest('a[href]');
         if (!a) return;
@@ -37,13 +47,19 @@
         if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash) {
             return;
         }
-        start();
+        setTimeout(function () {
+            if (!e.defaultPrevented) start();
+        }, 0);
     });
 
-    // Normal form submit'lerinde de başlat (AJAX formları zaten preventDefault yapar,
-    // bu durumda submit event'i defaultPrevented olur ve buraya girmez)
+    // Normal form submit'lerinde de başlat — aynı sebeple ertelenmiş kontrol
+    // (AJAX formlarının preventDefault'u bizden SONRA çalışabiliyor)
     document.addEventListener('submit', function (e) {
-        if (e.defaultPrevented) return;
-        start();
+        setTimeout(function () {
+            if (!e.defaultPrevented) start();
+        }, 0);
     });
+
+    // bfcache'ten dönüşte (geri tuşu) bar %80'de asılı kalmasın
+    window.addEventListener('pageshow', hide);
 })();

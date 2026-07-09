@@ -228,6 +228,18 @@ def panel():
     me = session["user"]["id"]
     rows, _ = _fetch_and_mark_read(sb, me, PANEL_SIZE)
 
+    # _fetch_and_mark_read yalnızca GÖRÜNEN son 8 bildirimi işaretler — daha
+    # eski okunmamışlar kalıyor ve sayfa yenilenince rozet "geri geliyordu"
+    # (kullanıcı raporu). Paneli açmak "hepsini gördüm" niyetidir: kalan tüm
+    # okunmamışlar da toplu işaretlenir.
+    try:
+        sb.table("notifications").update({"is_read": True}).eq(
+            "recipient_id", me).eq("is_read", False).execute()
+        from .cache import invalidate
+        invalidate(f"unread:{me}")
+    except Exception:
+        pass
+
     return jsonify(notifications=[{
         "type": n["type"],
         "text": n["text"],

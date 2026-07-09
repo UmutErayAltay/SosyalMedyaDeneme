@@ -235,6 +235,13 @@
         var gifUrlInput = form ? form.querySelector('input[name="gif_url"]') : null;
         if (!panel || !form || !input || !stream) return;
 
+        // AYNI panel DOM'una ikinci init çağrısı (örn. sayfa yüklemesi +
+        // messagesPanel'in tekrar çağırması) tüm listener'ları ÇİFT bağlar —
+        // her mesaj iki kez gönderilirdi (kullanıcı raporu). Yeni panel DOM'u
+        // bu attribute'suz gelir, gerçek geçişlerde init normal çalışır.
+        if (panel.dataset.chatInit === '1') return;
+        panel.dataset.chatInit = '1';
+
         var conversationId = panel.dataset.conversationId;
         var sendUrl = panel.dataset.sendUrl;
         var otherUsername = panel.dataset.otherUsername || 'Kullanıcı';
@@ -620,6 +627,13 @@
             // Sticker/GIF seçiliyken metin boş olabilir
             if (!content && !hasImage && !stickerVal && !gifVal) return;
 
+            // Çift gönderim koruması: aynı metin 1.2sn içinde ikinci kez
+            // gönderilemez (çift Enter / çift tıklama / yavaş ağda sabırsızlık)
+            var nowTs = Date.now();
+            if (content && content === form._lastContent && nowTs - (form._lastSentAt || 0) < 1200) return;
+            form._lastContent = content;
+            form._lastSentAt = nowTs;
+
             sendTyping(false);
             var submitBtn = form.querySelector('button[type="submit"]');
             submitBtn.disabled = true;
@@ -718,6 +732,31 @@
                     if (!isMine) {
                         var senderName = isGroup ? (memberMap[msg.sender_id] || 'Bilinmeyen') : null;
                         appendMessageResolvingSticker(appendMessage, msg, isMine, { senderName: senderName });
+
+                        // Haritada olmayan üye (sayfa açıldıktan sonra katılan) —
+                        // 'Bilinmeyen' yerine profili çekip adı yerine yaz
+                        if (isGroup && !memberMap[msg.sender_id] && window.supabaseClient) {
+                            window.supabaseClient.from('profiles').select('username')
+                                .eq('id', msg.sender_id).single().then(function (r) {
+                                    if (r.data && r.data.username) {
+                                        memberMap[msg.sender_id] = r.data.username;
+                                        var senderEl = stream.querySelector('[data-msg-id="' + msg.id + '"] .msg-sender');
+                                        if (senderEl) senderEl.textContent = r.data.username;
+                                    }
+                                });
+                        }
+
+                        // Sohbetin İÇİNDEYKEN gelen mesaj anında okundu sayılır —
+                        // yoksa navbar/mesaj listesi rozeti sohbetteyken bile
+                        // 1-2-3 diye birikiyordu (kullanıcı raporu). Karşı taraf
+                        // da UPDATE olayıyla ✓✓'yi canlı görür.
+                        if (!isGroup) {
+                            var csrfIn = document.querySelector('input[name="csrf_token"]');
+                            fetch('/messages/' + conversationId + '/mark-read', {
+                                method: 'POST',
+                                headers: { 'X-CSRF-Token': csrfIn ? csrfIn.value : '' }
+                            }).catch(function () { /* rozet en geç sayfa yenilemede düzelir */ });
+                        }
                     }
                 }).on('postgres_changes', {
                     event: 'UPDATE',

@@ -184,3 +184,27 @@ def conversation(conversation_id):
     convos = _build_convos(sb, me)
     return render_template("messages/conversation.html", convos=convos,
                            active_id=conversation_id, **ctx)
+
+
+@bp.route("/<conversation_id>/mark-read", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def mark_conversation_read(conversation_id):
+    """Sohbet AÇIKKEN Realtime ile düşen mesajı anında okundu işaretler
+    (chat.js INSERT handler'ı çağırır) — yoksa rozet sohbetteyken bile
+    birikiyordu. Katılımcı olmayan 404 (enumeration koruması)."""
+    from datetime import datetime, timezone
+    sb = get_sb()
+    me = session["user"]["id"]
+    part = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id).eq("user_id", me).execute().data
+    if not part:
+        abort(404)
+    try:
+        sb.table("messages").update(
+            {"read_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("conversation_id", conversation_id).neq(
+            "sender_id", me).is_("read_at", "null").execute()
+    except Exception:
+        pass  # read_at migration'ı yoksa sessizce atla (_mark_read ile aynı tavır)
+    return jsonify(ok=True)
