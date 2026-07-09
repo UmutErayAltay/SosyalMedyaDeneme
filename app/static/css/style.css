@@ -2282,6 +2282,75 @@ header[role="banner"] {
     grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
 }
 
+/* Profil grid sticker'ları — hover büyüme + çöp kutusu davranışı */
+#panel-stickers .sticker-item {
+    transform: scale(1);
+    transition: transform 0.15s;
+}
+
+#panel-stickers .sticker-item:hover {
+    transform: scale(1.06);
+}
+
+/* Profil grid delete butonu — sabit konumda, hover'da görünsün */
+#panel-stickers .sticker-delete-profile-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background: rgba(0, 0, 0, 0.4);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+#panel-stickers .sticker-item-wrap:hover .sticker-delete-profile-btn {
+    opacity: 1;
+}
+
+#panel-stickers .sticker-delete-profile-btn:hover {
+    background: var(--danger);
+    box-shadow: 0 0 8px var(--danger);
+}
+
+/* Profil grid upload karosu — kesikli çerçeve + ortalanmış + */
+#panel-stickers .sticker-upload-profile-btn {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: 1;
+    background: transparent;
+    border: 2px dashed var(--muted);
+    border-radius: var(--radius-md);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+#panel-stickers .sticker-upload-profile-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    transform: scale(1.06);
+}
+
+/* Dokunmatik: delete butonu hafif görünsün */
+@media (hover: none) {
+    #panel-stickers .sticker-delete-profile-btn {
+        opacity: 0.6;
+    }
+}
+
 /* [hidden] tuzağı — explicit display verilmiş elementler */
 .msg-icon-btn[hidden] { display: none; }
 .voice-recording-status[hidden] { display: none; }

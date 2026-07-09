@@ -302,7 +302,8 @@
                 grid.innerHTML = '';
 
                 if (!data.stickers || data.stickers.length === 0) {
-                    grid.innerHTML = '<p class="muted center">Henüz çıkartma yok. <button type="button" class="btn btn-ghost small sticker-upload-profile-btn">➕ Yükle</button><input type="file" name="sticker-file-profile" accept="image/*" hidden></p>';
+                    // Boş durum: + karosu
+                    grid.innerHTML = '<div class="sticker-grid"><div class="sticker-item-wrap sticker-upload-wrap"><button type="button" class="sticker-upload-profile-btn" aria-label="Sticker yükle">➕</button><input type="file" name="sticker-file-profile" accept="image/*" hidden></div></div>';
                     return;
                 }
 
@@ -315,7 +316,7 @@
                         '</div>' +
                         '</div>';
                 });
-                itemsHtml += '<div class="sticker-item-wrap sticker-upload-wrap"><button type="button" class="sticker-upload-profile-btn" aria-label="Sticker yükle">➕ Yükle</button><input type="file" name="sticker-file-profile" accept="image/*" hidden></div>';
+                itemsHtml += '<div class="sticker-item-wrap sticker-upload-wrap"><button type="button" class="sticker-upload-profile-btn" aria-label="Sticker yükle">➕</button><input type="file" name="sticker-file-profile" accept="image/*" hidden></div>';
                 itemsHtml += '</div>';
 
                 grid.innerHTML = itemsHtml;
@@ -368,6 +369,23 @@
     });
 
     document.addEventListener('click', function (e) {
+        // Profil panel'inde sticker tıklaması — lightbox aç
+        var sticker = e.target.closest('#panel-stickers .sticker-item');
+        if (sticker && !e.target.closest('.sticker-delete-profile-btn')) {
+            e.preventDefault();
+            var img = sticker.querySelector('.sticker-item-img');
+            if (img) {
+                var lightbox = document.getElementById('lightbox');
+                var lightboxImg = document.getElementById('lightbox-img');
+                if (lightbox && lightboxImg) {
+                    lightboxImg.src = img.src;
+                    lightbox.hidden = false;
+                    document.body.style.overflow = 'hidden';
+                }
+            }
+        }
+
+        // Upload butonu
         var uploadBtn = e.target.closest('.sticker-upload-profile-btn');
         if (uploadBtn) {
             e.preventDefault();
@@ -375,11 +393,17 @@
             if (fileInput) fileInput.click();
         }
 
+        // Delete butonu — silmeden önce sorgu sor
         var deleteBtn = e.target.closest('.sticker-delete-profile-btn');
         if (deleteBtn) {
             e.preventDefault();
             var stickerId = deleteBtn.dataset.stickerId;
             if (!stickerId) return;
+
+            // Silme sorgusu (window.appConfirm base.html'de tanımlanmış)
+            if (!window.appConfirm || !window.appConfirm('Bu çıkartmayı listenden kaldırmak istiyor musun?')) {
+                return;
+            }
 
             var csrfMeta = document.querySelector('meta[name="csrf-token"]');
             var csrfToken = csrfMeta ? csrfMeta.content : '';
