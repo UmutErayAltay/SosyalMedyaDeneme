@@ -288,7 +288,13 @@ textarea:focus-visible, select:focus-visible {
     cursor: pointer;
 }
 .pref-row:last-child { border-bottom: none; }
-.pref-text { display: flex; flex-direction: column; gap: 2px; }
+.pref-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+/* Checkbox'lar hep EN SAĞDA, sabit boyutlu ve dikeyde ortalı — metin
+   uzunluğuna göre "yamuk" durmasın (kullanıcı raporu) */
+.pref-row input[type="checkbox"] {
+    flex-shrink: 0; margin-left: auto;
+    width: 18px; height: 18px; accent-color: var(--primary);
+}
 .pref-label { font-size: 14px; font-weight: 500; }
 .pref-desc { font-size: 12px; }
 

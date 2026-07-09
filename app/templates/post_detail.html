@@ -43,6 +43,13 @@
         <a href="{{ url_for('routes.profile', username=post.profiles.username) if post.profiles else '#' }}"
            class="username">{{ post.profiles.username if post.profiles else 'Bilinmeyen' }}</a>
         <span class="time">{{ post.created_at|local_time }}</span>
+        {% if post.location_name %}
+            {% if post.location_lat and post.location_lng %}
+                <a class="post-location muted" href="https://www.openstreetmap.org/?mlat={{ post.location_lat }}&mlon={{ post.location_lng }}&zoom=15" target="_blank" rel="noopener">📍 {{ post.location_name }}</a>
+            {% else %}
+                <span class="post-location muted">📍 {{ post.location_name }}</span>
+            {% endif %}
+        {% endif %}
         {% if post.visibility == 'followers' %}
             <span class="visibility-badge" title="Sadece takipçiler görebilir">🔒</span>
         {% endif %}

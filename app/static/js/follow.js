@@ -1,95 +1,89 @@
 // Takip butonu — AJAX (sayfa yenilenmesiz)
-// Optimistic UI: beğenideki gibi anlık güncelle + geri al
+// Optimistic UI: arayüz ANINDA döner, ağ istekleri kullanıcı başına sıraya
+// girer (ard arda tıklamada donma/bekletme olmaz — kullanıcı raporu),
+// UI'ya yalnızca en son eylemin sonucu uygulanır.
+
+const _followChains = {};
+function _enqueueFollow(key, task) {
+    _followChains[key] = (_followChains[key] || Promise.resolve()).then(task).catch(() => {});
+}
+
+function _followHeaders() {
+    return {
+        "X-Requested-With": "fetch",
+        "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "",
+    };
+}
+
+function _updateFollowerStat(data) {
+    const statsEl = document.querySelectorAll(".profile-stats span");
+    if (statsEl.length >= 2) {
+        const strongEl = statsEl[1].querySelector("strong");
+        if (strongEl && data.followers_count !== undefined) {
+            strongEl.textContent = data.followers_count;
+        }
+    }
+}
 
 // Feed/sidebar takip butonu (.follow-btn, menü yok)
-document.addEventListener("click", async (e) => {
+document.addEventListener("click", (e) => {
     const btn = e.target.closest(".follow-btn");
     if (!btn) return;
 
     e.preventDefault();
-    if (btn.dataset.busy === "1") return;
-
     const wasFollowing = btn.dataset.following === "1";
 
-    // Optimistic update
+    // Optimistic update — anında, tıklama düşürülmez
     const nextFollowing = !wasFollowing;
     btn.dataset.following = nextFollowing ? "1" : "0";
     btn.textContent = nextFollowing ? "Takipten çık" : "Takip et";
     btn.classList.toggle("btn-primary", !nextFollowing);
     btn.classList.toggle("btn-ghost", nextFollowing);
-    btn.dataset.busy = "1";
 
-    try {
-        const res = await fetch(btn.dataset.followUrl, {
-            method: "POST",
-            headers: {
-                "X-Requested-With": "fetch",
-                "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "",
-            },
-        });
-        if (!res.ok) throw new Error("İstek başarısız: " + res.status);
-
-        // JSON yanıtı (followers_count ile)
-        const data = await res.json();
-        // Takipçi sayısını güncelle (profil stats alanında)
-        const statsEl = document.querySelectorAll(".profile-stats span");
-        if (statsEl.length >= 2) {
-            // 2. span = Takipçi
-            const strongEl = statsEl[1].querySelector("strong");
-            if (strongEl && data.followers_count !== undefined) {
-                strongEl.textContent = data.followers_count;
-            }
+    btn._seq = (btn._seq || 0) + 1;
+    const mySeq = btn._seq;
+    _enqueueFollow(btn.dataset.username || btn.dataset.followUrl, async () => {
+        try {
+            const res = await fetch(btn.dataset.followUrl, { method: "POST", headers: _followHeaders() });
+            if (!res.ok) throw new Error("İstek başarısız: " + res.status);
+            const data = await res.json();
+            if (btn._seq !== mySeq) return; // daha yeni tıklama var
+            _updateFollowerStat(data);
+        } catch (err) {
+            console.error("Takip güncellenemedi:", err);
+            if (btn._seq !== mySeq) return;
+            btn.dataset.following = wasFollowing ? "1" : "0";
+            btn.textContent = wasFollowing ? "Takipten çık" : "Takip et";
+            btn.classList.toggle("btn-primary", !wasFollowing);
+            btn.classList.toggle("btn-ghost", wasFollowing);
         }
-    } catch (err) {
-        // Hata: geri al
-        btn.dataset.following = wasFollowing ? "1" : "0";
-        btn.textContent = wasFollowing ? "Takipten çık" : "Takip et";
-        btn.classList.toggle("btn-primary", !wasFollowing);
-        btn.classList.toggle("btn-ghost", wasFollowing);
-        console.error("Takip güncellenemedi:", err);
-    } finally {
-        btn.dataset.busy = "0";
-    }
+    });
 });
 
 // Profil sayfası: takip butonu (takip değil, menü yok)
-document.addEventListener("click", async (e) => {
+document.addEventListener("click", (e) => {
     const btn = e.target.closest(".profile-follow-btn");
     if (!btn) return;
 
     e.preventDefault();
-    if (btn.dataset.busy === "1") return;
+    // ANINDA menüye dönüş — önceden sunucu yanıtı bekleniyordu ve kullanıcı
+    // "Takipten çık" seçeneğine hemen ulaşamıyordu (kullanıcı raporu).
+    const ds = Object.assign({}, btn.dataset);
+    const wrap = createFollowMenu(ds);
+    btn.replaceWith(wrap);
 
-    btn.dataset.busy = "1";
-
-    try {
-        const res = await fetch(btn.dataset.followUrl, {
-            method: "POST",
-            headers: {
-                "X-Requested-With": "fetch",
-                "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "",
-            },
-        });
-        if (!res.ok) throw new Error("İstek başarısız: " + res.status);
-
-        const data = await res.json();
-
-        // Takip başarılı: butonu menüye dönüştür (sayfa yenilenmesiz)
-        btn.replaceWith(createFollowMenu(btn.dataset));
-
-        // Takipçi sayısını güncelle
-        const statsEl = document.querySelectorAll(".profile-stats span");
-        if (statsEl.length >= 2) {
-            const strongEl = statsEl[1].querySelector("strong");
-            if (strongEl && data.followers_count !== undefined) {
-                strongEl.textContent = data.followers_count;
-            }
+    _enqueueFollow(ds.username, async () => {
+        try {
+            const res = await fetch(ds.followUrl, { method: "POST", headers: _followHeaders() });
+            if (!res.ok) throw new Error("İstek başarısız: " + res.status);
+            const data = await res.json();
+            _updateFollowerStat(data);
+        } catch (err) {
+            console.error("Takip başarısız:", err);
+            // Geri al: menü hâlâ yerindeyse butona çevir
+            if (wrap.isConnected) wrap.replaceWith(createFollowButton(ds));
         }
-    } catch (err) {
-        console.error("Takip başarısız:", err);
-    } finally {
-        btn.dataset.busy = "0";
-    }
+    });
 });
 
 // Profil sayfası: takip menüsü
@@ -144,46 +138,24 @@ document.addEventListener("click", async (e) => {
     const wasFollowing = btn.dataset.following === "1";
     if (!wasFollowing) return;
 
-    btn.dataset.busy = "1";
-    try {
-        const res = await fetch(btn.dataset.followUrl, {
-            method: "POST",
-            headers: {
-                "X-Requested-With": "fetch",
-                "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "",
-            },
-        });
-        if (!res.ok) throw new Error("İstek başarısız");
+    // ANINDA butona dönüş (optimistic) — istek arka planda sıraya girer
+    const ds = Object.assign({}, btn.dataset);
+    const wrap = btn.closest(".profile-follow-menu-wrap");
+    const newBtn = createFollowButton(ds);
+    if (wrap) wrap.replaceWith(newBtn);
 
-        const data = await res.json();
-
-        // Takip kaldırıldı: menüyü tekrar takip butonuna dönüştür
-        const wrap = btn.closest(".profile-follow-menu-wrap");
-        if (wrap) {
-            const newBtn = document.createElement("button");
-            newBtn.type = "button";
-            newBtn.className = "btn btn-primary profile-follow-btn";
-            newBtn.dataset.following = "0";
-            newBtn.dataset.username = btn.dataset.username;
-            newBtn.dataset.followUrl = btn.dataset.followUrl;
-            newBtn.setAttribute("aria-label", "Takip et");
-            newBtn.textContent = "Takip et";
-            wrap.replaceWith(newBtn);
+    _enqueueFollow(ds.username, async () => {
+        try {
+            const res = await fetch(ds.followUrl, { method: "POST", headers: _followHeaders() });
+            if (!res.ok) throw new Error("İstek başarısız");
+            const data = await res.json();
+            _updateFollowerStat(data);
+        } catch (err) {
+            console.error("Takip kaldırılamadı:", err);
+            // Geri al: buton hâlâ yerindeyse menüye çevir
+            if (newBtn.isConnected) newBtn.replaceWith(createFollowMenu(ds));
         }
-
-        // Takipçi sayısını güncelle
-        const statsEl = document.querySelectorAll(".profile-stats span");
-        if (statsEl.length >= 2) {
-            const strongEl = statsEl[1].querySelector("strong");
-            if (strongEl && data.followers_count !== undefined) {
-                strongEl.textContent = data.followers_count;
-            }
-        }
-    } catch (err) {
-        console.error("Takip kaldırılamadı:", err);
-    } finally {
-        btn.dataset.busy = "0";
-    }
+    });
 });
 
 // Takip menüsü öğeleri: Yakın arkadaş toggle
@@ -290,6 +262,22 @@ document.addEventListener("keydown", (e) => {
         });
     }
 });
+
+// Menü → "Takip et" butonuna dönüştürücü helper (unfollow + hata geri alma)
+function createFollowButton(data) {
+    const newBtn = document.createElement("button");
+    newBtn.type = "button";
+    newBtn.className = "btn btn-primary profile-follow-btn";
+    newBtn.dataset.following = "0";
+    newBtn.dataset.username = data.username;
+    newBtn.dataset.userId = data.userId;
+    newBtn.dataset.followUrl = data.followUrl;
+    newBtn.dataset.addCloseFriendUrl = data.addCloseFriendUrl;
+    newBtn.dataset.removeCloseFriendUrl = data.removeCloseFriendUrl;
+    newBtn.setAttribute("aria-label", "Takip et");
+    newBtn.textContent = "Takip et";
+    return newBtn;
+}
 
 // "Takip et" → menüye dönüştürücü helper
 function createFollowMenu(data) {

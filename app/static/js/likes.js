@@ -15,16 +15,18 @@
         return document.querySelector('meta[name="csrf-token"]')?.content || '';
     }
 
-    async function sendReaction(btn, reaction) {
-        if (btn.dataset.busy === '1') return;
-
+    function sendReaction(btn, reaction) {
+        // Ard arda tıklamalar DÜŞÜRÜLMEZ (önceden busy bayrağı ikinci tıklamayı
+        // yutuyordu — kullanıcı raporu: "bekletiyor/kasıyor"). UI her tıklamada
+        // ANINDA güncellenir; ağ istekleri sıraya girer (sunucu toggle sırası
+        // korunur) ve UI'ya yalnızca EN SON isteğin yanıtı uygulanır.
         var countEl = btn.querySelector('.like-count');
         var iconEl = btn.querySelector('.reaction-icon');
         var wasLiked = btn.dataset.liked === '1';
         var prevReaction = btn.dataset.reaction || '';
         var prevCount = parseInt(countEl.textContent, 10) || 0;
 
-        // --- Optimistic update ---
+        // --- Optimistic update (anında) ---
         var willRemove = wasLiked && prevReaction === reaction;
         var nextLiked = !willRemove;
         btn.dataset.liked = nextLiked ? '1' : '0';
@@ -32,36 +34,39 @@
         iconEl.textContent = nextLiked ? (REACTIONS[reaction] || '👍') : '👍';
         btn.dataset.reaction = nextLiked ? reaction : '';
         countEl.textContent = prevCount + (willRemove ? -1 : (wasLiked ? 0 : 1));
-        btn.dataset.busy = '1';
 
-        try {
-            var res = await fetch(btn.dataset.likeUrl, {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'fetch',
-                    'X-CSRF-Token': csrfToken(),
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: 'reaction=' + encodeURIComponent(reaction),
-            });
-            if (!res.ok) throw new Error('İstek başarısız: ' + res.status);
-            var data = await res.json();
+        btn._seq = (btn._seq || 0) + 1;
+        var mySeq = btn._seq;
+        btn._chain = (btn._chain || Promise.resolve()).then(async function () {
+            try {
+                var res = await fetch(btn.dataset.likeUrl, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'fetch',
+                        'X-CSRF-Token': csrfToken(),
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'reaction=' + encodeURIComponent(reaction),
+                });
+                if (!res.ok) throw new Error('İstek başarısız: ' + res.status);
+                var data = await res.json();
+                if (btn._seq !== mySeq) return; // daha yeni tıklama var — onun yanıtı kazansın
 
-            btn.dataset.liked = data.liked ? '1' : '0';
-            btn.classList.toggle('liked', data.liked);
-            btn.dataset.reaction = data.liked ? (data.reaction || reaction) : '';
-            iconEl.textContent = data.liked ? (REACTIONS[data.reaction] || REACTIONS[reaction] || '👍') : '👍';
-            countEl.textContent = data.count;
-        } catch (err) {
-            btn.dataset.liked = wasLiked ? '1' : '0';
-            btn.classList.toggle('liked', wasLiked);
-            btn.dataset.reaction = prevReaction;
-            iconEl.textContent = wasLiked ? (REACTIONS[prevReaction] || '👍') : '👍';
-            countEl.textContent = prevCount;
-            console.error('Reaksiyon güncellenemedi:', err);
-        } finally {
-            btn.dataset.busy = '0';
-        }
+                btn.dataset.liked = data.liked ? '1' : '0';
+                btn.classList.toggle('liked', data.liked);
+                btn.dataset.reaction = data.liked ? (data.reaction || reaction) : '';
+                iconEl.textContent = data.liked ? (REACTIONS[data.reaction] || REACTIONS[reaction] || '👍') : '👍';
+                countEl.textContent = data.count;
+            } catch (err) {
+                console.error('Reaksiyon güncellenemedi:', err);
+                if (btn._seq !== mySeq) return;
+                btn.dataset.liked = wasLiked ? '1' : '0';
+                btn.classList.toggle('liked', wasLiked);
+                btn.dataset.reaction = prevReaction;
+                iconEl.textContent = wasLiked ? (REACTIONS[prevReaction] || '👍') : '👍';
+                countEl.textContent = prevCount;
+            }
+        });
     }
 
     // --- Reaksiyon seçici popup: tek bir DOM elemanı, ihtiyaç oldukça yeniden konumlanır ---
