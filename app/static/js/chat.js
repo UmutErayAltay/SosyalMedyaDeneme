@@ -700,11 +700,52 @@
             });
         });
 
+        // --- Yoklama (polling) yedeği: Realtime kanalı KURULAMAZSA devreye
+        // girer. Bazı ortamlarda (VPN, antivirüs, kurumsal ağ, bazı tarayıcı
+        // katmanları) websocket join'i reddediliyor ve kullanıcı mesajları
+        // ancak F5 ile görebiliyordu (canlı test bulgusu, Brave + 401/
+        // CHANNEL_ERROR). Yedek: 4sn'de bir konuşma partial'ı çekilir, DOM'da
+        // olmayan mesajlar sunucu render'ıyla eklenir. Sunucu tarafı fetch
+        // zaten mark-read yaptığı için rozetler de doğru kalır. ---
+        if (window._chatPollTimer) { clearInterval(window._chatPollTimer); window._chatPollTimer = null; }
+
+        function startPollingFallback() {
+            if (window._chatPollTimer) return;
+            console.warn('Realtime kurulamadı — 4sn yoklama moduna geçildi (mesajlar yine düşecek)');
+            window._chatPollTimer = setInterval(async function () {
+                try {
+                    var res = await fetch('/messages/' + conversationId, {
+                        headers: { 'X-Requested-With': 'fetch' }
+                    });
+                    if (!res.ok) return;
+                    var tmp = document.createElement('div');
+                    tmp.innerHTML = await res.text();
+                    var added = false;
+                    tmp.querySelectorAll('.msg[data-msg-id]').forEach(function (m) {
+                        var id = m.dataset.msgId;
+                        if (!id || stream.querySelector('.msg[data-msg-id="' + id + '"]')) return;
+                        stream.appendChild(m);
+                        added = true;
+                    });
+                    if (added) {
+                        formatSharedPosts(stream);
+                        // Kullanıcı en alttaysa yeni mesaja kaydır (yukarı okuyorsa rahatsız etme)
+                        if (stream.scrollHeight - stream.scrollTop - stream.clientHeight < 160) scrollToBottom();
+                    }
+                } catch (e) { /* bir sonraki turda tekrar denenir */ }
+            }, 4000);
+        }
+
+        function stopPollingFallback() {
+            if (window._chatPollTimer) { clearInterval(window._chatPollTimer); window._chatPollTimer = null; }
+        }
+
         // --- Supabase Realtime: önceki kanalı kapat, yeni konuşmaya abone ol ---
         if (activeChannel && window.supabaseClient) {
             try { window.supabaseClient.removeChannel(activeChannel); } catch (err) { /* yut */ }
             activeChannel = null;
         }
+        if (!window.supabaseClient) startPollingFallback();
 
         if (window.supabaseClient) {
             try {
@@ -810,8 +851,11 @@
                         typingIndicator.textContent = '';
                     }
                 }).subscribe(function (status) {
-                    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    if (status === 'SUBSCRIBED') {
+                        stopPollingFallback(); // canlı kanal kuruldu, yoklamaya gerek yok
+                    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
                         console.warn('Realtime bağlantı sorunu, durum:', status);
+                        startPollingFallback();
                     }
                 });
                 activeChannel = channel;
