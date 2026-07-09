@@ -840,8 +840,14 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 /* === Mesaj Tepkileri (Emoji Reactions) === */
 /* inline-flex: tepki chip'leri ile 🙂+ tetik butonu AYNI satırda kalmalı —
    display:flex (blok) tetikleyiciyi bir alt satıra itiyordu (kullanıcı raporu) */
+/* Chip'ler + tetik (+ sil) tek flex satırda — tetik butonu chip
+   eklendikçe alt satıra düşmüyor (kullanıcı raporu) */
+.msg-react-row {
+    display: flex; align-items: center; gap: 4px; margin-top: 2px;
+    flex-wrap: wrap;
+}
 .msg-reactions {
-    display: inline-flex; gap: 4px; margin-top: 2px; flex-wrap: wrap;
+    display: inline-flex; gap: 4px; flex-wrap: wrap;
     vertical-align: middle;
 }
 

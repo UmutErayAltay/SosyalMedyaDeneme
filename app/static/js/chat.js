@@ -114,7 +114,10 @@
         }
         html += '</span>';
         // Sunucu render'ındaki tepki tetikleyicisi + picker — bunlar olmadan
-        // yeni gönderilen/gelen mesajlara sayfa yenilenmeden tepki verilemezdi
+        // yeni gönderilen/gelen mesajlara sayfa yenilenmeden tepki verilemezdi.
+        // msg-react-row: chip'ler + tetik + sil TEK flex satırda (tetik
+        // butonu chip eklendikçe alt satıra düşmesin — kullanıcı raporu)
+        html += '<div class="msg-react-row">';
         html += '<button class="msg-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>';
         html += '<div class="msg-react-picker" hidden>';
         REACT_EMOJIS.forEach(function (em) {
@@ -125,6 +128,7 @@
         if (isMine) {
             html += '<button class="msg-delete-btn" aria-label="Mesajı sil" type="button">🗑</button>';
         }
+        html += '</div>';
         html += '</div>';
         return html;
     }
@@ -808,9 +812,15 @@
                 if (!reactionsDiv) {
                     reactionsDiv = document.createElement('div');
                     reactionsDiv.className = 'msg-reactions';
-                    var timeEl = msg.querySelector('.time');
-                    if (timeEl) timeEl.insertAdjacentElement('afterend', reactionsDiv);
-                    else msg.appendChild(reactionsDiv);
+                    // Chip'ler tetik butonuyla AYNI flex satırda (msg-react-row)
+                    // yaşar — satırın başına eklenir ki tetik hep sonda kalsın
+                    var rowEl = msg.querySelector('.msg-react-row');
+                    if (rowEl) rowEl.insertAdjacentElement('afterbegin', reactionsDiv);
+                    else {
+                        var timeEl = msg.querySelector('.time');
+                        if (timeEl) timeEl.insertAdjacentElement('afterend', reactionsDiv);
+                        else msg.appendChild(reactionsDiv);
+                    }
                 }
                 chip = document.createElement('button');
                 chip.type = 'button';
