@@ -268,6 +268,19 @@
         var sendUrl = panel.dataset.sendUrl;
         var otherUsername = panel.dataset.otherUsername || 'Kullanıcı';
         var isGroup = panel.dataset.isGroup === '1';
+
+        // --- Mesaj HIZLI YOLU (broadcast önizleme) durumu ---
+        // Gönderen, "Gönder"e bastığı ANDA mesajı kanaldan broadcast eder —
+        // karşı taraf sohbeti açıksa DB turunu (insert + WAL + realtime,
+        // ~0.5-1sn) beklemeden ~100-200ms'de görür. DB'den gerçek INSERT
+        // gelince önizleme balonu yerinde "gerçek" haline yükseltilir; çift
+        // görünmeyi anahtar eşleştirmesi önler. Görsel yüklemeleri hariç
+        // (dosya URL'i henüz yok) — onlar eski yoldan düşer.
+        var pendingPreviews = {}; // key -> [önizleme DOM node'ları, FIFO]
+        var recentInserts = {};   // key -> true (INSERT önce geldiyse geç kalan önizleme yutulur)
+        function previewKey(senderId, content, imageUrl, stickerId) {
+            return senderId + '|' + (content || '') + '|' + (imageUrl || '') + '|' + (stickerId || '');
+        }
         var memberMap = {};
         try { memberMap = JSON.parse(panel.dataset.memberMap || '{}'); } catch (err) { memberMap = {}; }
         if (!conversationId || !sendUrl) return;
@@ -705,6 +718,24 @@
             bumpInboxItem(conversationId,
                 content || (stickerVal ? '🏷️ Çıkartma' : (gifVal ? 'GIF' : '📷 Görsel')));
 
+            // HIZLI YOL: karşı taraf da bu sohbeti açıksa mesajı DB turunu
+            // beklemeden anında ilet (bkz. pendingPreviews yorumu). Broadcast
+            // düşmezse sorun yok — mesaj zaten DB + postgres_changes yoluyla
+            // ulaşır, bu sadece kestirme.
+            if (!hasImage && activeChannel) {
+                try {
+                    activeChannel.send({
+                        type: 'broadcast', event: 'msg-preview',
+                        payload: {
+                            sender_id: window.ME_ID,
+                            content: content,
+                            image_url: gifVal || null,
+                            sticker: optimisticMsg.sticker || null
+                        }
+                    });
+                } catch (err) { /* kestirme başarısız — normal yol devrede */ }
+            }
+
             // Gönderilecek veriyi HEMEN yakala ve inputları HEMEN temizle —
             // kullanıcı bir sonraki mesajı beklemeden yazabilir (bekletme yok);
             // ağ isteği kuyruğa girer (sıra korunur, ard arda gönderimde
@@ -828,8 +859,25 @@
                     var msg = payload.new;
                     var isMine = msg.sender_id === window.ME_ID;
                     if (!isMine) {
-                        var senderName = isGroup ? (memberMap[msg.sender_id] || 'Bilinmeyen') : null;
-                        appendMessageResolvingSticker(appendMessage, msg, isMine, { senderName: senderName });
+                        // HIZLI YOL eşleştirmesi: bu mesajın broadcast önizlemesi
+                        // zaten ekrandaysa yeni balon AÇMA — mevcut balonu gerçek
+                        // id/saat ile yükselt (çift görünme olmasın)
+                        var dedupeKey = previewKey(msg.sender_id, msg.content, msg.image_url, msg.sticker_id);
+                        recentInserts[dedupeKey] = true;
+                        setTimeout(function () { delete recentInserts[dedupeKey]; }, 10000);
+                        var previewQueue = pendingPreviews[dedupeKey];
+                        var previewNode = previewQueue && previewQueue.shift();
+                        if (previewNode && previewNode.isConnected) {
+                            previewNode.dataset.msgId = msg.id;
+                            previewNode.dataset.reactUrl = reactUrlFor(msg.id);
+                            var previewTime = previewNode.querySelector('.time');
+                            if (previewTime && msg.created_at) {
+                                previewTime.textContent = formatLocalTime(msg.created_at);
+                            }
+                        } else {
+                            var senderName = isGroup ? (memberMap[msg.sender_id] || 'Bilinmeyen') : null;
+                            appendMessageResolvingSticker(appendMessage, msg, isMine, { senderName: senderName });
+                        }
                         bumpInboxItem(conversationId, msg.content || '📷 Medya');
 
                         // Haritada olmayan üye (sayfa açıldıktan sonra katılan) —
@@ -857,6 +905,35 @@
                             }).catch(function () { /* rozet en geç sayfa yenilemede düzelir */ });
                         }
                     }
+                }).on('broadcast', { event: 'msg-preview' }, function (msg) {
+                    // HIZLI YOL alıcı ucu: gönderenin submit ANINDA yolladığı
+                    // önizlemeyi hemen göster; gerçek kayıt (INSERT) gelince
+                    // yukarıdaki eşleştirme bu balonu yükseltir. NOT: bu kanal
+                    // şimdilik public (bilinen geçici RLS boşluğu — bkz.
+                    // typingChannel notu); conversation id'ler tahmin edilemez
+                    // UUID, kalıcı çözüm RLS izole testi sonrası.
+                    var p = msg.payload || {};
+                    if (!p.sender_id || p.sender_id === window.ME_ID) return;
+                    var key = previewKey(p.sender_id, p.content, p.image_url, p.sticker && p.sticker.id);
+                    if (recentInserts[key]) return; // gerçek kayıt zaten geldi (sıra dışı ulaşan önizleme)
+                    var pSenderName = isGroup ? (memberMap[p.sender_id] || 'Bilinmeyen') : null;
+                    var pNode = appendMessage({
+                        content: p.content, image_url: p.image_url,
+                        sticker: p.sticker || null, created_at: null
+                    }, false, { senderName: pSenderName });
+                    if (!pNode) return;
+                    (pendingPreviews[key] = pendingPreviews[key] || []).push(pNode);
+                    bumpInboxItem(conversationId, p.content || '📷 Medya');
+                    // Gerçek kayıt hiç gelmezse (gönderim sunucuda başarısız
+                    // olduysa) önizleme 20sn sonra sessizce kaldırılır
+                    setTimeout(function () {
+                        var q = pendingPreviews[key];
+                        if (q) {
+                            var i = q.indexOf(pNode);
+                            if (i !== -1) q.splice(i, 1);
+                        }
+                        if (!pNode.dataset.msgId) pNode.remove();
+                    }, 20000);
                 }).on('postgres_changes', {
                     event: 'UPDATE',
                     schema: 'public',

@@ -1,7 +1,8 @@
 """Bir konuşmaya mesaj/görsel/ses/paylaşılan post gönderme."""
-from flask import request, redirect, url_for, session, abort, flash, jsonify
+from flask import request, redirect, url_for, session, abort, flash, jsonify, current_app
 from . import bp
 from ._common import _notify_conversation, _get_or_create_conversation
+from .views import _write_pool
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..storage_helper import upload_image, upload_audio
@@ -102,7 +103,22 @@ def send_message(conversation_id):
         inserted = sb.table("messages").insert(data).execute()
     except Exception:
         inserted = sb.table("messages").insert(insert_data).execute()
-    _notify_conversation(sb, conversation_id, me)
+
+    # Bildirim + push yanıtı BEKLETMESİN (hız): mesaj DB'ye yazıldı, alıcının
+    # realtime'ı zaten tetiklendi — kalan iş (3-4 sorgu + FCM'e HTTP çağrısı)
+    # arka planda koşar, gönderen anında yanıt alır. _push'un URL kurucuları
+    # url_for kullandığından sahte istek bağlamı açılır (bağlamsız thread'de
+    # RuntimeError yutulup push sessizce ölürdü).
+    app = current_app._get_current_object()
+
+    def _bg_notify():
+        try:
+            with app.test_request_context():
+                _notify_conversation(sb, conversation_id, me)
+        except Exception:
+            pass  # bildirim düşmezse mesajın kendisi zaten ulaştı — kritik değil
+
+    _write_pool.submit(_bg_notify)
 
     if wants_json:
         return jsonify(inserted.data[0])
