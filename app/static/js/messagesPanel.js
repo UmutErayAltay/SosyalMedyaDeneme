@@ -44,6 +44,15 @@
             return;
         }
 
+        // "Daha eski mesajları yükle" — paneli ?all=1 ile yeniden getirir
+        // (açılışta yalnızca son N mesaj gelir, bkz. views.py MESSAGE_PAGE)
+        var loadAll = e.target.closest('.msg-load-all');
+        if (loadAll) {
+            e.preventDefault();
+            loadConversation(loadAll.getAttribute('href'), false);
+            return;
+        }
+
         // Mobilde "Geri" — listeye dönmek için yeniden fetch gerekmiyor,
         // sidebar zaten DOM'da; sadece görünürlük class'ı değişiyor.
         var back = e.target.closest('.conv-back-link');

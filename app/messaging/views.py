@@ -8,6 +8,16 @@ from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..auth import refresh_session_tokens
 
+# Sohbet açılışında çekilen son mesaj sayısı — üzeri "Daha eski mesajları
+# yükle" butonuyla (?all=1) gelir. Bkz. conversation() FAZ 1 yorumu.
+MESSAGE_PAGE = 150
+
+# Okundu/bildirim YAZMALARI yanıtı bekletmesin diye kalıcı arka plan havuzu —
+# render bu yazmalara bağlı değil (first_unread_id bellek içi listeden
+# hesaplanır, rozetler zaten 20-25sn'lik polling/cache ile geliyor). Havuz
+# `with` bloğuna alınmaz: bloktan çıkış join edip beklerdi, amaç beklememek.
+_write_pool = ThreadPoolExecutor(max_workers=2)
+
 
 @bp.route("/")
 @login_required
@@ -48,24 +58,20 @@ def conversation(conversation_id):
         refresh_session_tokens()
     sb = get_sb()
     me = session["user"]["id"]
+    show_all = request.args.get("all") == "1"
 
-    # Kullanıcı bu konuşmada mı?
-    part = sb.table("conversation_participants").select().eq(
-        "conversation_id", conversation_id
-    ).eq("user_id", me).execute()
-    if not part.data:
-        abort(403)
-    # is_admin migration uygulanmamışsa kolon dict'te yok — güvenli varsayılan False
-    my_is_admin = bool(part.data[0].get("is_admin"))
-    # Sayfa açılır açılmaz "aktif" işaretle (chat.js periyodik ping ile tazeler) —
-    # bu sohbetten gelen mesaj bildirimi/push'u üretilmesin (bkz. _notify_conversation)
-    mark_active(me, conversation_id)
-    # Sohbeti açmak = o sohbetin mesaj bildirimlerini de okumak (zil rozeti
-    # bayat kalmasın, gruplama sayacı sıfırlansın — bkz. _common docstring'i)
-    _mark_message_notifications_read(sb, me, conversation_id)
+    # --- FAZ 1: doğrulama + meta + katılımcılar + mesajlar TEK paralel dalga ---
+    # Önceden katılımcı doğrulaması AYRI (seri) bir turdu, ardından 3'lü paralel
+    # tur, sonra tepki + sticker + okundu yazmaları da hep SERİ koşuyordu —
+    # sohbet açılışı ~6 ardışık Supabase turu bekliyordu (kullanıcı isteği:
+    # "mesajlar daha hızlı yüklensin"). Doğrulama sorgusu diğerlerinden bağımsız
+    # olduğu için birlikte koşturulur, SONUCU her şeyden önce denetlenir —
+    # katılımcı değilse çekilen veri çöpe gider ama asla sızmaz (403).
+    def _check_participant():
+        return sb.table("conversation_participants").select().eq(
+            "conversation_id", conversation_id
+        ).eq("user_id", me).execute().data
 
-    # Diğer veri (grup meta, katılımcılar, mesajlar) paralel çek — conversation_id
-    # doğrulandıktan sonra 3 sorgu birbirinden bağımsız
     def _fetch_conv_meta():
         try:
             conv = sb.table("conversations").select("is_group, name").eq("id", conversation_id).execute().data
@@ -93,82 +99,94 @@ def conversation(conversation_id):
                     return []
 
     def _fetch_messages():
-        try:
-            messages = sb.table("messages").select(
-                "*, profiles!messages_sender_id_fkey(username, avatar_url)"
-            ).eq("conversation_id", conversation_id).order("created_at").execute().data
-            return messages
-        except Exception:
-            return []
+        # Son MESSAGE_PAGE mesaj (uzun sohbetlerde tüm geçmişi çekmek hem
+        # sorguyu hem HTML render'ını yavaşlatıyordu); +1 satır "daha eskisi
+        # var mı" bilgisini verir. ?all=1 tüm geçmişi getirir (panel içindeki
+        # 'Daha eski mesajları yükle' butonu — bkz. _conversation_panel.html).
+        #
+        # Tepkiler + sticker'lar AYRI sorgular yerine PostgREST embed ile
+        # AYNI sorguda gelir (sohbet açılışında koca bir tur tasarrufu —
+        # Supabase'e tek tur ~300ms; embed canlıda doğrulandı). Embed'li
+        # select herhangi bir sebeple patlarsa sade select'e düşülür —
+        # sohbet render'ı ASLA embed yüzünden kırılmaz (tepki/sticker o
+        # durumda boş görünür, mesajlar görünmeye devam eder).
+        base = "*, profiles!messages_sender_id_fkey(username, avatar_url)"
+        selects = (base + ", sticker:stickers(id, image_url), message_reactions(reaction, user_id)",
+                   base)
+        for sel in selects:
+            try:
+                q = sb.table("messages").select(sel).eq(
+                    "conversation_id", conversation_id).order("created_at", desc=True)
+                if not show_all:
+                    q = q.limit(MESSAGE_PAGE + 1)
+                rows = q.execute().data
+                rows.reverse()  # şablon + okunmamış-çapa mantığı ARTAN sıra bekler
+                return rows
+            except Exception:
+                continue
+        return []
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        part_future = executor.submit(_check_participant)
         meta_future = executor.submit(_fetch_conv_meta)
         others_future = executor.submit(_fetch_others)
         messages_future = executor.submit(_fetch_messages)
 
+        part = part_future.result()
         (is_group, group_name) = meta_future.result()
         other_profiles = others_future.result()
         messages = messages_future.result()
 
-    # Tepkileri bağla — message_reactions tablosu henüz yoksa sessizce boş liste
-    try:
-        if messages:
-            msg_ids = [m["id"] for m in messages]
-            reactions_raw = sb.table("message_reactions").select(
-                "message_id, reaction, user_id"
-            ).in_("message_id", msg_ids).execute().data
+    # Kullanıcı bu konuşmada mı? (sonuç her şeyden önce denetlenir)
+    if not part:
+        abort(403)
+    # is_admin migration uygulanmamışsa kolon dict'te yok — güvenli varsayılan False
+    my_is_admin = bool(part[0].get("is_admin"))
+    # "Aktif" işareti bellek içi, anlık (chat.js periyodik ping ile tazeler) —
+    # bu sohbetten gelen mesaj bildirimi/push'u üretilmesin (bkz. _notify_conversation)
+    mark_active(me, conversation_id)
 
-            # Gruplama: {message_id: {reaction: [user_ids]}}
-            reactions_by_msg = {}
-            for r in reactions_raw:
-                mid = r["message_id"]
-                react = r["reaction"]
-                uid = r["user_id"]
-                if mid not in reactions_by_msg:
-                    reactions_by_msg[mid] = {}
-                if react not in reactions_by_msg[mid]:
-                    reactions_by_msg[mid][react] = []
-                reactions_by_msg[mid][react].append(uid)
+    # Limit fazlası satır = daha eski mesajlar var (reverse sonrası en başta)
+    has_older = False
+    if not show_all and len(messages) > MESSAGE_PAGE:
+        has_older = True
+        messages = messages[1:]
 
-            # Mesajlara bağla
-            for m in messages:
-                m["reactions"] = []
-                if m["id"] in reactions_by_msg:
-                    for reaction, user_ids in reactions_by_msg[m["id"]].items():
-                        m["reactions"].append({
-                            "reaction": reaction,
-                            "count": len(user_ids),
-                            "mine": me in user_ids
-                        })
-        else:
-            # Boş mesaj listesi
-            for m in messages:
-                m["reactions"] = []
-    except Exception:
-        # message_reactions tablosu henüz oluşturulmamış — tepkiler boş liste
+    # Okunmamış ilk mesaj — read_at güncellenmeden ÖNCE, bellek içi listeden
+    # hesaplanır (bu yüzden _mark_read'in paralel koşması güvenli); template
+    # bu mesaja çapa koyar, chat.js sohbeti oradan başlatır (yoksa en alttan)
+    first_unread_id = None
+    if not is_group:
         for m in messages:
-            m["reactions"] = []
+            if m.get("sender_id") != me and not m.get("read_at"):
+                first_unread_id = m["id"]
+                break
 
-    # Sticker'ları bağla — sticker_id sütunu henüz yoksa sessizce boş
-    try:
-        if messages:
-            sticker_ids = [m.get("sticker_id") for m in messages if m.get("sticker_id")]
-            stickers_by_id = {}
-            if sticker_ids:
-                stickers_raw = sb.table("stickers").select(
-                    "id, image_url"
-                ).in_("id", sticker_ids).execute().data
-                for s in stickers_raw:
-                    stickers_by_id[s["id"]] = {"id": s["id"], "image_url": s["image_url"]}
+    # --- FAZ 2: okundu YAZMALARI arka planda (yanıt bunları BEKLEMEZ) ---
+    # first_unread_id yukarıda bellek içi listeden hesaplandığı için yazmaların
+    # ne zaman bittiği render'ı etkilemez; rozetler zaten polling/cache'li.
+    def _write_reads():
+        # Grupta "okundu" bilgisi anlamsız (bkz. modül docstring'i) — sadece 1:1'de
+        if not is_group:
+            _mark_read(sb, conversation_id, me, messages)
+        # Sohbeti açmak = o sohbetin mesaj bildirimlerini de okumak (zil rozeti
+        # bayat kalmasın, gruplama sayacı sıfırlansın — bkz. _common docstring'i)
+        _mark_message_notifications_read(sb, me, conversation_id)
 
-            for m in messages:
-                if m.get("sticker_id") and m.get("sticker_id") in stickers_by_id:
-                    m["sticker"] = stickers_by_id[m["sticker_id"]]
-                else:
-                    m["sticker"] = None
-    except Exception:
-        # stickers tablosu henüz oluşturulmamış — sticker'lar None
-        for m in messages:
+    _write_pool.submit(_write_reads)
+
+    # Embed'den gelen tepkileri şablonun beklediği şekle çevir; embed'siz
+    # fallback yolunda anahtarlar hiç yoktur — boş/None varsayılır
+    for m in messages:
+        raw_reactions = m.pop("message_reactions", None) or []
+        by_react = {}
+        for r in raw_reactions:
+            by_react.setdefault(r["reaction"], []).append(r["user_id"])
+        m["reactions"] = [
+            {"reaction": react, "count": len(uids), "mine": me in uids}
+            for react, uids in by_react.items()
+        ]
+        if "sticker" not in m:
             m["sticker"] = None
 
     other_user = None if is_group else (other_profiles[0] if other_profiles else None)
@@ -177,22 +195,12 @@ def conversation(conversation_id):
     # bir id→username haritası gerekiyor (bkz. chat.js, data-member-map).
     member_map = {p["id"]: p["username"] for p in other_profiles if p.get("id")}
 
-    # Okunmamış ilk mesaj — _mark_read read_at'i güncellemeden ÖNCE hesaplanmalı;
-    # template bu mesaja çapa koyar, chat.js sohbeti oradan başlatır (yoksa en alttan)
-    first_unread_id = None
-    if not is_group:
-        for m in messages:
-            if m.get("sender_id") != me and not m.get("read_at"):
-                first_unread_id = m["id"]
-                break
-        # Grupta "okundu" bilgisi anlamsız (bkz. modül docstring'i) — sadece 1:1'de işaretlenir
-        _mark_read(sb, conversation_id, me, messages)
-
     ctx = dict(messages=messages, first_unread_id=first_unread_id,
                other_user=other_user, is_group=is_group,
                group_name=group_name, group_members=other_profiles, member_map=member_map,
                conversation_id=conversation_id, me=session["user"],
-               my_is_admin=my_is_admin if is_group else False)
+               my_is_admin=my_is_admin if is_group else False,
+               has_older=has_older)
 
     if request.headers.get("X-Requested-With") == "fetch":
         return render_template("messages/_conversation_panel.html", **ctx)

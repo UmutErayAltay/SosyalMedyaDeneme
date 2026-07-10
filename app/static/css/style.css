@@ -1930,6 +1930,43 @@ header[role="banner"] {
 /* Hangup/reddet ikonundaki telefon — 135° çevrilince "kapat" olur */
 .call-svg-flip { transform: rotate(135deg); }
 
+/* Küçült/büyüt butonu — tam ekranda sağ üst köşede */
+.call-mini-toggle {
+    position: absolute; top: 16px; right: 16px; z-index: 202;
+    width: 40px; height: 40px;
+}
+.call-mini-toggle svg { width: 18px; height: 18px; }
+
+/* === Mini (pencere içinde pencere) arama modu — YouTube PiP benzeri ===
+   Görüşme sürerken sitede gezinmeye devam edilebilir; kart üst bardan
+   (isim/süre hapı) sürüklenir (kullanıcı isteği). */
+.call-overlay.call-mini {
+    inset: auto; right: 16px; bottom: 16px;
+    width: 300px; height: 220px;
+    border-radius: var(--radius);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+    padding: 0; overflow: hidden; animation: none;
+    z-index: 300;
+}
+.call-mini .call-topbar {
+    top: 8px; padding: 4px 12px; font-size: 12px; gap: 8px;
+    cursor: move; max-width: calc(100% - 56px); white-space: nowrap;
+}
+.call-mini .call-duration { font-size: 12px; min-width: 36px; }
+.call-mini .call-avatar-circle--lg { width: 56px; height: 56px; font-size: 22px; }
+.call-mini .call-remote-name { font-size: 14px; margin-top: 6px; }
+.call-mini .call-type-label { display: none; }
+.call-mini .call-local-video { display: none; }
+.call-mini .call-controls-bar { bottom: 8px; padding: 6px 10px; gap: 8px; }
+.call-mini .call-controls { gap: 8px; }
+.call-mini .call-btn { width: 34px; height: 34px; }
+.call-mini .call-btn svg { width: 15px; height: 15px; }
+.call-mini .call-mini-toggle {
+    top: 6px; right: 6px; width: 30px; height: 30px;
+}
+.call-mini .call-mini-toggle svg { width: 13px; height: 13px; }
+
 /* Paylaşılan avatar dairesi — tam ekran arama (lg) ve gelen arama modalı
    (md) tarafından kullanılır; gerçek görsel varsa <img>, yoksa 👤 fallback. */
 .call-avatar-circle {
@@ -2563,6 +2600,13 @@ header[role="banner"] {
 @keyframes call-dot-blink {
     0%, 60%, 100% { opacity: 0.2; }
     30% { opacity: 1; }
+}
+
+/* "Daha eski mesajları yükle" — mesaj akışının en üstünde ortalanmış buton
+   (açılışta yalnızca son N mesaj gelir, bkz. messaging/views.py MESSAGE_PAGE) */
+.msg-load-all {
+    display: block; margin: 4px auto 12px; text-align: center;
+    max-width: max-content;
 }
 
 /* Sohbet başlığındaki isim — profile giden link, başlık görünümü korunur */

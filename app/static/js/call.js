@@ -43,6 +43,8 @@
     var SVG_PHONE_DOWN = SVG_PHONE.replace('<svg ', '<svg class="call-svg-flip" ');
     var SVG_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
     var SVG_VIDEO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>';
+    var SVG_MINIMIZE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+    var SVG_EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
 
     // Format mm:ss
     function formatDuration(ms) {
@@ -106,6 +108,7 @@
 
         if (!document.getElementById('call-overlay')) {
             var overlayHtml = '<div class="call-overlay" id="call-overlay" hidden>\n' +
+                '    <button type="button" class="call-btn call-mini-toggle" id="call-mini-toggle" aria-label="Küçült" title="Küçült">' + SVG_MINIMIZE + '</button>\n' +
                 '    <div class="call-topbar">\n' +
                 '        <strong id="call-top-name" hidden></strong>\n' +
                 '        <span id="call-duration" class="call-duration" role="timer"></span>\n' +
@@ -132,7 +135,70 @@
             document.getElementById('call-controls-mic').onclick = function () { toggleMic(); };
             document.getElementById('call-controls-camera').onclick = function () { onCameraButton(); };
             document.getElementById('call-controls-hangup').onclick = function () { endCall(); };
+            document.getElementById('call-mini-toggle').onclick = function () { toggleMiniMode(); };
+            initMiniDrag();
         }
+    }
+
+    // --- Mini (pencere içinde pencere) arama modu — YouTube PiP benzeri ---
+    // Görüşme sürerken sitede gezinmeye devam edilebilsin diye tam ekran
+    // overlay köşede sürüklenebilir küçük bir karta dönüşür (kullanıcı isteği).
+    // NOT: tam SAYFA geçişi yine aramayı sonlandırır (WebRTC bağlantısı sayfa
+    // ömrüne bağlı; beforeunload uyarısı var) — mini mod aynı sayfada
+    // gezinme + mesajlar panelinin AJAX geçişleri sırasında işe yarar.
+    function setMiniMode(on) {
+        var overlay = document.getElementById('call-overlay');
+        var btn = document.getElementById('call-mini-toggle');
+        if (!overlay) return;
+        overlay.classList.toggle('call-mini', on);
+        if (!on) {
+            // Sürükleme sırasında yazılan inline konum tam ekranı bozmasın
+            overlay.style.left = '';
+            overlay.style.top = '';
+            overlay.style.right = '';
+            overlay.style.bottom = '';
+        }
+        if (btn) {
+            btn.innerHTML = on ? SVG_EXPAND : SVG_MINIMIZE;
+            var t = on ? 'Büyüt' : 'Küçült';
+            btn.title = t;
+            btn.setAttribute('aria-label', t);
+        }
+    }
+
+    function toggleMiniMode() {
+        var overlay = document.getElementById('call-overlay');
+        setMiniMode(!!overlay && !overlay.classList.contains('call-mini'));
+    }
+
+    // Mini kart üst bardan (isim/süre hapı) tutulup sürüklenir — video
+    // yüzeyine bağlamak yanlış tıklamaları yutardı, tutamaç net olsun
+    function initMiniDrag() {
+        var overlay = document.getElementById('call-overlay');
+        var handle = overlay ? overlay.querySelector('.call-topbar') : null;
+        if (!handle) return;
+        handle.addEventListener('pointerdown', function (e) {
+            if (!overlay.classList.contains('call-mini')) return;
+            if (e.target.closest('button')) return;
+            e.preventDefault();
+            var rect = overlay.getBoundingClientRect();
+            var offX = e.clientX - rect.left;
+            var offY = e.clientY - rect.top;
+            function move(ev) {
+                var x = Math.min(Math.max(0, ev.clientX - offX), window.innerWidth - rect.width);
+                var y = Math.min(Math.max(0, ev.clientY - offY), window.innerHeight - rect.height);
+                overlay.style.left = x + 'px';
+                overlay.style.top = y + 'px';
+                overlay.style.right = 'auto';
+                overlay.style.bottom = 'auto';
+            }
+            function up() {
+                document.removeEventListener('pointermove', move);
+                document.removeEventListener('pointerup', up);
+            }
+            document.addEventListener('pointermove', move);
+            document.addEventListener('pointerup', up);
+        });
     }
 
     // UI elemanları
@@ -586,6 +652,7 @@
         }
 
         hideOutgoingRinging();
+        setMiniMode(false); // bir sonraki arama tam ekran başlasın
         state.remoteStream = null;
         state.callState = 'idle';
         state.isCaller = false;
