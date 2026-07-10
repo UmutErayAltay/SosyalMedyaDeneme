@@ -12,7 +12,9 @@
 // düzeltilmiş olsa bile "değişiklik olmamış" sanabiliyordu (bkz. navbar/
 // feed-sidebar senkron kayma bug raporu, tek yenilemeden sonra hâlâ eski
 // halin görünmesiyle fark edildi).
-const CACHE_NAME = 'sosyal-static-v1';
+// v2: ?v=mtime sürümlemesi ÖNCESİNDEN kalan sürümsüz girdiler atılsın diye
+// yükseltildi — activate handler'ı eski adlı cache'i komple siler.
+const CACHE_NAME = 'sosyal-static-v2';
 const STATIC_ASSETS = ['/static/css/style.css'];
 
 self.addEventListener('install', function (event) {

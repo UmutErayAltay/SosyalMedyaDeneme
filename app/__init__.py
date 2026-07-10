@@ -71,6 +71,22 @@ def create_app() -> Flask:
             except OSError:
                 pass  # dosya yoksa sürümsüz URL (404 zaten görünür olur)
 
+    # --- Dinamik yanıtlar (HTML/JSON) ASLA önbelleklenmez ---
+    # Cache-Control başlığı olmayan sayfaları tarayıcı, geri/ileri gezinmede
+    # diskteki eski kopyadan YENİDEN DOĞRULAMADAN gösterebiliyor: eski HTML →
+    # içindeki eski ?v= URL'leri → 1 gün taze sayılan eski JS → eski arama
+    # arayüzü hortluyor, kullanıcı "clear site data" yapmak zorunda kalıyordu
+    # (Brave'de canlı rapor). no-store bunu kökten keser; statik dosyalar bu
+    # bloktan ETKİLENMEZ (Flask static endpoint'i kendi max-age başlığını
+    # koyar, ?v=mtime sürümlemesiyle uzun cache güvenli). İçerik zaten
+    # kullanıcıya özel/sürekli değişken olduğundan no-store ayrıca paylaşılan
+    # cihazda veri sızıntısını da önler.
+    @app.after_request
+    def _no_store_dynamic(response):
+        if "Cache-Control" not in response.headers:
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     # PWA: servis çalışanı KÖK dizinden (/sw.js) sunulur — /static/sw.js olsaydı
     # varsayılan scope'u sadece /static/ ile sınırlı kalır, tüm siteyi kontrol edemezdi.
     @app.route("/sw.js")
