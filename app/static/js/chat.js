@@ -893,15 +893,14 @@
                 });
                 activeChannel = channel;
 
-                // "Yazıyor..." broadcast'i AYRI bir private kanalda (mesaj
-                // kanalına dokunulmadı — private:true + realtime.messages RLS
-                // SADECE broadcast/presence'i etkiler, postgres_changes tablo
-                // RLS'inden bağımsız çalışmaya devam eder, bkz.
-                // sql/migration_realtime_broadcast_rls.sql). Sadece bu
-                // konuşmanın katılımcıları abone olabilir/gönderebilir —
-                // önceden herkese açık kanal adı bilmek yeterliydi.
+                // "Yazıyor..." broadcast'i AYRI bir kanalda (mesaj kanalına
+                // dokunulmadı, bkz. yukarıdaki not). GEÇİCİ GERİ ALMA
+                // (2026-07-10): private:true canlıda CHANNEL_ERROR'a yol
+                // açtı (bkz. call.js'teki aynı geri alma notu) — kök neden
+                // netleşene kadar public kanala dönüldü, RLS policy'leri
+                // DB'de duruyor (sql/migration_realtime_broadcast_rls.sql).
                 typingChannel = window.supabaseClient.channel('typing:' + conversationId, {
-                    config: { broadcast: { self: false }, private: true }
+                    config: { broadcast: { self: false } }
                 });
                 typingChannel.on('broadcast', { event: 'typing' }, function (msg) {
                     if (!typingIndicator) return;

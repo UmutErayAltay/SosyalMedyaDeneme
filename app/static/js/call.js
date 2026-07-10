@@ -612,11 +612,14 @@
         if (_outboundChannels[targetId]) return _outboundChannels[targetId];
         _outboundChannels[targetId] = new Promise(function (resolve, reject) {
             if (!window.supabaseClient) { reject(new Error('supabase yok')); return; }
-            // private:true — realtime.messages RLS'i devreye girer, sadece
-            // ortak konuşması olan kullanıcılar bu hedefe sinyal gönderebilir
-            // (bkz. sql/migration_realtime_broadcast_rls.sql)
+            // GEÇİCİ GERİ ALMA (2026-07-10): private:true burada canlıda
+            // CHANNEL_ERROR'a yol açtı (Realtime authorization RLS ile bu
+            // kanal tipi arasında teşhis edilmemiş bir uyumsuzluk — bkz.
+            // sql/migration_realtime_broadcast_rls.sql'deki policy'ler DB'de
+            // duruyor ama private:true olmadan devreye girmiyor). Kararlılık
+            // önce: kök neden netleşene kadar public kanala dönüldü.
             var ch = window.supabaseClient.channel('calls:' + targetId, {
-                config: { broadcast: { self: false }, private: true }
+                config: { broadcast: { self: false } }
             });
             ch.subscribe(function (status) {
                 if (status === 'SUBSCRIBED') resolve(ch);
@@ -818,10 +821,9 @@
         }
 
         try {
-            // private:true — SADECE ben (auth.uid()===meId) kendi calls:<meId>
-            // kanalımı dinleyebilirim (bkz. sql/migration_realtime_broadcast_rls.sql)
+            // GEÇİCİ GERİ ALMA (2026-07-10) — bkz. getOutboundChannel'daki not
             state.callsChannel = window.supabaseClient.channel('calls:' + meId, {
-                config: { broadcast: { self: false }, private: true }
+                config: { broadcast: { self: false } }
             });
 
             state.callsChannel.on('broadcast', { event: 'call-signal' }, function (msg) {
