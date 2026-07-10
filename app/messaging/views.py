@@ -69,18 +69,21 @@ def conversation(conversation_id):
         return False, None
 
     def _fetch_others():
-        try:
-            others = sb.table("conversation_participants").select(
-                "user_id, is_admin, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
-            ).neq("user_id", me).eq("conversation_id", conversation_id).execute().data
-            other_profiles = []
-            for o in others:
-                p = o.get("profiles")
-                if p:
-                    other_profiles.append({**p, "is_admin": bool(o.get("is_admin"))})
-            return other_profiles
-        except Exception:
-            return []
+        # Tek geçici hata başlığı 'Bilinmeyen' yapıyordu — bir kez yeniden dene
+        for attempt in (0, 1):
+            try:
+                others = sb.table("conversation_participants").select(
+                    "user_id, is_admin, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
+                ).neq("user_id", me).eq("conversation_id", conversation_id).execute().data
+                other_profiles = []
+                for o in others:
+                    p = o.get("profiles")
+                    if p:
+                        other_profiles.append({**p, "is_admin": bool(o.get("is_admin"))})
+                return other_profiles
+            except Exception:
+                if attempt:
+                    return []
 
     def _fetch_messages():
         try:

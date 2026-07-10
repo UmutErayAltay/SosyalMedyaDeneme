@@ -139,16 +139,21 @@ def _build_convos(sb, me: str) -> list[dict]:
                 return {}
 
         def _fetch_others():
-            try:
-                others = sb.table("conversation_participants").select(
-                    "conversation_id, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
-                ).in_("conversation_id", cids).neq("user_id", me).execute().data
-                others_by_cid: dict = {}
-                for o in others:
-                    others_by_cid.setdefault(o["conversation_id"], []).append(o.get("profiles"))
-                return others_by_cid
-            except Exception:
-                return {}
+            # Tek geçici sorgu hatası TÜM listeyi isimsiz ('Bilinmeyen')
+            # bırakıyordu (kullanıcı raporu: "bazen hepsi Bilinmeyen") —
+            # bir kez yeniden dene, ancak ikinci hatada pes et
+            for attempt in (0, 1):
+                try:
+                    others = sb.table("conversation_participants").select(
+                        "conversation_id, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
+                    ).in_("conversation_id", cids).neq("user_id", me).execute().data
+                    others_by_cid: dict = {}
+                    for o in others:
+                        others_by_cid.setdefault(o["conversation_id"], []).append(o.get("profiles"))
+                    return others_by_cid
+                except Exception:
+                    if attempt:
+                        return {}
 
         def _fetch_messages():
             try:

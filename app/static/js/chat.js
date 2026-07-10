@@ -220,6 +220,21 @@
     // --- Aktif Realtime kanalı: konuşmalar arası geçişte kapatılıp yeniden açılır ---
     var activeChannel = null;
 
+    // Sol konuşma listesi CANLI güncellenir: yeni mesaj gelen/gönderilen
+    // konuşma en üste taşınır ve önizleme metni yenilenir (kullanıcı isteği —
+    // önceden liste sadece sayfa yüklenirken sıralanıyordu)
+    function bumpInboxItem(convId, preview) {
+        var item = document.querySelector('.inbox-item[data-conversation-id="' + convId + '"]');
+        if (!item) return;
+        if (preview) {
+            var p = item.querySelector('.preview');
+            if (p) p.textContent = String(preview).slice(0, 40);
+        }
+        var parent = item.parentNode;
+        var first = parent ? parent.querySelector('.inbox-item') : null;
+        if (first && first !== item) parent.insertBefore(item, first);
+    }
+
     window.initConversation = function () {
         var panel = document.getElementById('conversation-panel');
         var form = document.getElementById('msg-form');
@@ -423,6 +438,14 @@
             scrollToBottom();
             return stream.lastElementChild;
         }
+
+        // call.js arama sonucu mesajını (süre/cevapsız/reddedildi) gönderdikten
+        // sonra balonu bu kancayla akışa düşürür — realtime kendi mesajlarımızı
+        // bilerek atladığı için başka yolu yok
+        window._chatAppendMine = function (saved) {
+            appendMessage(saved, true);
+            bumpInboxItem(conversationId, saved.content || '');
+        };
 
         // --- Sesli mesaj kaydı (MediaRecorder API) — SADECE tarayıcı destekliyorsa
         // gösterilir (progressive enhancement). Kayıt/önizleme AYRI bir çubukta
@@ -643,6 +666,8 @@
                 true,
                 { tempId: tempId, uploading: hasImage }
             );
+            bumpInboxItem(conversationId,
+                content || (stickerVal ? '🏷️ Çıkartma' : (gifVal ? 'GIF' : '📷 Görsel')));
 
             // Gönderilecek veriyi HEMEN yakala ve inputları HEMEN temizle —
             // kullanıcı bir sonraki mesajı beklemeden yazabilir (bekletme yok);
@@ -765,6 +790,7 @@
                     if (!isMine) {
                         var senderName = isGroup ? (memberMap[msg.sender_id] || 'Bilinmeyen') : null;
                         appendMessageResolvingSticker(appendMessage, msg, isMine, { senderName: senderName });
+                        bumpInboxItem(conversationId, msg.content || '📷 Medya');
 
                         // Haritada olmayan üye (sayfa açıldıktan sonra katılan) —
                         // 'Bilinmeyen' yerine profili çekip adı yerine yaz

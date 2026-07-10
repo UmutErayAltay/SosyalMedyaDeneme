@@ -22,7 +22,14 @@
             <button type="button" class="btn btn-ghost small conv-manage-btn" id="open-group-manage-modal"
                     data-conversation-id="{{ conversation_id }}">{{ '⚙️ Yönet' if my_is_admin else '👥 Üyeler' }}</button>
         {% else %}
-            <h2>{{ other_user.username if other_user else 'Bilinmeyen' }}</h2>
+            {# İsim profile götürür (kullanıcı isteği) #}
+            <h2>
+                {% if other_user %}
+                    <a href="{{ url_for('routes.profile', username=other_user.username) }}" class="conv-header-profile-link">{{ other_user.username }}</a>
+                {% else %}
+                    Bilinmeyen
+                {% endif %}
+            </h2>
             <div class="conv-call-buttons">
                 <button type="button" class="conv-call-btn" id="call-voice-btn"
                         aria-label="Sesli arama başlat" title="Sesli arama">

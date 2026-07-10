@@ -18,6 +18,8 @@
         iceCandidateQueue: [], // answer set edilmeden önce gelen ICE adayları
         callDurationInterval: null,
         noAnswerTimeout: null, // arayan tarafında 30sn sonra timeout
+        isCaller: false,       // arama sonucu mesajını yalnızca ARAYAN gönderir (çift kayıt olmasın)
+        callAnswered: false,   // answer alındı mı (süre mesajı için)
     };
 
     // --- Yardımcı Fonksiyonlar ---
@@ -144,6 +146,8 @@
         state.isVideoCall = isVideo;
         state.callState = 'ringing';
         state.callStartedAt = Date.now();
+        state.isCaller = true;
+        state.callAnswered = false;
 
         try {
             // Medya izni al
@@ -198,7 +202,7 @@
                 if (state.peerConnection && state.peerConnection.iceConnectionState === 'failed') {
                     log('ICE bağlantı başarısız');
                     showAlert('Bağlantı kurulamadı. TURN sunucusu yardımcı olamadı.');
-                    endCall();
+                    endCall('failed');
                 }
             };
 
@@ -229,7 +233,7 @@
                 if (state.callState === 'ringing') {
                     log('Cevap yok, arama sonlandırılıyor');
                     showAlert('Cevap yok.');
-                    endCall();
+                    endCall('no-answer');
                 }
             }, 30000);
 
@@ -316,7 +320,7 @@
                 if (state.peerConnection && state.peerConnection.iceConnectionState === 'failed') {
                     log('ICE bağlantı başarısız');
                     showAlert('Bağlantı kurulamadı. TURN sunucusu yardımcı olamadı.');
-                    endCall();
+                    endCall('failed');
                 }
             };
 
@@ -380,6 +384,7 @@
             // Karşı taraf kabul etti — "aranıyor" kartını kapat, TAM EKRAN
             // arayüze şimdi geç, süre sayacı da kabul anından başlasın
             hideOutgoingRinging();
+            state.callAnswered = true;
             state.callStartedAt = Date.now();
             showCallUI();
             startDurationTimer();
@@ -421,8 +426,45 @@
         }
     }
 
-    function endCall() {
+    // Arama sonucunu konuşmaya normal mesaj olarak yazar (yalnızca ARAYAN
+    // gönderir — iki taraf da gönderse çift kayıt olurdu). Kendi tarafımızda
+    // balon, chat.js'in _chatAppendMine kancasıyla düşer; karşı tarafa
+    // realtime INSERT ile gider.
+    function sendCallLog(text) {
+        if (!state.conversationId || !text) return;
+        var csrf = document.querySelector('input[name="csrf_token"]');
+        var fd = new FormData();
+        fd.append('content', text);
+        fd.append('csrf_token', csrf ? csrf.value : '');
+        fetch('/messages/' + state.conversationId + '/send', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json' },
+            body: fd
+        }).then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (saved) {
+              if (saved && window._chatAppendMine) window._chatAppendMine(saved);
+          })
+          .catch(function () { /* kayıt düşmezse arama zaten bitti, kritik değil */ });
+    }
+
+    function endCall(reason) {
         if (state.callState === 'idle') return;
+
+        // Arama sonucu mesajı (temizlikten ÖNCE — state değerleri lazım)
+        if (state.isCaller) {
+            var logText;
+            if (state.callAnswered && state.callStartedAt) {
+                logText = '📞 ' + (state.isVideoCall ? 'Görüntülü' : 'Sesli') + ' arama • '
+                    + formatDuration(Date.now() - state.callStartedAt) + ' sürdü';
+            } else if (reason === 'rejected') {
+                logText = '📞 Arama reddedildi';
+            } else if (reason === 'failed') {
+                logText = '📞 Arama bağlantı sorunu nedeniyle kurulamadı';
+            } else {
+                logText = '📞 Cevapsız arama';
+            }
+            sendCallLog(logText);
+        }
 
         // Hangup sinyali gönder
         if (state.callState !== 'idle') {
@@ -443,6 +485,8 @@
         hideOutgoingRinging();
         state.remoteStream = null;
         state.callState = 'idle';
+        state.isCaller = false;
+        state.callAnswered = false;
         state.callStartedAt = null;
 
         // UI'ı gizle
@@ -544,6 +588,7 @@
             state.otherId = signal.from;
             state.isVideoCall = signal.video || false;
             state.callState = 'ringing';
+            state.isCaller = false;
 
             // Gelen arama modalı göster
             var elem = getElements();
@@ -575,7 +620,7 @@
             }
             log('Arama reddedildi');
             showAlert('Arama reddedildi.');
-            endCall();
+            endCall('rejected');
         }
     }
 

@@ -2480,3 +2480,7 @@ header[role="banner"] {
     0%, 60%, 100% { opacity: 0.2; }
     30% { opacity: 1; }
 }
+
+/* Sohbet başlığındaki isim — profile giden link, başlık görünümü korunur */
+.conv-header-profile-link { color: inherit; }
+.conv-header-profile-link:hover { text-decoration: underline; }

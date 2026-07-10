@@ -18,4 +18,5 @@ if __name__ == "__main__":
     from waitress import serve
     print("http://0.0.0.0:5000 üzerinde çalışıyor (waitress, 8 thread)")
     print("Open: http://192.168.1.176:5000")
+    print("Open: http://10.192.58.103:5000")
     serve(app, host="0.0.0.0", port=5000, threads=8)
