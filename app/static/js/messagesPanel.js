@@ -6,11 +6,83 @@
     var layout = document.getElementById('messages-layout');
     if (!layout) return;
 
+    // --- Ön-yükleme (prefetch): istek, tıklama TAMAMLANMADAN başlar ---
+    // Fareyle üzerine gelince / parmak basar basmaz (pointerdown) panel HTML'i
+    // çekilmeye başlanır; click geldiğinde çoğu zaman yanıt yoldadır ya da
+    // gelmiştir — sohbet "tıkladığım gibi açılsın" isteği (kullanıcı).
+    // 10sn TTL: bayat panelin (bu arada mesaj gelmiş olabilir) gösterilmesini
+    // sınırlar; realtime aboneliği zaten swap sonrası taze kurulur.
+    var prefetchCache = {}; // url -> { promise, time }
+
+    function prefetchPanel(url) {
+        var now = Date.now();
+        var hit = prefetchCache[url];
+        if (hit && now - hit.time < 10000) return hit.promise;
+        // X-Prefetch: sunucu okundu/aktif YAZMALARINI atlar — sadece hover
+        // eden (hiç açmayan) kullanıcı karşı tarafa ✓✓ göndermesin. Gerçek
+        // açılışta okundu işaretleme aşağıda (swap sonrası POST) yapılır.
+        var p = fetch(url, { headers: { 'X-Requested-With': 'fetch', 'X-Prefetch': '1' } })
+            .then(function (res) {
+                if (!res.ok) throw new Error('İstek başarısız: ' + res.status);
+                return res.text();
+            });
+        prefetchCache[url] = { promise: p, time: now };
+        p.catch(function () { delete prefetchCache[url]; });
+        return p;
+    }
+
+    // --- İskelet panel: tıklama ANINDA görsel tepki (algılanan hız) ---
+    // Gerçek panel gelene kadar başlıkta tıklanan sohbetin adı/avatarı +
+    // parıldayan balon yer tutucuları gösterilir.
+    function showSkeleton(link) {
+        var old = document.getElementById('conversation-panel');
+        if (!old) return;
+        var skel = document.createElement('div');
+        skel.className = 'messages-panel';
+        skel.id = 'conversation-panel';
+
+        var header = document.createElement('header');
+        header.className = 'conv-header';
+        var back = document.createElement('a');
+        back.className = 'conv-back-link';
+        back.href = '/messages/';
+        back.textContent = '← Geri';
+        header.appendChild(back);
+        var av = link.querySelector('img.avatar');
+        if (av) {
+            var avClone = av.cloneNode(false);
+            avClone.className = 'avatar';
+            header.appendChild(avClone);
+        }
+        var h2 = document.createElement('h2');
+        var nameEl = link.querySelector('strong');
+        h2.textContent = nameEl ? nameEl.textContent : '';
+        header.appendChild(h2);
+        skel.appendChild(header);
+
+        var stream = document.createElement('div');
+        stream.className = 'message-stream msg-skeleton-stream';
+        stream.setAttribute('aria-label', 'Mesajlar yükleniyor');
+        for (var i = 0; i < 7; i++) {
+            var b = document.createElement('div');
+            b.className = 'msg-skel' + (i % 2 ? ' mine' : '');
+            stream.appendChild(b);
+        }
+        skel.appendChild(stream);
+
+        old.replaceWith(skel);
+        layout.classList.add('showing-panel');
+    }
+
+    // Hızlı art arda iki sohbete tıklanırsa YAVAŞ gelen eski yanıt hızlı
+    // geleni ezmesin — yalnızca en son tıklamanın sonucu uygulanır
+    var loadSeq = 0;
+
     async function loadConversation(url, push) {
+        var seq = ++loadSeq;
         try {
-            var res = await fetch(url, { headers: { 'X-Requested-With': 'fetch' } });
-            if (!res.ok) throw new Error('İstek başarısız: ' + res.status);
-            var html = await res.text();
+            var html = await prefetchPanel(url);
+            if (seq !== loadSeq) return; // bu sonuç bayat, daha yeni tıklama var
 
             var temp = document.createElement('div');
             temp.innerHTML = html;
@@ -18,6 +90,22 @@
             var oldPanel = document.getElementById('conversation-panel');
             if (!newPanel || !oldPanel) throw new Error('Panel bulunamadı');
             oldPanel.replaceWith(newPanel);
+            // Tüketilen ön-yükleme tekrar kullanılmasın — aynı sohbete ikinci
+            // tıklama TAZE panel çeker (aradaki mesajlar kaçmasın)
+            delete prefetchCache[url];
+
+            // Panel X-Prefetch ile (yan-etkisiz) çekildi — GERÇEK açılışta
+            // okundu + bildirim işaretlemesi burada tetiklenir (sunucudaki
+            // mark-read ucu ikisini de yapar); /active ping'ini chat.js
+            // initConversation zaten atıyor.
+            var convId = newPanel.dataset.conversationId;
+            var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+            if (convId && csrfMeta) {
+                fetch('/messages/' + convId + '/mark-read', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfMeta.content }
+                }).catch(function () { /* rozet en geç polling'de düzelir */ });
+            }
 
             layout.classList.add('showing-panel');
 
@@ -36,10 +124,24 @@
         }
     }
 
+    // Fare üzerine gelince / basar basmaz ön-yükle (click'ten ~100-300ms önce).
+    // pointerover KULLANILIR (pointerenter kabarcıklanmaz, document-level
+    // delegation'la çalışmaz); alt öğeler arasında gezinirken tekrar tekrar
+    // tetiklenmesi sorun değil — prefetchPanel TTL cache'li, tek istek atar.
+    document.addEventListener('pointerover', function (e) {
+        var link = e.target.closest ? e.target.closest('.inbox-item') : null;
+        if (link) prefetchPanel(link.getAttribute('href'));
+    });
+    document.addEventListener('pointerdown', function (e) {
+        var link = e.target.closest ? e.target.closest('.inbox-item') : null;
+        if (link) prefetchPanel(link.getAttribute('href'));
+    });
+
     document.addEventListener('click', function (e) {
         var link = e.target.closest('.inbox-item');
         if (link) {
             e.preventDefault();
+            showSkeleton(link); // anında görsel tepki — içerik gelince değişir
             loadConversation(link.getAttribute('href'), true);
             return;
         }

@@ -9,8 +9,10 @@ from ..supabase_client import get_sb, retry_on_connection_error
 from ..auth import refresh_session_tokens
 
 # Sohbet açılışında çekilen son mesaj sayısı — üzeri "Daha eski mesajları
-# yükle" butonuyla (?all=1) gelir. Bkz. conversation() FAZ 1 yorumu.
-MESSAGE_PAGE = 150
+# yükle" butonuyla (?all=1) gelir. 150→50 küçültüldü (2. hız turu): hem
+# sorgu payload'ı hem 147 mesajlık Jinja render'ı açılışı yavaşlatıyordu;
+# WhatsApp Web de ~50 ile açılır. Bkz. conversation() FAZ 1 yorumu.
+MESSAGE_PAGE = 50
 
 # Okundu/bildirim YAZMALARI yanıtı bekletmesin diye kalıcı arka plan havuzu —
 # render bu yazmalara bağlı değil (first_unread_id bellek içi listeden
@@ -59,6 +61,11 @@ def conversation(conversation_id):
     sb = get_sb()
     me = session["user"]["id"]
     show_all = request.args.get("all") == "1"
+    # Ön-yükleme (hover prefetch, messagesPanel.js) YAN-ETKİSİZ olmalı:
+    # kullanıcı sohbeti hiç AÇMADAN mesajlar okundu işaretlenirse karşı
+    # tarafa yanlış ✓✓ gider. Gerçek açılışta istemci swap sonrası
+    # /mark-read POST'unu atar (o uç bildirimleri de okur).
+    is_prefetch = request.headers.get("X-Prefetch") == "1"
 
     # --- FAZ 1: doğrulama + meta + katılımcılar + mesajlar TEK paralel dalga ---
     # Önceden katılımcı doğrulaması AYRI (seri) bir turdu, ardından 3'lü paralel
@@ -143,8 +150,10 @@ def conversation(conversation_id):
     # is_admin migration uygulanmamışsa kolon dict'te yok — güvenli varsayılan False
     my_is_admin = bool(part[0].get("is_admin"))
     # "Aktif" işareti bellek içi, anlık (chat.js periyodik ping ile tazeler) —
-    # bu sohbetten gelen mesaj bildirimi/push'u üretilmesin (bkz. _notify_conversation)
-    mark_active(me, conversation_id)
+    # bu sohbetten gelen mesaj bildirimi/push'u üretilmesin (bkz. _notify_conversation).
+    # Ön-yüklemede İŞARETLENMEZ (hover ≠ sohbeti açmak).
+    if not is_prefetch:
+        mark_active(me, conversation_id)
 
     # Limit fazlası satır = daha eski mesajlar var (reverse sonrası en başta)
     has_older = False
@@ -173,7 +182,8 @@ def conversation(conversation_id):
         # bayat kalmasın, gruplama sayacı sıfırlansın — bkz. _common docstring'i)
         _mark_message_notifications_read(sb, me, conversation_id)
 
-    _write_pool.submit(_write_reads)
+    if not is_prefetch:
+        _write_pool.submit(_write_reads)
 
     # Embed'den gelen tepkileri şablonun beklediği şekle çevir; embed'siz
     # fallback yolunda anahtarlar hiç yoktur — boş/None varsayılır
