@@ -223,49 +223,12 @@
     </div>
 </div>
 
-{# === GELEN ARAMA MODALI (1:1 Konuşmalar) === #}
-<div class="modal-overlay" id="call-modal-incoming" role="dialog" aria-modal="true"
-     aria-labelledby="call-modal-incoming-title" hidden>
-    <div class="modal">
-        <div class="modal-header">
-            <h2 id="call-modal-incoming-title">Gelen Arama</h2>
-        </div>
-        <div class="modal-body call-modal-body">
-            <p id="incoming-call-name" style="text-align: center; font-weight: 600; margin-bottom: 16px;"></p>
-            <div style="display: flex; gap: 12px; justify-content: center;">
-                <button type="button" class="btn btn-primary" id="incoming-call-accept-btn">✓ Kabul Et</button>
-                <button type="button" class="btn btn-ghost danger" id="incoming-call-reject-btn">✗ Reddet</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-{# === ARAMA OVERLAY (Tam Ekran) === #}
-<div class="call-overlay" id="call-overlay" hidden>
-    {# Sesli aramada avatar göster #}
-    <div class="call-remote-avatar" id="call-remote-avatar" hidden>
-        <div class="avatar avatar-large" style="background: var(--border); width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px;">
-            👤
-        </div>
-        <p id="call-voice-info" style="margin-top: 16px; color: var(--card); font-size: 16px;">Sesli Arama</p>
-    </div>
-
-    {# Görüntülü aramada remote video #}
-    <video id="call-remote-video" class="call-remote-video" autoplay playsinline></video>
-
-    {# Köşede local video #}
-    <video id="call-local-video" class="call-local-video" autoplay playsinline muted></video>
-
-    {# Alt bar: kontrol butonları + süre #}
-    <div class="call-controls-bar">
-        <span id="call-duration" class="call-duration"></span>
-        <div class="call-controls">
-            <button type="button" class="call-btn" id="call-controls-mic" aria-label="Mikrofonu aç/kapat" title="Mikrofon">🎙</button>
-            <button type="button" class="call-btn" id="call-controls-camera" aria-label="Kamerayı aç/kapat" title="Kamera">📷</button>
-            <button type="button" class="call-btn call-btn-danger" id="call-controls-hangup" aria-label="Aramayı sonlandır" title="Kapat">📵</button>
-        </div>
-    </div>
-</div>
+{# NOT: Eski gelen-arama modalı ve tam-ekran arama overlay'i BURADAN
+   KALDIRILDI. Tüm arama DOM'unu call.js ensureCallDOM kurar; şablonda aynı
+   ID'li kalıntı durunca ensureCallDOM "zaten var" deyip yeni arayüzü VE
+   buton bağlamalarını atlıyordu — mesajlar sayfasında eski görünüm + ölü
+   Kabul Et/Reddet/Kapat butonları (canlı rapor, Render'da da aynen sürdü;
+   cache sanılan sorunun gerçek kökü buydu). #}
 
 {% if is_group %}
 {# Grup yönetim modalı — panel her AJAX yüklemesinde bu markup'la birlikte
