@@ -30,6 +30,9 @@
     }
 
     setInterval(poll, 25000);
+    // Gerçek-zamanlı tetikleme kancası (bkz. liveBadges.js) — polling
+    // artık sadece güvenlik ağı
+    window.refreshMessagesBadge = poll;
 
     // Linke tıklayınca rozet hemen sıfırlanır (sunucu isteğinin bitmesini
     // beklemeden) — tıklamak zaten "gördüm" niyetini gösterir, tam sayfa

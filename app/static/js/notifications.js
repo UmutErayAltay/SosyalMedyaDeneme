@@ -45,6 +45,10 @@
     }
 
     setInterval(poll, 25000);
+    // Gerçek-zamanlı tetikleme için dışa açık kanca — liveBadges.js,
+    // notifications tablosuna DB aboneliğiyle olay gelince bunu çağırır
+    // (polling artık sadece güvenlik ağı)
+    window.refreshNotifBadge = poll;
 
     // --- Slide-in panel ---
     if (!bell || !panel) return;

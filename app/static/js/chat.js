@@ -238,6 +238,9 @@
         var first = parent ? parent.querySelector('.inbox-item') : null;
         if (first && first !== item) parent.insertBefore(item, first);
     }
+    // liveBadges.js için dışa açık: AÇIK OLMAYAN sohbete mesaj gelince de
+    // sol liste canlı sıralansın (bildirim satırı DB olayı tetikler)
+    window._bumpInboxItem = bumpInboxItem;
 
     window.initConversation = function () {
         var panel = document.getElementById('conversation-panel');
