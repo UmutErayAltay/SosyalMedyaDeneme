@@ -17,7 +17,11 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 86400
 
 if __name__ == "__main__":
     from waitress import serve
-    print("http://0.0.0.0:5000 üzerinde çalışıyor (waitress, 8 thread)")
+    # 8 thread canlıda doymuştu ("Task queue depth" uyarıları): her istek
+    # Supabase'e seri ~300-700ms I/O beklediğinden thread'ler uzun süre dolu
+    # kalıyor. İstekler CPU değil I/O ağırlıklı — 16 thread güvenli.
+    # (In-memory presence dict'i threading.Lock ile korunuyor, sorun yok.)
+    print("http://0.0.0.0:5000 üzerinde çalışıyor (waitress, 16 thread)")
     print("Open: http://192.168.1.176:5000")
     print("Open: http://10.192.58.103:5000")
-    serve(app, host="0.0.0.0", port=5000, threads=8)
+    serve(app, host="0.0.0.0", port=5000, threads=16)

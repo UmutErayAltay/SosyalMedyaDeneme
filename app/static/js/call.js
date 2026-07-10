@@ -571,19 +571,20 @@
     }
 
     function handleIceCandidate(candidate, sdpMLineIndex, sdpMid) {
-        if (!state.peerConnection) {
-            log('ICE candidate alındı ama peer connection yok');
-            return;
-        }
-
         var iceCandidate = new RTCIceCandidate({
             candidate: candidate,
             sdpMLineIndex: sdpMLineIndex,
             sdpMid: sdpMid
         });
 
-        // Eğer remote description henüz set edilmediyse kuyrukta beklet
-        if (!state.peerConnection.remoteDescription) {
+        // KRİTİK: arayan, offer'dan hemen sonra ICE adaylarını yollar — biz
+        // "Kabul et"e basana kadar peerConnection YOK. Eskiden bu adaylar
+        // çöpe atılıyordu → adaylar bir daha gelmediği için bağlantı hiç
+        // kurulamıyordu (görüntülü arama hiç başlamıyor, sesli ancak kamera
+        // butonunun tetiklediği yeniden müzakereyle kuruluyordu — canlı
+        // rapor). PC yokken de kuyruğa al; acceptCall setRemoteDescription
+        // sonrası kuyruğu boşaltıyor.
+        if (!state.peerConnection || !state.peerConnection.remoteDescription) {
             state.iceCandidateQueue.push(iceCandidate);
         } else {
             state.peerConnection.addIceCandidate(iceCandidate).catch(function (err) {
@@ -654,6 +655,7 @@
         hideOutgoingRinging();
         setMiniMode(false); // bir sonraki arama tam ekran başlasın
         state.remoteStream = null;
+        state.iceCandidateQueue = [];
         state.callState = 'idle';
         state.isCaller = false;
         state.callAnswered = false;
@@ -693,6 +695,7 @@
             elem.callModalIncoming.setAttribute('hidden', '');
         }
 
+        state.iceCandidateQueue = [];
         state.callState = 'idle';
     }
 
@@ -767,6 +770,9 @@
             state.isVideoCall = signal.video || false;
             state.callState = 'ringing';
             state.isCaller = false;
+            // Önceki aramadan kalan bayat adaylar bu aramaya karışmasın —
+            // bu offer'ın adayları bundan SONRA gelip kuyruğa eklenecek
+            state.iceCandidateQueue = [];
             state.otherUsername = signal.callerName || 'Birisi';
             state.otherAvatar = signal.callerAvatar || '';
 

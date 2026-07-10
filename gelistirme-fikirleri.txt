@@ -1,0 +1,25 @@
+GELİŞTİRME FİKİRLERİ (2026-07-10)
+==================================
+
+TEMİZLİK / TEKNİK BORÇ (risk düşük, önce bunlar)
+1. Icon PNG küçültme — icon-192.png ~1.3MB (192px için ~50x fazla).
+   Push bildirimi ve PWA kurulumunda her seferinde iniyor. ~10 dk iş.
+2. Realtime broadcast RLS izole testi — güvenlik boşluğu açık (kanal adını
+   bilen sinyalleri dinleyebilir). Canlı kanallara dokunmadan ayrı test
+   kanalıyla private:true + auth.uid() teşhisi; çözülürse güvenlik geri açılır.
+3. Dokümantasyon sprinti — .context/architecture.md son ~6 sprintin gerisinde
+   (presence, bildirim gruplama, PiP, cache mimarisi eksik).
+
+KULLANICIYA DOKUNAN ÖZELLİKLER
+4. Mesaj silme/düzenleme — standart beklenti, orta iş.
+5. Sesli mesaj — MediaRecorder + Supabase Storage upload, orta-büyük iş.
+6. Çevrimiçi / son görülme göstergesi — presence altyapısı hazır (Sprint 70),
+   üstüne gösterge koymak görece ucuz.
+7. Sohbet içi arama — mesajlarda kelime arama, site geneli aramanın devamı.
+
+ERTELENENLER (daha önce konuşuldu)
+- Hafif SPA (Turbo tarzı, 2-3 oturum) — önce stabilizasyon.
+- E2EE, e-posta doğrulama, 2FA.
+- ClaudeTest hesabı temizliği.
+
+ÖNERİLEN SIRA: 1 → (arkadaş testi sonrası) 2 → 3 → kullanıcı seçimiyle 4-7.

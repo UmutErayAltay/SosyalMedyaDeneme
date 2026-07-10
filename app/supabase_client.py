@@ -18,6 +18,7 @@ NOT (bağlantı kopması düzeltmesi):
     TAMAMI bir kez daha çalıştırılıyor (fonksiyon içindeki tüm sorgular dahil).
 """
 from supabase import create_client, Client
+from supabase.client import ClientOptions
 from flask import current_app
 import ssl
 import httpx
@@ -25,6 +26,32 @@ import functools
 
 _admin_client_instance = None
 _anon_client_instance = None
+
+
+def _build_http_client() -> httpx.Client:
+    """Supabase alt-istemcilerinin (postgrest/auth/storage) paylaştığı httpx
+    istemcisi — bayat bağlantı kopmalarına karşı ayarlı.
+
+    - http2=False: HTTP/2'de tek TCP bağlantısı çoklanır; Supabase/Cloudflare
+      boştaki bağlantıyı kapatınca (GOAWAY) o anda uçuştaki TÜM istekler
+      "Server disconnected" ile düşüyordu (canlıda 500 + retry'ın da aynı
+      anda düşmesi). HTTP/1.1'de bağlantı başına tek istek — tek kopma tek
+      isteği etkiler, retry taze bağlantıyla kurtarır.
+    - keepalive_expiry=15sn: Supabase boşta ~60sn'de bağlantı kapatıyor;
+      havuz 15sn'den eski boş bağlantıyı hiç yeniden kullanmaz → bayat
+      bağlantıya denk gelme ihtimali kökten azalır.
+    - timeout 30sn (varsayılan 120 yerine): asılı kalan bir istek waitress
+      thread'ini 2 dakika kilitliyordu (task queue depth uyarıları).
+    """
+    return httpx.Client(
+        http2=False,
+        timeout=httpx.Timeout(30.0, connect=10.0),
+        limits=httpx.Limits(
+            max_connections=32,
+            max_keepalive_connections=16,
+            keepalive_expiry=15.0,
+        ),
+    )
 
 # Bayat/kopmuş bağlantı belirtisi olan hata türleri
 _CONNECTION_ERRORS = (
@@ -41,6 +68,7 @@ def _build_admin_client() -> Client:
     return create_client(
         current_app.config["SUPABASE_URL"],
         current_app.config["SUPABASE_SECRET_KEY"],
+        options=ClientOptions(httpx_client=_build_http_client()),
     )
 
 
@@ -48,6 +76,7 @@ def _build_anon_client() -> Client:
     return create_client(
         current_app.config["SUPABASE_URL"],
         current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+        options=ClientOptions(httpx_client=_build_http_client()),
     )
 
 
