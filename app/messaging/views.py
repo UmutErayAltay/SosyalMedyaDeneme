@@ -2,7 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from flask import render_template, request, session, abort, jsonify
 from . import bp
-from ._common import _mark_read, _build_convos, unread_message_count
+from ._common import _mark_read, _build_convos, unread_message_count, mark_active
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..auth import refresh_session_tokens
@@ -56,6 +56,9 @@ def conversation(conversation_id):
         abort(403)
     # is_admin migration uygulanmamışsa kolon dict'te yok — güvenli varsayılan False
     my_is_admin = bool(part.data[0].get("is_admin"))
+    # Sayfa açılır açılmaz "aktif" işaretle (chat.js periyodik ping ile tazeler) —
+    # bu sohbetten gelen mesaj bildirimi/push'u üretilmesin (bkz. _notify_conversation)
+    mark_active(me, conversation_id)
 
     # Diğer veri (grup meta, katılımcılar, mesajlar) paralel çek — conversation_id
     # doğrulandıktan sonra 3 sorgu birbirinden bağımsız
@@ -216,4 +219,24 @@ def mark_conversation_read(conversation_id):
             "sender_id", me).is_("read_at", "null").execute()
     except Exception:
         pass  # read_at migration'ı yoksa sessizce atla (_mark_read ile aynı tavır)
+    return jsonify(ok=True)
+
+
+@bp.route("/<conversation_id>/active", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def mark_conversation_active(conversation_id):
+    """Sohbet ekranı açık kaldığı sürece chat.js'in periyodik çağırdığı 'nabız'.
+
+    Bu, sunucu tarafında hangi kullanıcının hangi sohbeti şu an açık
+    tuttuğunu bilmemizi sağlar (bkz. _common.mark_active/is_active_in) —
+    o sohbetten gelen yeni mesaj bildirimini/push'unu bastırmak için
+    kullanılır. Katılımcı olmayan 404 (enumeration koruması)."""
+    sb = get_sb()
+    me = session["user"]["id"]
+    part = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id).eq("user_id", me).execute().data
+    if not part:
+        abort(404)
+    mark_active(me, conversation_id)
     return jsonify(ok=True)

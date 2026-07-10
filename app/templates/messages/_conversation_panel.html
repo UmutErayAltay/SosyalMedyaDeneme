@@ -7,7 +7,9 @@
      data-send-url="{{ url_for('messaging.send_message', conversation_id=conversation_id) }}"
      data-other-username="{{ (group_name if is_group else other_user.username) or 'Kullanıcı' }}"
      data-other-user-id="{{ other_user.id if other_user else '' }}"
+     data-other-avatar="{{ (other_user.avatar_url if other_user else '') or '' }}"
      data-my-username="{{ me.username or 'Sen' }}"
+     data-my-avatar="{{ me.avatar_url or '' }}"
      data-is-group="{{ '1' if is_group else '0' }}"
      data-member-map="{{ (member_map if is_group else {})|tojson|forceescape }}">
     <header class="conv-header">

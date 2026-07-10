@@ -66,6 +66,12 @@ _TEXT = {
 }
 
 
+# Art arda kaç mesaj bildirimi push atsın (kullanıcı isteği: 3'ten sonra
+# anlık/push bildirim sussun, ama uygulama-içi bildirim satırı sayaç olarak
+# artmaya devam eder — bkz. _notify_message).
+_MESSAGE_PUSH_LIMIT = 3
+
+
 def notify(sb, *, recipient_id: str, actor_id: str, type_: str,
            post_id: str | None = None, comment_id: str | None = None,
            conversation_id: str | None = None, hashtag_id: str | None = None) -> None:
@@ -87,6 +93,14 @@ def notify(sb, *, recipient_id: str, actor_id: str, type_: str,
     except Exception:
         pass
 
+    if type_ == "message":
+        # Mesaj bildirimleri sohbet başına TEK satırda toplanır ("Ali sana N
+        # mesaj gönderdi") — her mesaj için ayrı satır açmak hem bildirim
+        # listesini hem navbar rozetini mesaj sayısı kadar şişiriyordu
+        # (kullanıcı isteği: "1-2-3-4-5 diye artmasın").
+        _notify_message(sb, recipient_id, actor_id, conversation_id)
+        return
+
     sb.table("notifications").insert({
         "recipient_id": recipient_id,
         "actor_id": actor_id,
@@ -99,15 +113,73 @@ def notify(sb, *, recipient_id: str, actor_id: str, type_: str,
     from .cache import invalidate
     invalidate(f"unread:{recipient_id}")
 
-    # Web Push (uygulama kapalıyken de bildirim) — VAPID anahtarı yoksa
-    # send_push_to_user() sessizce çıkar, bu blok ASLA bildirim akışını
-    # kesintiye uğratmamalı (bkz. push.py docstring'i).
+    _push(sb, recipient_id, actor_id, type_, post_id=post_id, conversation_id=conversation_id)
+
+
+def _notify_message(sb, recipient_id: str, actor_id: str, conversation_id: str | None) -> None:
+    """Mesaj bildirimini sohbet başına upsert eder (count arttırır) + push kısıtı uygular.
+
+    `count` kolonu migration_notification_count.sql ile eklenir; kolon henüz
+    yoksa (migration uygulanmamış) düz insert'e düşülür — eski davranış.
+    """
+    from .cache import invalidate
+    try:
+        existing = sb.table("notifications").select("id, count").eq(
+            "recipient_id", recipient_id
+        ).eq("type", "message").eq(
+            "conversation_id", conversation_id
+        ).eq("is_read", False).execute().data
+    except Exception:
+        existing = None  # sorgu patladıysa (kolon/tablo yok) eski davranışa düş
+
+    if existing is None:
+        sb.table("notifications").insert({
+            "recipient_id": recipient_id, "actor_id": actor_id, "type": "message",
+            "conversation_id": conversation_id,
+        }).execute()
+        invalidate(f"unread:{recipient_id}")
+        _push(sb, recipient_id, actor_id, "message", conversation_id=conversation_id, count=1)
+        return
+
+    if existing:
+        new_count = (existing[0].get("count") or 1) + 1
+        sb.table("notifications").update({
+            "count": new_count, "actor_id": actor_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", existing[0]["id"]).execute()
+    else:
+        new_count = 1
+        sb.table("notifications").insert({
+            "recipient_id": recipient_id, "actor_id": actor_id, "type": "message",
+            "conversation_id": conversation_id, "count": 1,
+        }).execute()
+
+    invalidate(f"unread:{recipient_id}")
+    _push(sb, recipient_id, actor_id, "message", conversation_id=conversation_id, count=new_count)
+
+
+def _push(sb, recipient_id: str, actor_id: str, type_: str, *,
+          post_id: str | None = None, conversation_id: str | None = None,
+          count: int = 1) -> None:
+    """Web Push gönderir (uygulama kapalıyken de bildirim) — VAPID anahtarı yoksa
+    send_push_to_user() sessizce çıkar, bu fonksiyon ASLA bildirim akışını
+    kesintiye uğratmamalı (bkz. push.py docstring'i).
+
+    Mesaj türü için `count > _MESSAGE_PUSH_LIMIT` olduğunda push ATLANIR —
+    art arda gelen mesajlarda her seferinde anlık bildirim istenmiyor
+    (kullanıcı isteği: "3 bildirimden sonra göndermesin").
+    """
+    if type_ == "message" and count > _MESSAGE_PUSH_LIMIT:
+        return
     try:
         from .push import send_push_to_user, VAPID_PRIVATE_KEY
         if VAPID_PRIVATE_KEY:
             actor_row = sb.table("profiles").select("username").eq("id", actor_id).execute().data
             actor_name = actor_row[0]["username"] if actor_row else "Biri"
-            body = f"{actor_name} {_TEXT.get(type_, 'bir etkileşimde bulundu')}"
+            if type_ == "message" and count > 1:
+                body = f"{actor_name} sana {count} mesaj gönderdi"
+            else:
+                body = f"{actor_name} {_TEXT.get(type_, 'bir etkileşimde bulundu')}"
             builder = _TARGET_BUILDERS.get(type_)
             url = builder({
                 "post_id": post_id, "conversation_id": conversation_id,
@@ -123,6 +195,11 @@ def _annotate(n: dict) -> dict:
     n["text"] = _TEXT.get(n["type"], "")
     if n["type"] == "hashtag_post" and n.get("hashtag"):
         n["text"] = f"#{n['hashtag']['tag']} etiketinde yeni post paylaştı"
+    # Mesaj bildirimleri sohbet başına tek satırda toplanır (bkz. notify._notify_message)
+    # — count > 1 ise "sana N mesaj gönderdi" göster, migration uygulanmamışsa
+    # (count kolonu yok) n.get("count") None/1 döner, tekil metin kalır.
+    if n["type"] == "message" and (n.get("count") or 1) > 1:
+        n["text"] = f"sana {n['count']} mesaj gönderdi"
     builder = _TARGET_BUILDERS.get(n["type"])
     n["target_url"] = builder(n) if builder else url_for("routes.feed")
     return n

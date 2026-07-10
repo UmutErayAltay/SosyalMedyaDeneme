@@ -20,6 +20,8 @@
         noAnswerTimeout: null, // arayan tarafında 30sn sonra timeout
         isCaller: false,       // arama sonucu mesajını yalnızca ARAYAN gönderir (çift kayıt olmasın)
         callAnswered: false,   // answer alındı mı (süre mesajı için)
+        otherUsername: '',    // karşı tarafın adı (tam ekran arama ekranında gösterilir)
+        otherAvatar: '',       // karşı tarafın avatar URL'i (boşsa 👤 fallback)
     };
 
     // --- Yardımcı Fonksiyonlar ---
@@ -49,6 +51,10 @@
                 '            <h2 id="call-modal-incoming-title">Gelen Arama</h2>\n' +
                 '        </div>\n' +
                 '        <div class="modal-body call-modal-body">\n' +
+                '            <div class="call-avatar-circle call-avatar-circle--md" id="incoming-call-avatar" style="margin-bottom: 12px;">\n' +
+                '                <img id="incoming-call-avatar-img" alt="" hidden>\n' +
+                '                <span id="incoming-call-avatar-fallback" aria-hidden="true">👤</span>\n' +
+                '            </div>\n' +
                 '            <p id="incoming-call-name" style="text-align: center; font-weight: 600; margin-bottom: 16px;"></p>\n' +
                 '            <div style="display: flex; gap: 12px; justify-content: center;">\n' +
                 '                <button type="button" class="btn btn-primary" id="incoming-call-accept-btn">✓ Kabul Et</button>\n' +
@@ -80,8 +86,12 @@
         if (!document.getElementById('call-overlay')) {
             var overlayHtml = '<div class="call-overlay" id="call-overlay" hidden>\n' +
                 '    <div class="call-remote-avatar" id="call-remote-avatar" hidden>\n' +
-                '        <div class="avatar avatar-large" style="background: var(--border); width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px;">👤</div>\n' +
-                '        <p id="call-voice-info" style="margin-top: 16px; color: var(--card); font-size: 16px;">Sesli Arama</p>\n' +
+                '        <div class="call-avatar-circle call-avatar-circle--lg" id="call-remote-avatar-circle">\n' +
+                '            <img id="call-remote-avatar-img" alt="" hidden>\n' +
+                '            <span id="call-remote-avatar-fallback" aria-hidden="true">👤</span>\n' +
+                '        </div>\n' +
+                '        <p id="call-remote-name" class="call-remote-name"></p>\n' +
+                '        <p id="call-voice-info" style="margin-top: 4px; color: var(--card); font-size: 16px;">Sesli Arama</p>\n' +
                 '    </div>\n' +
                 '    <video id="call-remote-video" class="call-remote-video" autoplay playsinline></video>\n' +
                 '    <video id="call-local-video" class="call-local-video" autoplay playsinline muted></video>\n' +
@@ -106,22 +116,64 @@
             callRemoteVideo: document.getElementById('call-remote-video'),
             callLocalVideo: document.getElementById('call-local-video'),
             callRemoteAvatar: document.getElementById('call-remote-avatar'),
+            callRemoteAvatarImg: document.getElementById('call-remote-avatar-img'),
+            callRemoteAvatarFallback: document.getElementById('call-remote-avatar-fallback'),
+            callRemoteName: document.getElementById('call-remote-name'),
             callDuration: document.getElementById('call-duration'),
             callControlsMic: document.getElementById('call-controls-mic'),
             callControlsCamera: document.getElementById('call-controls-camera'),
             callControlsHangup: document.getElementById('call-controls-hangup'),
             incomingCallName: document.getElementById('incoming-call-name'),
+            incomingCallAvatarImg: document.getElementById('incoming-call-avatar-img'),
+            incomingCallAvatarFallback: document.getElementById('incoming-call-avatar-fallback'),
             incomingCallAcceptBtn: document.getElementById('incoming-call-accept-btn'),
             incomingCallRejectBtn: document.getElementById('incoming-call-reject-btn'),
             callVoiceInfo: document.getElementById('call-voice-info'),
         };
     }
 
+    // Gerçek avatar varsa <img> gösterir, yoksa emoji fallback'e döner —
+    // hem tam ekran arama hem gelen arama modalı bu deseni paylaşır.
+    function setAvatarVisual(imgEl, fallbackEl, url) {
+        if (url) {
+            if (imgEl) { imgEl.src = url; imgEl.removeAttribute('hidden'); }
+            if (fallbackEl) fallbackEl.setAttribute('hidden', '');
+        } else {
+            if (imgEl) imgEl.setAttribute('hidden', '');
+            if (fallbackEl) fallbackEl.removeAttribute('hidden');
+        }
+    }
+
     function getUserMediaConfig(isVideo) {
         return {
             audio: true,
-            video: isVideo ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false
+            video: isVideo ? {
+                width: { ideal: 1280 }, height: { ideal: 720 },
+                frameRate: { ideal: 30 }, facingMode: 'user'
+            } : false
         };
+    }
+
+    // Görüntülü arama piksel piksel/kalitesiz görünüyordu (kullanıcı raporu)
+    // — tarayıcı varsayılan encoder ayarlarıyla bant genişliği çok düşük
+    // seçebiliyor. Video gönderici için hedef bitrate + kare hızı belirtip
+    // "kaliteyi koru" tercihini bildiriyoruz (tarayıcı desteklemezse sessizce
+    // geç — try/catch, kritik değil). Ücretsiz TURN relay yine de bir tavan
+    // koyabilir; bu SADECE kod tarafındaki iyileştirmedir.
+    function tuneVideoSender(pc) {
+        if (!pc || !state.isVideoCall) return;
+        try {
+            var sender = pc.getSenders().find(function (s) { return s.track && s.track.kind === 'video'; });
+            if (!sender) return;
+            var params = sender.getParameters();
+            if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+            params.encodings[0].maxBitrate = 2500000; // ~2.5 Mbps
+            params.encodings[0].maxFramerate = 30;
+            params.degradationPreference = 'maintain-framerate';
+            sender.setParameters(params).catch(function () { /* tarayıcı desteklemiyor olabilir */ });
+        } catch (err) {
+            log('Video bitrate ayarı uygulanamadı: ' + err.message);
+        }
     }
 
     // TURN + STUN sunucuları ICE candidate bulma için (internet üzerinden çalışmasını sağlar)
@@ -149,6 +201,13 @@
         state.isCaller = true;
         state.callAnswered = false;
 
+        // Karşı tarafın adı/avatarı — hem "aranıyor" kartında hem (kabul
+        // edilince) tam ekran arama ekranında gösterilir (kullanıcı isteği:
+        // sesli aramada bomboş siyah ekran yerine gerçek kişi görünsün)
+        var callPanel = document.querySelector('[data-my-username]');
+        state.otherUsername = callPanel ? (callPanel.dataset.otherUsername || '') : '';
+        state.otherAvatar = callPanel ? (callPanel.dataset.otherAvatar || '') : '';
+
         try {
             // Medya izni al
             var config = getUserMediaConfig(isVideo);
@@ -166,8 +225,13 @@
                 iceServers: getIceServers()
             });
 
-            // Local stream'i bağla
+            // Local stream'i bağla — video track'e 'motion' ipucu (contentHint)
+            // encoder'ın hareketli görüntü için daha iyi kalite/bant genişliği
+            // dengesi seçmesine yardımcı olur (piksel piksel görünme şikayeti)
             state.localStream.getTracks().forEach(function (track) {
+                if (track.kind === 'video') {
+                    try { track.contentHint = 'motion'; } catch (err) { /* desteklenmiyorsa yok say */ }
+                }
                 state.peerConnection.addTrack(track, state.localStream);
             });
 
@@ -209,13 +273,14 @@
             // Offer oluştur ve gönder
             var offer = await state.peerConnection.createOffer();
             await state.peerConnection.setLocalDescription(offer);
+            tuneVideoSender(state.peerConnection);
 
-            var panel = document.querySelector('[data-my-username]');
             sendSignal({
                 type: 'offer',
                 sdp: offer.sdp,
                 video: isVideo,
-                callerName: panel ? panel.dataset.myUsername : '',
+                callerName: callPanel ? callPanel.dataset.myUsername : '',
+                callerAvatar: callPanel ? (callPanel.dataset.myAvatar || '') : '',
                 conversation_id: state.conversationId,
                 to: state.otherId
             });
@@ -223,7 +288,7 @@
             // Karşı taraf KABUL EDENE KADAR tam ekran arayüze girilmez —
             // küçük "aranıyor" kartı gösterilir (kullanıcı isteği). Tam ekran
             // + süre sayacı answer gelince başlar (handleAnswerSignal).
-            showOutgoingRinging(panel ? (panel.dataset.otherUsername || '') : '');
+            showOutgoingRinging(state.otherUsername);
 
             state.callState = 'ringing';
 
@@ -284,8 +349,13 @@
                 iceServers: getIceServers()
             });
 
-            // Local stream'i bağla
+            // Local stream'i bağla — video track'e 'motion' ipucu (contentHint)
+            // encoder'ın hareketli görüntü için daha iyi kalite/bant genişliği
+            // dengesi seçmesine yardımcı olur (piksel piksel görünme şikayeti)
             state.localStream.getTracks().forEach(function (track) {
+                if (track.kind === 'video') {
+                    try { track.contentHint = 'motion'; } catch (err) { /* desteklenmiyorsa yok say */ }
+                }
                 state.peerConnection.addTrack(track, state.localStream);
             });
 
@@ -331,6 +401,7 @@
             // Answer oluştur ve gönder
             var answer = await state.peerConnection.createAnswer();
             await state.peerConnection.setLocalDescription(answer);
+            tuneVideoSender(state.peerConnection);
 
             sendSignal({
                 type: 'answer',
@@ -488,6 +559,8 @@
         state.isCaller = false;
         state.callAnswered = false;
         state.callStartedAt = null;
+        state.otherUsername = '';
+        state.otherAvatar = '';
 
         // UI'ı gizle
         var elem = getElements();
@@ -589,11 +662,14 @@
             state.isVideoCall = signal.video || false;
             state.callState = 'ringing';
             state.isCaller = false;
+            state.otherUsername = signal.callerName || 'Birisi';
+            state.otherAvatar = signal.callerAvatar || '';
 
-            // Gelen arama modalı göster
+            // Gelen arama modalı göster (gerçek ad + avatar ile)
             var elem = getElements();
             if (elem.incomingCallName && elem.callModalIncoming) {
-                elem.incomingCallName.textContent = signal.callerName || 'Birisi';
+                elem.incomingCallName.textContent = state.otherUsername;
+                setAvatarVisual(elem.incomingCallAvatarImg, elem.incomingCallAvatarFallback, state.otherAvatar);
                 elem.callModalIncoming.removeAttribute('hidden');
             }
 
@@ -649,9 +725,12 @@
             elem.callLocalVideo.srcObject = state.localStream;
         }
 
-        // Sesli aramada avatar göster
+        // Sesli aramada avatar göster (gerçek görsel + ad — önceden jenerik
+        // ikonla bomboş görünüyordu, kullanıcı isteğiyle düzeltildi)
         if (!state.isVideoCall && elem.callRemoteAvatar) {
             elem.callRemoteAvatar.removeAttribute('hidden');
+            setAvatarVisual(elem.callRemoteAvatarImg, elem.callRemoteAvatarFallback, state.otherAvatar);
+            if (elem.callRemoteName) elem.callRemoteName.textContent = state.otherUsername || '';
         }
 
         // Sesli aramada video gizle

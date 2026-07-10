@@ -1887,13 +1887,35 @@ header[role="banner"] {
     width: 100%; height: 100%;
     object-fit: cover; border-radius: 0;
 }
+.call-remote-video[hidden] { display: none; }
 
-/* Sesli aramada avatar container */
+/* Sesli aramada avatar container — önceden jenerik 👤 ikonuyla "bomboş
+   siyah ekran" gibi görünüyordu; artık karşı tarafın GERÇEK avatarı + adı
+   gösterilir (kullanıcı isteği). */
 .call-remote-avatar {
     display: flex; flex-direction: column; align-items: center;
-    justify-content: center; color: var(--card);
+    justify-content: center; color: var(--card); gap: 4px;
 }
 .call-remote-avatar[hidden] { display: none; }
+
+.call-remote-name {
+    margin-top: 12px; font-size: 22px; font-weight: 700; color: var(--card);
+}
+
+/* Paylaşılan avatar dairesi — tam ekran arama (lg) ve gelen arama modalı
+   (md) tarafından kullanılır; gerçek görsel varsa <img>, yoksa 👤 fallback. */
+.call-avatar-circle {
+    position: relative; border-radius: 50%; overflow: hidden;
+    background: var(--border); display: flex; align-items: center;
+    justify-content: center; color: var(--text);
+    animation: call-pulse 1.8s ease-in-out infinite;
+}
+.call-avatar-circle img {
+    width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+}
+.call-avatar-circle img[hidden] { display: none; }
+.call-avatar-circle--lg { width: 120px; height: 120px; font-size: 48px; }
+.call-avatar-circle--md { width: 80px; height: 80px; font-size: 32px; margin: 0 auto; }
 
 /* Köşede local video (küçük, muted) */
 .call-local-video {

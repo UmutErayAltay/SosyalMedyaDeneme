@@ -265,6 +265,35 @@
         try { memberMap = JSON.parse(panel.dataset.memberMap || '{}'); } catch (err) { memberMap = {}; }
         if (!conversationId || !sendUrl) return;
 
+        // Sohbet içi "aktiflik" nabzı — bu sohbeti AÇIK tuttuğumuzu sunucuya
+        // bildirir (bkz. app/messaging/_common.py mark_active/is_active_in),
+        // böylece karşı taraf mesaj atınca bize bildirim/push ÜRETİLMEZ
+        // (kullanıcı isteği: "sohbette olmama rağmen bildirim geliyor").
+        // pingActive() her tetiklendiğinde LİVE panelin conversation-id'sini
+        // okur (kapanmış closure değil) — böylece visibilitychange listener'ı
+        // TEK sefer bağlansa da (document-level, sohbet geçişlerinde
+        // birikmesin diye) her zaman GÜNCEL sohbeti bildirir.
+        if (window._chatActiveTimer) { clearInterval(window._chatActiveTimer); window._chatActiveTimer = null; }
+        function pingActive() {
+            if (document.hidden) return; // sekme arka plandaysa "aktif" sayılmaz
+            var liveP = document.getElementById('conversation-panel');
+            var cid = liveP ? liveP.dataset.conversationId : null;
+            if (!cid) return;
+            var csrfAct = liveP.querySelector('input[name="csrf_token"]');
+            fetch('/messages/' + cid + '/active', {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': csrfAct ? csrfAct.value : '' }
+            }).catch(function () {});
+        }
+        pingActive();
+        window._chatActiveTimer = setInterval(pingActive, 25000);
+        if (!window._chatActiveVisibilityBound) {
+            window._chatActiveVisibilityBound = true;
+            document.addEventListener('visibilitychange', function () {
+                if (!document.hidden) pingActive();
+            });
+        }
+
         ensureLightbox();
 
         function scrollToBottom() {

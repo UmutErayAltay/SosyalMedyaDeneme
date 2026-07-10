@@ -1,8 +1,37 @@
 """messaging/ paketindeki alt-modüllerin paylaştığı yardımcılar (route yok)."""
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from ..supabase_client import get_sb
 from ..notifications import notify
+
+# --- Sohbet içi "aktiflik" (presence) ---
+# Sunucu tek waitress process'i (8 thread, paylaşımlı bellek) olarak
+# çalıştığından basit bir process-içi dict yeterli — ayrı bir tabloya/
+# migration'a gerek yok. Kullanıcı bir sohbeti AÇIK tutarken (chat.js
+# periyodik ping atar, bkz. /messages/<id>/active) o sohbetten gelen mesaj
+# bildirimi/push'u üretilmez (bkz. _notify_conversation) — "sohbetteyken
+# bile bildirim geliyor" sorunu.
+_active: dict[str, tuple[str, float]] = {}
+_active_lock = threading.Lock()
+_ACTIVE_TTL = 45  # saniye — chat.js ~25sn'de bir pingler, sekme kapanınca/geçince süresi dolar
+
+
+def mark_active(user_id: str, conversation_id: str) -> None:
+    """Kullanıcının şu an `conversation_id` sohbetini açık tuttuğunu kaydeder."""
+    with _active_lock:
+        _active[user_id] = (conversation_id, time.monotonic())
+
+
+def is_active_in(user_id: str, conversation_id: str, ttl: int = _ACTIVE_TTL) -> bool:
+    """Kullanıcı SON `ttl` saniye içinde bu sohbeti açık tutmuş mu?"""
+    with _active_lock:
+        entry = _active.get(user_id)
+    if not entry:
+        return False
+    cid, ts = entry
+    return cid == conversation_id and (time.monotonic() - ts) < ttl
 
 
 def _mark_read(sb, conversation_id: str, me: str, messages: list[dict]) -> None:
@@ -23,14 +52,16 @@ def _mark_read(sb, conversation_id: str, me: str, messages: list[dict]) -> None:
 
 
 def unread_message_count(sb, me: str) -> int:
-    """Kullanıcının TÜM 1:1 konuşmalarındaki okunmamış mesaj sayısı (navbar rozeti).
+    """Kullanıcının okunmamış mesajı OLAN 1:1 konuşma SAYISI (navbar rozeti).
 
-    Grup sohbetleri BİLEREK sayılmaz: read_at grup mesajlarında hiç set
-    edilmiyor (bkz. views.py conversation() — `_mark_read()` SADECE
-    `not is_group` durumunda çağrılıyor, çünkü tek bir read_at kolonu "N
-    kişiden kim okudu" bilgisini tutamaz). Grup mesajlarını dahil etmek
-    sayacı sonsuza kadar büyüyen, hiç sıfırlanmayan yanlış bir rozete
-    yol açardı.
+    Mesaj sayısı değil SOHBET sayısı sayılır (kullanıcı isteği): Ali art
+    arda 5 mesaj atsa da rozet o sohbet için sadece +1 olur, mesaj başına
+    1-2-3-4-5 diye artmaz. Grup sohbetleri BİLEREK sayılmaz: read_at grup
+    mesajlarında hiç set edilmiyor (bkz. views.py conversation() —
+    `_mark_read()` SADECE `not is_group` durumunda çağrılıyor, çünkü tek bir
+    read_at kolonu "N kişiden kim okudu" bilgisini tutamaz). Grup mesajlarını
+    dahil etmek sayacı sonsuza kadar büyüyen, hiç sıfırlanmayan yanlış bir
+    rozete yol açardı.
     """
     try:
         parts = sb.table("conversation_participants").select(
@@ -46,19 +77,26 @@ def unread_message_count(sb, me: str) -> int:
             dm_ids = cids  # is_group kolonu yoksa (migration_group_chat.sql uygulanmamış) hepsi 1:1
         if not dm_ids:
             return 0
-        return sb.table("messages").select(
-            "id", count="exact", head=True
-        ).in_("conversation_id", dm_ids).neq("sender_id", me).is_("read_at", "null").execute().count or 0
+        unread = sb.table("messages").select(
+            "conversation_id"
+        ).in_("conversation_id", dm_ids).neq("sender_id", me).is_("read_at", "null").execute().data
+        return len({m["conversation_id"] for m in unread})
     except Exception:
         return 0
 
 
 def _notify_conversation(sb, conversation_id: str, sender_id: str) -> None:
-    """Konuşmadaki diğer katılımcı(lar)a yeni mesaj bildirimi gönderir."""
+    """Konuşmadaki diğer katılımcı(lar)a yeni mesaj bildirimi gönderir.
+
+    Alıcı o an bu sohbeti AÇIK tutuyorsa (presence) bildirim/push
+    ÜRETİLMEZ — zaten okuyor, bildirime gerek yok (kullanıcı isteği).
+    """
     others = sb.table("conversation_participants").select("user_id").eq(
         "conversation_id", conversation_id
     ).neq("user_id", sender_id).execute().data
     for o in others:
+        if is_active_in(o["user_id"], conversation_id):
+            continue
         notify(sb, recipient_id=o["user_id"], actor_id=sender_id,
                type_="message", conversation_id=conversation_id)
 
