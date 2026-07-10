@@ -2,7 +2,8 @@
 from concurrent.futures import ThreadPoolExecutor
 from flask import render_template, request, session, abort, jsonify
 from . import bp
-from ._common import _mark_read, _build_convos, unread_message_count, mark_active
+from ._common import (_mark_read, _build_convos, unread_message_count,
+                      mark_active, _mark_message_notifications_read)
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..auth import refresh_session_tokens
@@ -59,6 +60,9 @@ def conversation(conversation_id):
     # Sayfa açılır açılmaz "aktif" işaretle (chat.js periyodik ping ile tazeler) —
     # bu sohbetten gelen mesaj bildirimi/push'u üretilmesin (bkz. _notify_conversation)
     mark_active(me, conversation_id)
+    # Sohbeti açmak = o sohbetin mesaj bildirimlerini de okumak (zil rozeti
+    # bayat kalmasın, gruplama sayacı sıfırlansın — bkz. _common docstring'i)
+    _mark_message_notifications_read(sb, me, conversation_id)
 
     # Diğer veri (grup meta, katılımcılar, mesajlar) paralel çek — conversation_id
     # doğrulandıktan sonra 3 sorgu birbirinden bağımsız
@@ -219,6 +223,8 @@ def mark_conversation_read(conversation_id):
             "sender_id", me).is_("read_at", "null").execute()
     except Exception:
         pass  # read_at migration'ı yoksa sessizce atla (_mark_read ile aynı tavır)
+    # Sohbet AÇIKKEN düşen mesajın bildirimi de (varsa) okundu sayılır
+    _mark_message_notifications_read(sb, me, conversation_id)
     return jsonify(ok=True)
 
 

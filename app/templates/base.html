@@ -177,6 +177,10 @@
     {% if me %}<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>{% endif %}
     {% if me %}<script src="{{ url_for('static', filename='js/messagesBadge.js') }}"></script>{% endif %}
 
+    {# --- Supabase Realtime + arama sistemi: HER sayfada (akış/profil dahil)
+       gelen arama modalı çalışsın diye global (kullanıcı isteği) --- #}
+    {% if me and me.id %}{% include "_supabase_core.html" %}{% endif %}
+
     {# --- PWA: servis çalışanı kaydı (kök dizinden /sw.js — bkz. app/__init__.py) --- #}
     <script>
         if ('serviceWorker' in navigator) {

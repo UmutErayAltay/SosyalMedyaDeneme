@@ -51,6 +51,26 @@ def _mark_read(sb, conversation_id: str, me: str, messages: list[dict]) -> None:
         pass
 
 
+def _mark_message_notifications_read(sb, me: str, conversation_id: str) -> None:
+    """Sohbet açılınca o sohbetin MESAJ BİLDİRİMLERİNİ de okundu işaretler.
+
+    Yoksa: kullanıcı mesajları sohbetin içinden okusa bile bildirim satırı
+    okunmamış kalıyordu — zil rozeti bayat kalıyor, gruplama sayacı (count)
+    hiç sıfırlanmıyor ve push kısıtı (3'ten sonra sus) bir kez aşılınca
+    SONSUZA dek susuyordu (kullanıcı raporu: 'bildirim olarak gelmiyor').
+    Okundu işaretlenince sonraki mesaj TAZE bir bildirim satırı (count=1)
+    açar ve push tekrar çalışır.
+    """
+    try:
+        sb.table("notifications").update({"is_read": True}).eq(
+            "recipient_id", me).eq("type", "message").eq(
+            "conversation_id", conversation_id).eq("is_read", False).execute()
+        from ..cache import invalidate
+        invalidate(f"unread:{me}")
+    except Exception:
+        pass
+
+
 def unread_message_count(sb, me: str) -> int:
     """Kullanıcının okunmamış mesajı OLAN 1:1 konuşma SAYISI (navbar rozeti).
 

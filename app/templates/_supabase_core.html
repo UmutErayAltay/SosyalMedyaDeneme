@@ -1,0 +1,54 @@
+{# Supabase Realtime çekirdeği — login'li HER sayfada yüklenir (base.html).
+   Önceden yalnızca mesajlaşma sayfalarındaydı; aramalar da sadece orada
+   çalıyordu. Artık akış/profil/her yerde telefon çalar (kullanıcı isteği).
+   Mesajlaşmaya özgü scriptler messages/_realtime_init.html'de kalır. #}
+<script>
+    window.SUPABASE_URL = "{{ config.SUPABASE_URL }}";
+    window.SUPABASE_KEY = "{{ config.SUPABASE_PUBLISHABLE_KEY }}";
+    window.SB_ACCESS_TOKEN = "{{ session.access_token }}";
+    window.ME_ID = "{{ me.id }}";
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function () {
+    if (window.supabaseClient || !window.supabase) return;
+    // auth kalıcılığı TAMAMEN kapalı: varsayılan persistSession, localStorage'da
+    // haftalar önce kalmış bayat bir oturumu otomatik yükleyip bizim verdiğimiz
+    // taze token'ı İÇERİDEN eziyordu — normal profilde CHANNEL_ERROR/401, gizli
+    // sekmede (boş localStorage) sorunsuz (canlı test bulgusu, Brave). Oturumun
+    // tek sahibi Flask; tarayıcı sadece setAuth ile verilen token'ı kullanır.
+    window.supabaseClient = window.supabase.createClient(
+        window.SUPABASE_URL,
+        window.SUPABASE_KEY,
+        { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
+    );
+    // Token yenileme SADECE sunucuda yapılır (auth.refresh_session_tokens) —
+    // tek kullanımlık refresh token iki taraf arasında tüketilmesin (geçmiş
+    // 400 hatası). Realtime'ın ihtiyacı olan tek şey geçerli access token.
+    window.supabaseClient.realtime.setAuth(window.SB_ACCESS_TOKEN);
+    // Mesajlaşma dışı sayfalarda gömülü token bayat olabilir (render öncesi
+    // yenilemeyi yalnızca mesajlaşma view'ları yapıyor) — yüklenir yüklenmez
+    // sunucudan taze token çekilir; call.js global arama dinleyicisi kanala
+    // abone olmadan önce bu promise'i bekler (bayat token'la subscribe
+    // CHANNEL_ERROR üretebilir).
+    window.SB_TOKEN_READY = fetch('/auth/realtime-token')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (d.access_token) {
+                window.SB_ACCESS_TOKEN = d.access_token;
+                window.supabaseClient.realtime.setAuth(d.access_token);
+            }
+        })
+        .catch(function () { /* eldeki gömülü token'la devam */ });
+    // Uzun süre açık kalan sekmede token bayatlar — 30 dakikada bir tazele
+    setInterval(function () {
+        fetch('/auth/realtime-token')
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.access_token) window.supabaseClient.realtime.setAuth(d.access_token);
+            })
+            .catch(function () { /* bir sonraki turda tekrar denenir */ });
+    }, 30 * 60 * 1000);
+})();
+</script>
+<script src="{{ url_for('static', filename='js/call.js') }}"></script>

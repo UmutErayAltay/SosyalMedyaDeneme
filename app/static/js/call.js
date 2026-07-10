@@ -31,8 +31,18 @@
     }
 
     function showAlert(msg) {
-        alert(msg);
+        // Tarayıcının kendi alert kutusu yerine sitenin özel modalı
+        // (confirmModal.js — kullanıcı isteği); yüklenmemişse alert'e düş
+        if (window.appAlert) window.appAlert(msg);
+        else alert(msg);
     }
+
+    // Kontrol butonlarındaki inline SVG ikonlar — konuşma başlığındaki
+    // .conv-call-btn ikonlarıyla aynı görsel dil (currentColor, feather stili)
+    var SVG_PHONE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+    var SVG_PHONE_DOWN = SVG_PHONE.replace('<svg ', '<svg class="call-svg-flip" ');
+    var SVG_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+    var SVG_VIDEO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>';
 
     // Format mm:ss
     function formatDuration(ms) {
@@ -42,28 +52,39 @@
         return m + ':' + (s < 10 ? '0' : '') + s;
     }
 
-    // Gelen arama modal ve arama overlay DOM'unu oluştur (panel yoksa)
+    // Gelen arama modal ve arama overlay DOM'unu oluştur (panel yoksa).
+    // Buton bağlamaları da BURADA yapılır (initCallSystem'de değil) — arama
+    // artık her sayfada çalıyor (akış/profil), o sayfalarda initCallSystem
+    // hiç çalışmaz; kabul/reddet yine de çalışmalı.
     function ensureCallDOM() {
         if (!document.getElementById('call-modal-incoming')) {
-            var modalHtml = '<div class="modal-overlay" id="call-modal-incoming" role="dialog" aria-modal="true" aria-labelledby="call-modal-incoming-title" hidden>\n' +
-                '    <div class="modal">\n' +
-                '        <div class="modal-header">\n' +
-                '            <h2 id="call-modal-incoming-title">Gelen Arama</h2>\n' +
-                '        </div>\n' +
+            var modalHtml = '<div class="modal-overlay" id="call-modal-incoming" role="dialog" aria-modal="true" aria-labelledby="incoming-call-name" hidden>\n' +
+                '    <div class="modal call-incoming-modal">\n' +
                 '        <div class="modal-body call-modal-body">\n' +
-                '            <div class="call-avatar-circle call-avatar-circle--md" id="incoming-call-avatar" style="margin-bottom: 12px;">\n' +
+                '            <div class="call-avatar-circle call-avatar-circle--md">\n' +
                 '                <img id="incoming-call-avatar-img" alt="" hidden>\n' +
                 '                <span id="incoming-call-avatar-fallback" aria-hidden="true">👤</span>\n' +
                 '            </div>\n' +
-                '            <p id="incoming-call-name" style="text-align: center; font-weight: 600; margin-bottom: 16px;"></p>\n' +
-                '            <div style="display: flex; gap: 12px; justify-content: center;">\n' +
-                '                <button type="button" class="btn btn-primary" id="incoming-call-accept-btn">✓ Kabul Et</button>\n' +
-                '                <button type="button" class="btn btn-ghost danger" id="incoming-call-reject-btn">✗ Reddet</button>\n' +
+                '            <p id="incoming-call-name" class="call-incoming-name"></p>\n' +
+                '            <p id="incoming-call-type" class="call-incoming-type"></p>\n' +
+                '            <div class="call-incoming-actions">\n' +
+                '                <div class="call-incoming-action">\n' +
+                '                    <button type="button" class="call-round-btn call-round-accept" id="incoming-call-accept-btn" aria-label="Aramayı kabul et">' + SVG_PHONE + '</button>\n' +
+                '                    <span>Kabul et</span>\n' +
+                '                </div>\n' +
+                '                <div class="call-incoming-action">\n' +
+                '                    <button type="button" class="call-round-btn call-round-reject" id="incoming-call-reject-btn" aria-label="Aramayı reddet">' + SVG_PHONE_DOWN + '</button>\n' +
+                '                    <span>Reddet</span>\n' +
+                '                </div>\n' +
                 '            </div>\n' +
                 '        </div>\n' +
                 '    </div>\n' +
                 '</div>';
             document.body.insertAdjacentHTML('beforeend', modalHtml);
+            document.getElementById('incoming-call-accept-btn').onclick = function () {
+                if (window.pendingOffer) acceptCall(window.pendingOffer);
+            };
+            document.getElementById('incoming-call-reject-btn').onclick = function () { rejectCall(); };
         }
 
         // Giden arama kartı: karşı taraf kabul edene kadar tam ekran arayüz
@@ -85,26 +106,32 @@
 
         if (!document.getElementById('call-overlay')) {
             var overlayHtml = '<div class="call-overlay" id="call-overlay" hidden>\n' +
+                '    <div class="call-topbar">\n' +
+                '        <strong id="call-top-name" hidden></strong>\n' +
+                '        <span id="call-duration" class="call-duration" role="timer"></span>\n' +
+                '    </div>\n' +
                 '    <div class="call-remote-avatar" id="call-remote-avatar" hidden>\n' +
                 '        <div class="call-avatar-circle call-avatar-circle--lg" id="call-remote-avatar-circle">\n' +
                 '            <img id="call-remote-avatar-img" alt="" hidden>\n' +
                 '            <span id="call-remote-avatar-fallback" aria-hidden="true">👤</span>\n' +
                 '        </div>\n' +
                 '        <p id="call-remote-name" class="call-remote-name"></p>\n' +
-                '        <p id="call-voice-info" style="margin-top: 4px; color: var(--card); font-size: 16px;">Sesli Arama</p>\n' +
+                '        <p id="call-voice-info" class="call-type-label">Sesli Arama</p>\n' +
                 '    </div>\n' +
-                '    <video id="call-remote-video" class="call-remote-video" autoplay playsinline></video>\n' +
-                '    <video id="call-local-video" class="call-local-video" autoplay playsinline muted></video>\n' +
+                '    <video id="call-remote-video" class="call-remote-video" autoplay playsinline hidden></video>\n' +
+                '    <video id="call-local-video" class="call-local-video" autoplay playsinline muted hidden></video>\n' +
                 '    <div class="call-controls-bar">\n' +
-                '        <span id="call-duration" class="call-duration"></span>\n' +
                 '        <div class="call-controls">\n' +
-                '            <button type="button" class="call-btn" id="call-controls-mic" aria-label="Mikrofonu aç/kapat" title="Mikrofon">🎙</button>\n' +
-                '            <button type="button" class="call-btn" id="call-controls-camera" aria-label="Kamerayı aç/kapat" title="Kamera">📷</button>\n' +
-                '            <button type="button" class="call-btn call-btn-danger" id="call-controls-hangup" aria-label="Aramayı sonlandır" title="Kapat">📵</button>\n' +
+                '            <button type="button" class="call-btn" id="call-controls-mic" aria-label="Mikrofonu aç/kapat" title="Mikrofon">' + SVG_MIC + '</button>\n' +
+                '            <button type="button" class="call-btn" id="call-controls-camera" aria-label="Kamera" title="Kamera">' + SVG_VIDEO + '</button>\n' +
+                '            <button type="button" class="call-btn call-btn-danger" id="call-controls-hangup" aria-label="Aramayı sonlandır" title="Kapat">' + SVG_PHONE_DOWN + '</button>\n' +
                 '        </div>\n' +
                 '    </div>\n' +
                 '</div>';
             document.body.insertAdjacentHTML('beforeend', overlayHtml);
+            document.getElementById('call-controls-mic').onclick = function () { toggleMic(); };
+            document.getElementById('call-controls-camera').onclick = function () { onCameraButton(); };
+            document.getElementById('call-controls-hangup').onclick = function () { endCall(); };
         }
     }
 
@@ -119,11 +146,13 @@
             callRemoteAvatarImg: document.getElementById('call-remote-avatar-img'),
             callRemoteAvatarFallback: document.getElementById('call-remote-avatar-fallback'),
             callRemoteName: document.getElementById('call-remote-name'),
+            callTopName: document.getElementById('call-top-name'),
             callDuration: document.getElementById('call-duration'),
             callControlsMic: document.getElementById('call-controls-mic'),
             callControlsCamera: document.getElementById('call-controls-camera'),
             callControlsHangup: document.getElementById('call-controls-hangup'),
             incomingCallName: document.getElementById('incoming-call-name'),
+            incomingCallType: document.getElementById('incoming-call-type'),
             incomingCallAvatarImg: document.getElementById('incoming-call-avatar-img'),
             incomingCallAvatarFallback: document.getElementById('incoming-call-avatar-fallback'),
             incomingCallAcceptBtn: document.getElementById('incoming-call-accept-btn'),
@@ -503,10 +532,13 @@
     // realtime INSERT ile gider.
     function sendCallLog(text) {
         if (!state.conversationId || !text) return;
+        // Arayan mesajlar sayfasındadır (form input'u var); yine de her
+        // sayfada çalışan meta fallback'i kullan (base.html csrf-token meta'sı)
         var csrf = document.querySelector('input[name="csrf_token"]');
+        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
         var fd = new FormData();
         fd.append('content', text);
-        fd.append('csrf_token', csrf ? csrf.value : '');
+        fd.append('csrf_token', csrf ? csrf.value : (csrfMeta ? csrfMeta.content : ''));
         fetch('/messages/' + state.conversationId + '/send', {
             method: 'POST',
             headers: { 'Accept': 'application/json' },
@@ -671,10 +703,14 @@
             state.otherUsername = signal.callerName || 'Birisi';
             state.otherAvatar = signal.callerAvatar || '';
 
-            // Gelen arama modalı göster (gerçek ad + avatar ile)
+            // Gelen arama modalı göster (gerçek ad + avatar + arama türü ile)
+            ensureCallDOM();
             var elem = getElements();
             if (elem.incomingCallName && elem.callModalIncoming) {
                 elem.incomingCallName.textContent = state.otherUsername;
+                if (elem.incomingCallType) {
+                    elem.incomingCallType.textContent = state.isVideoCall ? 'Görüntülü arama...' : 'Sesli arama...';
+                }
                 setAvatarVisual(elem.incomingCallAvatarImg, elem.incomingCallAvatarFallback, state.otherAvatar);
                 elem.callModalIncoming.removeAttribute('hidden');
             }
@@ -684,6 +720,35 @@
 
         } else if (signal.type === 'answer') {
             handleAnswerSignal(signal.sdp);
+
+        } else if (signal.type === 'upgrade-offer') {
+            // Karşı taraf görüşme SIRASINDA kamera açtı (sesliden görüntülüye
+            // geçiş) — yeniden müzakere: yeni offer'ı kabul et, answer dön,
+            // arayüzü görüntülü moda geçir (bkz. enableLocalCamera)
+            if (!state.peerConnection || state.callState !== 'active') return;
+            (async function () {
+                try {
+                    await state.peerConnection.setRemoteDescription(
+                        new RTCSessionDescription({ type: 'offer', sdp: signal.sdp }));
+                    var upAnswer = await state.peerConnection.createAnswer();
+                    await state.peerConnection.setLocalDescription(upAnswer);
+                    sendSignal({ type: 'upgrade-answer', sdp: upAnswer.sdp });
+                    if (signal.video) {
+                        state.isVideoCall = true;
+                        showCallUI();
+                    }
+                } catch (err) {
+                    log('Görüntülüye geçiş işlenemedi: ' + err.message);
+                }
+            })();
+
+        } else if (signal.type === 'upgrade-answer') {
+            if (!state.peerConnection) return;
+            state.peerConnection.setRemoteDescription(
+                new RTCSessionDescription({ type: 'answer', sdp: signal.sdp })
+            ).catch(function (err) {
+                log('Görüntülüye geçiş cevabı işlenemedi: ' + err.message);
+            });
 
         } else if (signal.type === 'ice') {
             handleIceCandidate(signal.candidate, signal.sdpMLineIndex, signal.sdpMid);
@@ -723,48 +788,53 @@
     }
 
     function showCallUI() {
+        ensureCallDOM();
         var elem = getElements();
         if (elem.callOverlay) {
             elem.callOverlay.removeAttribute('hidden');
         }
+
+        // Yerel video yalnızca GERÇEKTEN bir kamera track'i varsa gösterilir —
+        // sesli aramada / kamerasız tarafta köşede siyah kutu durmasın
+        var hasLocalVideo = !!(state.localStream && state.localStream.getVideoTracks().length > 0);
         if (elem.callLocalVideo) {
             elem.callLocalVideo.srcObject = state.localStream;
+            if (hasLocalVideo) elem.callLocalVideo.removeAttribute('hidden');
+            else elem.callLocalVideo.setAttribute('hidden', '');
         }
 
-        // Sesli aramada avatar göster (gerçek görsel + ad — önceden jenerik
-        // ikonla bomboş görünüyordu, kullanıcı isteğiyle düzeltildi)
-        if (!state.isVideoCall && elem.callRemoteAvatar) {
-            elem.callRemoteAvatar.removeAttribute('hidden');
-            setAvatarVisual(elem.callRemoteAvatarImg, elem.callRemoteAvatarFallback, state.otherAvatar);
-            if (elem.callRemoteName) elem.callRemoteName.textContent = state.otherUsername || '';
-        }
-
-        // Sesli aramada video gizle
-        if (!state.isVideoCall && elem.callRemoteVideo) {
-            elem.callRemoteVideo.setAttribute('hidden', '');
-        }
-
-        // Görüntülü aramada video göster, avatar gizle
-        if (state.isVideoCall && elem.callRemoteVideo) {
-            elem.callRemoteVideo.removeAttribute('hidden');
-        }
-        if (state.isVideoCall && elem.callRemoteAvatar) {
-            elem.callRemoteAvatar.setAttribute('hidden', '');
-        }
-
-        // Sesli aramada kamera butonu anlamsız — gizle
-        if (elem.callControlsCamera) {
-            if (state.isVideoCall) elem.callControlsCamera.removeAttribute('hidden');
-            else elem.callControlsCamera.setAttribute('hidden', '');
-        }
-
-        // Voice info metni güncelle
-        if (elem.callVoiceInfo) {
-            if (state.isVideoCall) {
-                elem.callVoiceInfo.textContent = 'Görüntülü Arama';
-            } else {
-                elem.callVoiceInfo.textContent = 'Sesli Arama';
+        if (!state.isVideoCall) {
+            // Sesli: ortada gerçek avatar + ad + tür etiketi, videolar gizli
+            if (elem.callRemoteAvatar) {
+                elem.callRemoteAvatar.removeAttribute('hidden');
+                setAvatarVisual(elem.callRemoteAvatarImg, elem.callRemoteAvatarFallback, state.otherAvatar);
+                if (elem.callRemoteName) elem.callRemoteName.textContent = state.otherUsername || '';
             }
+            if (elem.callRemoteVideo) elem.callRemoteVideo.setAttribute('hidden', '');
+            if (elem.callTopName) elem.callTopName.setAttribute('hidden', '');
+        } else {
+            // Görüntülü: tam ekran karşı video; ad üst bardaki çipte
+            if (elem.callRemoteAvatar) elem.callRemoteAvatar.setAttribute('hidden', '');
+            if (elem.callRemoteVideo) elem.callRemoteVideo.removeAttribute('hidden');
+            if (elem.callTopName) {
+                elem.callTopName.textContent = state.otherUsername || '';
+                elem.callTopName.removeAttribute('hidden');
+            }
+        }
+
+        // Kamera butonu HER İKİ modda görünür (kullanıcı isteği): seslide
+        // "görüntülü aramaya geç", görüntülüde klasik aç/kapat. Kırmızı
+        // (disabled) hâli = kameram şu an kapalı.
+        if (elem.callControlsCamera) {
+            var camOn = hasLocalVideo && state.localStream.getVideoTracks()[0].enabled;
+            elem.callControlsCamera.classList.toggle('disabled', !camOn);
+            var camTitle = hasLocalVideo ? 'Kamerayı aç/kapat' : 'Görüntülü aramaya geç';
+            elem.callControlsCamera.title = camTitle;
+            elem.callControlsCamera.setAttribute('aria-label', camTitle);
+        }
+
+        if (elem.callVoiceInfo) {
+            elem.callVoiceInfo.textContent = state.isVideoCall ? 'Görüntülü Arama' : 'Sesli Arama';
         }
     }
 
@@ -775,6 +845,7 @@
 
         if (state.callDurationInterval) clearInterval(state.callDurationInterval);
 
+        elem.callDuration.textContent = '0:00'; // ilk saniye boş görünmesin
         state.callDurationInterval = setInterval(function () {
             var elapsed = Date.now() - state.callStartedAt;
             elem.callDuration.textContent = formatDuration(elapsed);
@@ -800,6 +871,47 @@
         state.localStream.getVideoTracks()[0].enabled = !enabled;
         if (elem.callControlsCamera) {
             elem.callControlsCamera.classList.toggle('disabled');
+        }
+    }
+
+    // Kamera butonu iki işlevli (kullanıcı isteği): yerel kamera track'i
+    // yoksa (sesli arama veya görüntülüde kamerasız taraf) kamerayı AÇIP
+    // görüntülüye geçirir; varsa klasik aç/kapat.
+    function onCameraButton() {
+        var hasLocalVideo = !!(state.localStream && state.localStream.getVideoTracks().length > 0);
+        if (hasLocalVideo) toggleCamera();
+        else enableLocalCamera();
+    }
+
+    // Görüşme SIRASINDA kamera açma = sesliden görüntülüye geçiş. WebRTC'de
+    // aktif bağlantıya track eklemek yeniden müzakere (renegotiation)
+    // gerektirir: yeni offer üretilip 'upgrade-offer' sinyaliyle gönderilir,
+    // karşı taraf 'upgrade-answer' döner. İlk offer/answer'dan (arama kurma)
+    // AYRI sinyal türleri kullanılır — handleSignal'daki 'offer' dalı aktif
+    // aramada gelen offer'ı "meşgul" sayıp reddediyor, çakışmasın.
+    async function enableLocalCamera() {
+        if (!state.peerConnection || state.callState !== 'active' || !state.localStream) return;
+        var vs;
+        try {
+            vs = await navigator.mediaDevices.getUserMedia({ video: getUserMediaConfig(true).video });
+        } catch (err) {
+            showAlert('Kamera açılamadı (' + err.name + '). Tarayıcı site izinlerini kontrol et.');
+            return;
+        }
+        var track = vs.getVideoTracks()[0];
+        if (!track) return;
+        try { track.contentHint = 'motion'; } catch (e) { /* desteklenmiyorsa yok say */ }
+        state.localStream.addTrack(track);
+        state.peerConnection.addTrack(track, state.localStream);
+        state.isVideoCall = true;
+        showCallUI();
+        try {
+            var offer = await state.peerConnection.createOffer();
+            await state.peerConnection.setLocalDescription(offer);
+            tuneVideoSender(state.peerConnection);
+            sendSignal({ type: 'upgrade-offer', sdp: offer.sdp, video: true });
+        } catch (err) {
+            log('Görüntülüye geçiş teklifi gönderilemedi: ' + err.message);
         }
     }
 
@@ -857,9 +969,9 @@
             window.initGlobalCallListener(meId);
         }
 
-        var elem = getElements();
-
-        // Başlatma butonları: 📞 sesli, 🎥 görüntülü
+        // Başlatma butonları: sesli / görüntülü (yalnızca konuşma sayfasında var).
+        // Modal + kontrol butonu bağlamaları ensureCallDOM'da yapılır — arama
+        // her sayfada çalıştığı için oraya taşındı (bkz. ensureCallDOM yorumu).
         var voiceBtn = document.getElementById('call-voice-btn');
         var videoBtn = document.getElementById('call-video-btn');
 
@@ -868,29 +980,6 @@
         }
         if (videoBtn) {
             videoBtn.onclick = function () { startCall(true); };
-        }
-
-        // Gelen arama kabul/reddet
-        if (elem.incomingCallAcceptBtn) {
-            elem.incomingCallAcceptBtn.onclick = function () {
-                if (window.pendingOffer) {
-                    acceptCall(window.pendingOffer);
-                }
-            };
-        }
-        if (elem.incomingCallRejectBtn) {
-            elem.incomingCallRejectBtn.onclick = function () { rejectCall(); };
-        }
-
-        // Kontrol butonları
-        if (elem.callControlsMic) {
-            elem.callControlsMic.onclick = function () { toggleMic(); };
-        }
-        if (elem.callControlsCamera) {
-            elem.callControlsCamera.onclick = function () { toggleCamera(); };
-        }
-        if (elem.callControlsHangup) {
-            elem.callControlsHangup.onclick = function () { endCall(); };
         }
 
         // NOT: konuşma kanalında 'call-signal' aboneliği BİLEREK yok — tüm
@@ -909,9 +998,15 @@
         }
     });
 
-    // Sayfa yüklenir yüklenmez global dinleyici: inbox'ta da telefon çalar
+    // Sayfa yüklenir yüklenmez global dinleyici: artık HER sayfada telefon
+    // çalar (akış/profil dahil — _supabase_core.html base.html'de yüklüyor).
+    // Mesajlaşma dışı sayfalarda gömülü token bayat olabileceğinden, core'un
+    // taze token fetch'i (SB_TOKEN_READY) beklenip ÖYLE abone olunur — bayat
+    // token'la subscribe CHANNEL_ERROR üretebiliyordu.
     if (window.ME_ID) {
-        window.initGlobalCallListener(window.ME_ID);
+        (window.SB_TOKEN_READY || Promise.resolve()).then(function () {
+            window.initGlobalCallListener(window.ME_ID);
+        });
     }
 
     // beforeunload geri dönüş değeri (browser uyarı gösterir)

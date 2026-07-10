@@ -1891,16 +1891,37 @@ header[role="banner"] {
 
 /* Sesli aramada avatar container — önceden jenerik 👤 ikonuyla "bomboş
    siyah ekran" gibi görünüyordu; artık karşı tarafın GERÇEK avatarı + adı
-   gösterilir (kullanıcı isteği). */
+   gösterilir (kullanıcı isteği). Overlay HER temada koyu olduğundan metin
+   renkleri tema değişkeni DEĞİL sabit beyaz (var(--card) koyu temada koyu
+   renge çözünüp metni görünmez yapıyordu). */
 .call-remote-avatar {
     display: flex; flex-direction: column; align-items: center;
-    justify-content: center; color: var(--card); gap: 4px;
+    justify-content: center; color: var(--color-white); gap: 4px;
 }
 .call-remote-avatar[hidden] { display: none; }
 
 .call-remote-name {
-    margin-top: 12px; font-size: 22px; font-weight: 700; color: var(--card);
+    margin-top: 12px; font-size: 22px; font-weight: 700; color: var(--color-white);
 }
+
+/* "Sesli Arama" / "Görüntülü Arama" tür etiketi (avatarın altında) */
+.call-type-label {
+    margin-top: 4px; font-size: 15px; color: rgba(255, 255, 255, 0.65);
+}
+
+/* Üst bilgi çubuğu: (görüntülüde) isim + süre — yarı saydam hap */
+.call-topbar {
+    position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 999px; padding: 8px 20px;
+    color: var(--color-white); z-index: 201; font-size: 15px;
+}
+.call-topbar strong[hidden] { display: none; }
+
+/* Hangup/reddet ikonundaki telefon — 135° çevrilince "kapat" olur */
+.call-svg-flip { transform: rotate(135deg); }
 
 /* Paylaşılan avatar dairesi — tam ekran arama (lg) ve gelen arama modalı
    (md) tarafından kullanılır; gerçek görsel varsa <img>, yoksa 👤 fallback. */
@@ -1917,42 +1938,47 @@ header[role="banner"] {
 .call-avatar-circle--lg { width: 120px; height: 120px; font-size: 48px; }
 .call-avatar-circle--md { width: 80px; height: 80px; font-size: 32px; margin: 0 auto; }
 
-/* Köşede local video (küçük, muted) */
+/* Köşede local video (küçük, muted) — kamera track'i yokken tamamen gizli */
 .call-local-video {
-    position: absolute; bottom: 100px; right: 16px;
+    position: absolute; bottom: 110px; right: 16px;
     width: 120px; height: 160px;
     object-fit: cover; border-radius: 12px;
-    border: 3px solid var(--card);
+    border: 2px solid rgba(255, 255, 255, 0.35);
     z-index: 201;
 }
+.call-local-video[hidden] { display: none; }
 
-/* Alt bar: kontrol butonları ve süre */
+/* Alt bar: kontrol butonları — yarı saydam hap (üst bar ile aynı dil) */
 .call-controls-bar {
-    position: absolute; bottom: 16px; left: 50%;
+    position: absolute; bottom: 24px; left: 50%;
     transform: translateX(-50%);
     display: flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 999px; padding: 10px 16px;
     gap: 16px; z-index: 201;
 }
 
-/* Süre göstergesi */
+/* Süre göstergesi (üst barda) */
 .call-duration {
-    color: var(--card); font-size: 16px; font-weight: 600;
-    min-width: 50px; text-align: center;
+    color: var(--color-white); font-size: 15px; font-weight: 600;
+    min-width: 44px; text-align: center; font-variant-numeric: tabular-nums;
 }
 
 /* Kontrol butonları container */
 .call-controls {
-    display: flex; gap: 12px;
+    display: flex; gap: 14px;
 }
 
-/* Kontrol butonu — mikrofon, kamera */
+/* Kontrol butonu — mikrofon, kamera (inline SVG, currentColor) */
 .call-btn {
-    background: rgba(255, 255, 255, 0.2);
-    color: var(--card); border: none; cursor: pointer;
-    width: 48px; height: 48px; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    color: var(--color-white); border: none; cursor: pointer;
+    width: 52px; height: 52px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 20px; transition: background 0.15s, transform 0.1s;
+    transition: background 0.15s, transform 0.1s;
 }
+.call-btn svg { width: 22px; height: 22px; }
 .call-btn[hidden] { display: none; }
 .call-btn:hover {
     background: rgba(255, 255, 255, 0.3); transform: scale(1.05);
@@ -1974,7 +2000,36 @@ header[role="banner"] {
 .modal-body.call-modal-body {
     min-height: 120px; display: flex;
     flex-direction: column; justify-content: center; align-items: center;
+    padding-top: 28px; padding-bottom: 24px;
 }
+
+/* Gelen arama modalı — avatar + ad + tür + yuvarlak kabul/reddet
+   (site temasıyla uyumlu: .modal zaten var(--card)/var(--border) kullanır) */
+.call-incoming-modal { max-width: 340px; }
+.call-incoming-name {
+    margin-top: 14px; font-size: 20px; font-weight: 700; text-align: center;
+}
+.call-incoming-type {
+    margin-top: 2px; font-size: 14px; color: var(--muted); text-align: center;
+}
+.call-incoming-actions {
+    display: flex; gap: 44px; justify-content: center; margin-top: 22px;
+}
+.call-incoming-action {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    font-size: 13px;
+}
+.call-round-btn {
+    width: 58px; height: 58px; border-radius: 50%; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--color-white);
+    transition: transform 0.1s, filter 0.15s;
+}
+.call-round-btn:hover { filter: brightness(1.1); }
+.call-round-btn:active { transform: scale(0.94); }
+.call-round-btn svg { width: 24px; height: 24px; }
+.call-round-accept { background: var(--color-green-700); animation: call-pulse 1.6s ease-in-out infinite; }
+.call-round-reject { background: var(--color-red-500); }
 
 /* =========================
    Çıkartmalar (Stickers)
