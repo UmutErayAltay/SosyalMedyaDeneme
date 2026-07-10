@@ -4,7 +4,11 @@ run.py'dan farkı: debug KAPALI (Werkzeug interaktif debugger'ı 0.0.0.0'da
 uzaktan kod çalıştırma riskidir + debug modu template/statik cache'ini
 kapatıp her isteği yavaşlatır) ve çok-thread'li gerçek bir WSGI sunucusu
 (waitress) kullanılır.
+
+Render/PaaS uyumu: dinleme portu PORT ortam değişkeninden okunur (Render
+kendi portunu böyle verir); yerelde değişken yoksa 5000'e düşer.
 """
+import os
 from app import create_app
 
 app = create_app()
@@ -21,7 +25,6 @@ if __name__ == "__main__":
     # Supabase'e seri ~300-700ms I/O beklediğinden thread'ler uzun süre dolu
     # kalıyor. İstekler CPU değil I/O ağırlıklı — 16 thread güvenli.
     # (In-memory presence dict'i threading.Lock ile korunuyor, sorun yok.)
-    print("http://0.0.0.0:5000 üzerinde çalışıyor (waitress, 16 thread)")
-    print("Open: http://192.168.1.176:5000")
-    print("Open: http://10.192.58.103:5000")
-    serve(app, host="0.0.0.0", port=5000, threads=16)
+    port = int(os.environ.get("PORT", 5000))
+    print("http://0.0.0.0:%d üzerinde çalışıyor (waitress, 16 thread)" % port)
+    serve(app, host="0.0.0.0", port=port, threads=16)
