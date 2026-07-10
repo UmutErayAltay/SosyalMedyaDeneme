@@ -1872,15 +1872,22 @@ header[role="banner"] {
 .conv-call-btn:hover { background: var(--border); }
 .conv-call-btn:active { transform: scale(0.94); }
 
-/* Arama overlay — tam ekran, koyu zemin */
+/* Arama overlay — tam ekran. Düz siyah yerine sitenin sıcak koyu paletiyle
+   uyumlu degrade zemin (kullanıcı isteği: görüşme ekranı siteye uygun olsun);
+   açılışta yumuşak fade-in. */
 .call-overlay {
     position: fixed; inset: 0;
-    background: var(--color-black);
+    background: radial-gradient(ellipse at 50% 35%, #33281f 0%, #211a14 55%, #14100c 100%);
     display: flex; align-items: center; justify-content: center;
     z-index: 200; padding: 16px;
     flex-direction: column;
+    animation: call-fade-in 0.3s ease;
 }
 .call-overlay[hidden] { display: none; }
+@keyframes call-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
 
 /* Remote video — tam ekran veya avatar konteyner */
 .call-remote-video {

@@ -1,4 +1,5 @@
 """Uygulama fabrikası."""
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from flask import Flask, session, request, abort, send_from_directory
@@ -52,6 +53,23 @@ def create_app() -> Flask:
 
     # Şablonlarda {{ csrf_token() }} olarak kullanılabilir
     app.jinja_env.globals["csrf_token"] = _csrf_token
+
+    # --- Statik varlık sürümleme (cache-busting) ---
+    # Her url_for('static', ...) çıktısına dosyanın mtime'ı ?v= olarak eklenir:
+    # dosya her değiştiğinde URL değişir, tarayıcı/servis-çalışanı önbelleği ne
+    # kadar agresif olursa olsun YENİ dosyayı çekmek zorunda kalır. Kullanıcı
+    # artık her deploy'dan sonra Ctrl+F5 / "clear site data" yapmak zorunda
+    # değil (Brave'de bayat call.js eski arama arayüzünü diriltip butonları
+    # ölü bırakıyordu — kullanıcı raporu). os.stat çağrısı mikrosaniyeler
+    # mertebesinde; sayfa başına ~10 varlık için cache'e gerek yok.
+    @app.url_defaults
+    def _static_cache_bust(endpoint, values):
+        if endpoint == "static" and "filename" in values and "v" not in values:
+            try:
+                fp = os.path.join(app.static_folder, values["filename"])
+                values["v"] = int(os.stat(fp).st_mtime)
+            except OSError:
+                pass  # dosya yoksa sürümsüz URL (404 zaten görünür olur)
 
     # PWA: servis çalışanı KÖK dizinden (/sw.js) sunulur — /static/sw.js olsaydı
     # varsayılan scope'u sadece /static/ ile sınırlı kalır, tüm siteyi kontrol edemezdi.

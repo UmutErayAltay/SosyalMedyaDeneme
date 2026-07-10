@@ -8,11 +8,12 @@ kapatıp her isteği yavaşlatır) ve çok-thread'li gerçek bir WSGI sunucusu
 from app import create_app
 
 app = create_app()
-# Statik dosyalar için tarayıcı cache'i (debug modunda 0'a zorlanıyordu).
-# NOT: Aktif geliştirme/arkadaşlarla test döneminde 12 saat cache, dağıtılan
-# her JS düzeltmesinin kullanıcılara ULAŞMAMASI demek (herkes Ctrl+F5'e
-# mahkûm kalıyordu) — 5 dakikaya çekildi; sürüm oturunca tekrar yükseltilir.
-app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 300
+# Statik dosyalar artık ?v=<mtime> ile sürümleniyor (bkz. app/__init__.py
+# _static_cache_bust) — dosya değişince URL de değişir, tarayıcı yeni halini
+# çekmek ZORUNDA kalır. Bu sayede uzun cache hem güvenli hem hızlı: eski
+# "5 dk" değeri (her JS düzeltmesi kullanıcılara ulaşsın diye kısaltılmıştı)
+# artık gereksiz, 1 güne çıkarıldı.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 86400
 
 if __name__ == "__main__":
     from waitress import serve
