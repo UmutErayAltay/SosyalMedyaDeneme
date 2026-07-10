@@ -219,6 +219,10 @@
 
     // --- Aktif Realtime kanalı: konuşmalar arası geçişte kapatılıp yeniden açılır ---
     var activeChannel = null;
+    // "Yazıyor..." broadcast'i AYRI, private+RLS korumalı bir kanalda akar —
+    // mesaj içeriği kanalına (activeChannel) BİLEREK dokunulmadı (bkz. aşağıdaki
+    // kurulum yorumu). Konuşma başına tek kanal, konuşma geçişinde yeniden kurulur.
+    var typingChannel = null;
 
     // Sol konuşma listesi CANLI güncellenir: yeni mesaj gelen/gönderilen
     // konuşma en üste taşınır ve önizleme metni yenilenir (kullanıcı isteği —
@@ -441,11 +445,11 @@
         // vakit kalmadan zaten yerini asıl mesaja bırakırdı, görünür bir
         // fayda sağlamaz.
         function sendTyping(isTyping, activity) {
-            if (!activeChannel) return;
+            if (!typingChannel) return;
             var now = Date.now();
             if (isTyping && now - lastTypingSentAt < 2000) return; // en fazla 2sn'de bir gönder
             lastTypingSentAt = isTyping ? now : 0;
-            activeChannel.send({
+            typingChannel.send({
                 type: 'broadcast', event: 'typing',
                 payload: { typing: isTyping, username: myUsername, activity: activity || 'text' },
             });
@@ -799,6 +803,10 @@
             try { window.supabaseClient.removeChannel(activeChannel); } catch (err) { /* yut */ }
             activeChannel = null;
         }
+        if (typingChannel && window.supabaseClient) {
+            try { window.supabaseClient.removeChannel(typingChannel); } catch (err) { /* yut */ }
+            typingChannel = null;
+        }
         if (!window.supabaseClient) startPollingFallback();
 
         if (window.supabaseClient) {
@@ -875,7 +883,27 @@
                     if (!deletedId) return;
                     var delEl = stream.querySelector('[data-msg-id="' + deletedId + '"]');
                     if (delEl) delEl.remove();
-                }).on('broadcast', { event: 'typing' }, function (msg) {
+                }).subscribe(function (status) {
+                    if (status === 'SUBSCRIBED') {
+                        stopPollingFallback(); // canlı kanal kuruldu, yoklamaya gerek yok
+                    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                        console.warn('Realtime bağlantı sorunu, durum:', status);
+                        startPollingFallback();
+                    }
+                });
+                activeChannel = channel;
+
+                // "Yazıyor..." broadcast'i AYRI bir private kanalda (mesaj
+                // kanalına dokunulmadı — private:true + realtime.messages RLS
+                // SADECE broadcast/presence'i etkiler, postgres_changes tablo
+                // RLS'inden bağımsız çalışmaya devam eder, bkz.
+                // sql/migration_realtime_broadcast_rls.sql). Sadece bu
+                // konuşmanın katılımcıları abone olabilir/gönderebilir —
+                // önceden herkese açık kanal adı bilmek yeterliydi.
+                typingChannel = window.supabaseClient.channel('typing:' + conversationId, {
+                    config: { broadcast: { self: false }, private: true }
+                });
+                typingChannel.on('broadcast', { event: 'typing' }, function (msg) {
                     if (!typingIndicator) return;
                     var payload = msg.payload || {};
                     if (typingClearTimer) clearTimeout(typingClearTimer);
@@ -905,15 +933,7 @@
                         typingIndicator.hidden = true;
                         typingIndicator.textContent = '';
                     }
-                }).subscribe(function (status) {
-                    if (status === 'SUBSCRIBED') {
-                        stopPollingFallback(); // canlı kanal kuruldu, yoklamaya gerek yok
-                    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                        console.warn('Realtime bağlantı sorunu, durum:', status);
-                        startPollingFallback();
-                    }
-                });
-                activeChannel = channel;
+                }).subscribe();
 
                 // WebRTC arama sistemi: call.js'i başlat
                 if (window.initCallSystem && !isGroup) {

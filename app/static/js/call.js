@@ -612,8 +612,11 @@
         if (_outboundChannels[targetId]) return _outboundChannels[targetId];
         _outboundChannels[targetId] = new Promise(function (resolve, reject) {
             if (!window.supabaseClient) { reject(new Error('supabase yok')); return; }
+            // private:true — realtime.messages RLS'i devreye girer, sadece
+            // ortak konuşması olan kullanıcılar bu hedefe sinyal gönderebilir
+            // (bkz. sql/migration_realtime_broadcast_rls.sql)
             var ch = window.supabaseClient.channel('calls:' + targetId, {
-                config: { broadcast: { self: false } }
+                config: { broadcast: { self: false }, private: true }
             });
             ch.subscribe(function (status) {
                 if (status === 'SUBSCRIBED') resolve(ch);
@@ -815,8 +818,10 @@
         }
 
         try {
+            // private:true — SADECE ben (auth.uid()===meId) kendi calls:<meId>
+            // kanalımı dinleyebilirim (bkz. sql/migration_realtime_broadcast_rls.sql)
             state.callsChannel = window.supabaseClient.channel('calls:' + meId, {
-                config: { broadcast: { self: false } }
+                config: { broadcast: { self: false }, private: true }
             });
 
             state.callsChannel.on('broadcast', { event: 'call-signal' }, function (msg) {
