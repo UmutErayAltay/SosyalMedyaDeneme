@@ -309,9 +309,21 @@ def refresh_session_tokens(force: bool = False) -> str | None:
                 if d.get("refresh_token"):
                     session["refresh_token"] = d["refresh_token"]
                 return session["access_token"]
+        if r.status_code in (400, 401, 403):
+            # Refresh token KESİN reddedildi (süresi dolmuş / iptal / başka
+            # projeden kalma — Tokyo→Frankfurt taşımasında eski oturumlar
+            # realtime'ı CHANNEL_ERROR ile SESSİZCE bozuk bırakmıştı).
+            # Yalnızca jetonlar düşürülür (session["user"] KALIR — render
+            # yolları refresh'ten sonra session["user"] okuyor, kırılmasın);
+            # /auth/realtime-token bunu görüp istemciye relogin işareti
+            # döner, istemci /logout'a gider → temiz giriş ekranı. Ağ/5xx
+            # gibi GEÇİCİ hatalar bu yola girmez (except'e düşer).
+            session.pop("access_token", None)
+            session.pop("refresh_token", None)
+            return None
     except Exception:
         pass
-    return access  # yenilenemedi — eski token'la devam (kullanıcı yeniden girmeli)
+    return access  # yenilenemedi (geçici hata) — eski token'la devam
 
 
 @bp.route("/auth/realtime-token")
@@ -321,4 +333,9 @@ def realtime_token():
     from flask import jsonify
     if "user" not in session:
         return jsonify(error="unauthorized"), 401
-    return jsonify(access_token=refresh_session_tokens() or "")
+    token = refresh_session_tokens()
+    if not token and "access_token" not in session:
+        # Jetonlar kesin ret sonrası düşürüldü — oturum canlı özellikler
+        # için ölü; istemci bu işaretle /logout'a gidip temiz giriş ister
+        return jsonify(access_token="", relogin=True)
+    return jsonify(access_token=token or "")

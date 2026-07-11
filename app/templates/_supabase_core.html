@@ -31,22 +31,25 @@
     // sunucudan taze token çekilir; call.js global arama dinleyicisi kanala
     // abone olmadan önce bu promise'i bekler (bayat token'la subscribe
     // CHANNEL_ERROR üretebilir).
+    // relogin işareti: sunucu, refresh token'ın KESİN reddedildiğini söylüyor
+    // (süresi dolmuş/iptal/proje değişmiş) — oturum canlı özellikler için ölü,
+    // yarı-çalışır bırakma: temiz çıkışa götür, kullanıcı yeniden giriş yapar.
+    function handleTokenResponse(d) {
+        if (d && d.relogin) { window.location.href = '/logout'; return; }
+        if (d && d.access_token) {
+            window.SB_ACCESS_TOKEN = d.access_token;
+            window.supabaseClient.realtime.setAuth(d.access_token);
+        }
+    }
     window.SB_TOKEN_READY = fetch('/auth/realtime-token')
         .then(function (r) { return r.json(); })
-        .then(function (d) {
-            if (d.access_token) {
-                window.SB_ACCESS_TOKEN = d.access_token;
-                window.supabaseClient.realtime.setAuth(d.access_token);
-            }
-        })
+        .then(handleTokenResponse)
         .catch(function () { /* eldeki gömülü token'la devam */ });
     // Uzun süre açık kalan sekmede token bayatlar — 30 dakikada bir tazele
     setInterval(function () {
         fetch('/auth/realtime-token')
             .then(function (r) { return r.json(); })
-            .then(function (d) {
-                if (d.access_token) window.supabaseClient.realtime.setAuth(d.access_token);
-            })
+            .then(handleTokenResponse)
             .catch(function () { /* bir sonraki turda tekrar denenir */ });
     }, 30 * 60 * 1000);
 })();
