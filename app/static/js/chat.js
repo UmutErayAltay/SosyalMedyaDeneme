@@ -914,6 +914,8 @@
                             fetch('/messages/' + conversationId + '/mark-read', {
                                 method: 'POST',
                                 headers: { 'X-CSRF-Token': csrfIn ? csrfIn.value : '' }
+                            }).then(function () {
+                                if (window.refreshMessagesBadge) window.refreshMessagesBadge();
                             }).catch(function () { /* rozet en geç sayfa yenilemede düzelir */ });
                         }
                     }

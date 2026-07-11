@@ -30,6 +30,10 @@
     }
 
     setInterval(poll, 25000);
+    // Sunucu render'ındaki rozet 20sn cache'li ve tam-sayfa sohbet açılışında
+    // okundu yazımı arka plan havuzunda koşuyor — render anındaki sayı bayat
+    // olabilir. Kısa gecikmeli tek poll gerçek değere oturtur.
+    setTimeout(poll, 2000);
     // Gerçek-zamanlı tetikleme kancası (bkz. liveBadges.js) — polling
     // artık sadece güvenlik ağı
     window.refreshMessagesBadge = poll;

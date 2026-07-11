@@ -47,6 +47,11 @@ def _mark_read(sb, conversation_id: str, me: str, messages: list[dict]) -> None:
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
         sb.table("messages").update({"read_at": now_iso}).in_("id", unread_ids).execute()
+        # Navbar rozeti context processor'da 20sn cache'li — düşürülmezse
+        # kullanıcı sohbeti okuduktan sonra da sayfadan sayfaya bayat sayı
+        # taşınıyordu (kullanıcı raporu: "sayı gitmiyor")
+        from ..cache import invalidate
+        invalidate(f"unread_msgs:{me}")
     except Exception:
         pass
 
@@ -114,7 +119,11 @@ def _notify_conversation(sb, conversation_id: str, sender_id: str) -> None:
     others = sb.table("conversation_participants").select("user_id").eq(
         "conversation_id", conversation_id
     ).neq("user_id", sender_id).execute().data
+    from ..cache import invalidate
     for o in others:
+        # Alıcının navbar rozet cache'i taze mesajı hemen görsün (bildirim
+        # bastırılsa bile mesaj okunmamış — presence kontrolünden ÖNCE düşür)
+        invalidate(f"unread_msgs:{o['user_id']}")
         if is_active_in(o["user_id"], conversation_id):
             continue
         notify(sb, recipient_id=o["user_id"], actor_id=sender_id,

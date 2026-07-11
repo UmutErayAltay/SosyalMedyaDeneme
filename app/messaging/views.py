@@ -239,6 +239,9 @@ def mark_conversation_read(conversation_id):
             {"read_at": datetime.now(timezone.utc).isoformat()}
         ).eq("conversation_id", conversation_id).neq(
             "sender_id", me).is_("read_at", "null").execute()
+        # Rozet cache'i düşür — bkz. _common._mark_read'deki not
+        from ..cache import invalidate
+        invalidate(f"unread_msgs:{me}")
     except Exception:
         pass  # read_at migration'ı yoksa sessizce atla (_mark_read ile aynı tavır)
     # Sohbet AÇIKKEN düşen mesajın bildirimi de (varsa) okundu sayılır

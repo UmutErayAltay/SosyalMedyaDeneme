@@ -104,6 +104,9 @@
                 fetch('/messages/' + convId + '/mark-read', {
                     method: 'POST',
                     headers: { 'X-CSRF-Token': csrfMeta.content }
+                }).then(function () {
+                    // Okundu yazıldı — navbar rozeti 25sn poll'u beklemeden insin
+                    if (window.refreshMessagesBadge) window.refreshMessagesBadge();
                 }).catch(function () { /* rozet en geç polling'de düzelir */ });
             }
 
