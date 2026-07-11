@@ -348,7 +348,10 @@ def preferences():
                 payload, on_conflict="user_id"
             ).execute()
             flash("Bildirim tercihlerin kaydedildi.", "success")
-        except Exception:
+        except Exception as e:
+            # Kolon eksikse (migration uygulanmamışsa) veya başka DB hatası
+            import sys
+            print(f"Bildirim tercihleri upsert hatası: {e}", file=sys.stderr)
             flash("Bildirim tercihleri henüz kullanılamıyor, daha sonra tekrar dene.", "error")
         return redirect(url_for("notifications.preferences"))
 

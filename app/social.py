@@ -233,14 +233,24 @@ def react_comment(comment_id):
                 "reaction": reaction,
             }).execute()
             if comment_owner_id != me:
-                notify(sb, recipient_id=comment_owner_id, actor_id=me,
-                       type_="comment_reaction", post_id=post_id, comment_id=comment_id)
+                try:
+                    notify(sb, recipient_id=comment_owner_id, actor_id=me,
+                           type_="comment_reaction", post_id=post_id, comment_id=comment_id)
+                except Exception as notify_error:
+                    # notify() başarısızlığı tepki eklemeyi engellemesin;
+                    # kolon eksikse (migration uygulanmamışsa) sessizce yut
+                    import sys
+                    print(f"Bildirim hatası (ignored): {notify_error}", file=sys.stderr)
             return jsonify(ok=True, reaction=reaction), 201
 
     except Exception as e:
         if "comment_reactions" in str(e) or "does not exist" in str(e):
             return jsonify({"error": "feature_not_yet_active"}), 503
-        raise
+        # Başka hata: JSON döndür (HTML 500 değil) ama iç hata metnini
+        # istemciye SIZDIRMA — detay sunucu loguna
+        import sys
+        print(f"react_comment hatası: {e}", file=sys.stderr)
+        return jsonify({"error": "server_error"}), 500
 
 
 # ----------------------- YORUM YANITLAMA -----------------------
