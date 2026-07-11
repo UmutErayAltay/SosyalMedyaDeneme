@@ -296,7 +296,7 @@
                                 gifPanel.id = 'gif-picker-reply-panel-' + replyForm.dataset.parentId;
                                 gifPanel.className = 'gif-picker-comment-panel';
                                 gifPanel.innerHTML = '<div class="gif-picker-search"><input type="text" class="gif-search-reply" placeholder="GIF ara..." aria-label="GIF ara"></div>' +
-                                    '<div class="gif-results-grid gif-results-reply" style="max-height: 250px; overflow-y: auto;"></div>' +
+                                    '<div class="gif-results-grid gif-results-reply" style="max-height: 250px;"></div>' +
                                     '<p class="muted center gif-loading-reply" hidden style="margin-top: 8px;">Yükleniyor...</p>';
                                 replyForm.appendChild(gifPanel);
                                 var searchInput = gifPanel.querySelector('.gif-search-reply');

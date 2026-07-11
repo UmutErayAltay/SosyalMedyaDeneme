@@ -1293,6 +1293,14 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     display: flex; flex-direction: column; min-width: 180px; padding: 6px;
 }
 .attach-menu[hidden] { display: none; }
+/* Post modalında ⋯ menüsü yukarı değil YANA açılır: yukarı açılım modalın
+   üst kenarından taşıyor, .modal'ın overflow-y'si ilk öğeyi (Görsel Ekle)
+   kırpıp okunmaz/tıklanmaz yapıyordu. Sağa açılım modal kutusu içinde kalır.
+   Mesajlardaki drop-up (.msg-attach-menu, input altta) etkilenmez. */
+#post-modal .attach-menu {
+    bottom: auto; left: calc(100% + 8px);
+    top: 50%; transform: translateY(-50%);
+}
 .attach-menu-item {
     display: flex; align-items: center; gap: 8px;
     padding: 10px 12px; border-radius: 8px; cursor: pointer;
@@ -1608,13 +1616,16 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 }
 .gif-picker {
     display: grid; grid-template-columns: repeat(3, 1fr);
-    gap: 8px; max-height: 240px; overflow-y: auto;
+    gap: 8px; max-height: 240px; overflow-y: auto; overflow-x: hidden;
+    /* hover scale scrollHeight'ı büyütüp dikey scrollbar'ı aç/kapatıyordu →
+       genişlik değişip grid yeniden akıyordu (titreşim); gutter sabitlenir */
+    scrollbar-gutter: stable;
     border: 1px solid var(--border); border-radius: 6px; padding: 8px;
     background: var(--bg);
 }
 .gif-picker-img {
     aspect-ratio: 1; object-fit: cover; border-radius: 4px;
-    cursor: pointer; transition: transform 0.1s;
+    cursor: pointer; transition: transform 0.1s; transform-origin: center;
 }
 .gif-picker-img:hover { transform: scale(1.05); }
 
@@ -2295,6 +2306,7 @@ header[role="banner"] {
     border-radius: var(--radius-lg);
     padding: var(--space-3);
     margin-top: var(--space-2);
+    overflow: hidden;
 }
 
 .gif-picker-msg-panel[hidden] { display: none; }
@@ -2324,6 +2336,10 @@ header[role="banner"] {
     gap: var(--space-2);
     max-height: 300px;
     overflow-y: auto;
+    overflow-x: hidden;
+    /* auto-fill + beliren/kaybolan dikey scrollbar = sütun sayısı değişip
+       GIF'lerin alt satıra kayması (titreşim) — gutter sabitlenir */
+    scrollbar-gutter: stable;
 }
 
 .gif-picker-img {
@@ -2333,6 +2349,7 @@ header[role="banner"] {
     border-radius: var(--radius-md);
     cursor: pointer;
     transition: transform 0.15s;
+    transform-origin: center;
 }
 
 .gif-picker-img:hover {
@@ -2383,6 +2400,8 @@ header[role="banner"] {
     margin-top: var(--space-2);
     max-height: 350px;
     overflow-y: auto;
+    scrollbar-gutter: stable;
+    overflow-x: hidden;
 }
 
 .gif-picker-comment-panel[hidden] { display: none; }
