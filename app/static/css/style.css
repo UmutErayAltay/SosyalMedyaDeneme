@@ -1132,6 +1132,13 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 /* Inbox */
 .inbox-item { display: flex; align-items: center; gap: 12px; }
 .inbox-item .preview { margin-top: 2px; }
+/* Okunmamış sohbet: önizleme vurgulu + sağda nokta (sohbet açılınca
+   messagesPanel.js class'ı ve noktayı kaldırır) */
+.inbox-item.unread .preview { color: var(--text); font-weight: 600; }
+.unread-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--primary); margin-left: auto; flex-shrink: 0;
+}
 
 /* =========================
    GÖRSEL YÜKLEME & POST GÖRSELLERİ

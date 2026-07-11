@@ -110,7 +110,15 @@
             layout.classList.add('showing-panel');
 
             document.querySelectorAll('.inbox-item').forEach(function (item) {
-                item.classList.toggle('active', item.getAttribute('href') === url);
+                var isActive = item.getAttribute('href') === url;
+                item.classList.toggle('active', isActive);
+                // Sohbet açıldı = okundu: nokta ve vurgu anında kalksın
+                // (sunucu tarafı zaten yukarıdaki mark-read POST'uyla okunur)
+                if (isActive) {
+                    item.classList.remove('unread');
+                    var dot = item.querySelector('.unread-dot');
+                    if (dot) dot.remove();
+                }
             });
 
             if (push) history.pushState({}, '', url);

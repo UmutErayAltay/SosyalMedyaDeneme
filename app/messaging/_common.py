@@ -227,14 +227,28 @@ def _build_convos(sb, me: str) -> list[dict]:
             except Exception:
                 return {}
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        def _fetch_unread():
+            # Okunmamış mesajı olan sohbetler (sol listedeki nokta) — navbar
+            # rozetiyle (unread_message_count) aynı mantık: mesaj değil sohbet
+            # bazlı. Gruplar aşağıda zaten elenir (read_at gruplarda set edilmez).
+            try:
+                rows = sb.table("messages").select("conversation_id").in_(
+                    "conversation_id", cids
+                ).neq("sender_id", me).is_("read_at", "null").execute().data
+                return {r["conversation_id"] for r in rows}
+            except Exception:
+                return set()
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
             meta_future = executor.submit(_fetch_conv_meta)
             others_future = executor.submit(_fetch_others)
             messages_future = executor.submit(_fetch_messages)
+            unread_future = executor.submit(_fetch_unread)
 
             conv_meta = meta_future.result()
             others_by_cid = others_future.result()
             last_by_cid = messages_future.result()
+            unread_cids = unread_future.result()
 
         convos = []
         for cid in cids:
@@ -248,6 +262,10 @@ def _build_convos(sb, me: str) -> list[dict]:
                 "is_group": is_group,
                 "name": meta.get("name") if is_group else None,
                 "member_count": len(other_list) + 1 if is_group else None,
+                # Gruplarda read_at hiç set edilmediğinden bayrak hep True
+                # kalırdı — bilerek dışlanır (rozetle aynı gerekçe, bkz.
+                # unread_message_count docstring'i)
+                "unread": (not is_group) and cid in unread_cids,
             })
 
     convos.sort(key=lambda c: c["last_message"]["created_at"]

@@ -6,8 +6,11 @@
     </div>
     <div class="inbox-list" id="inbox-list">
         {% for c in convos %}
+        {# Aktif sohbette unread gösterilmez: okundu yazımı arka plan havuzunda
+           koştuğu için bayrak render anında hâlâ dolu olabilir #}
+        {% set show_unread = c.unread and c.id != active_id %}
         <a href="{{ url_for('messaging.conversation', conversation_id=c.id) }}"
-           class="card inbox-item{{ ' active' if c.id == active_id else '' }}"
+           class="card inbox-item{{ ' active' if c.id == active_id else '' }}{{ ' unread' if show_unread else '' }}"
            data-conversation-id="{{ c.id }}">
             {% if c.is_group %}
                 <div class="avatar avatar-placeholder" aria-hidden="true">👥</div>
@@ -25,6 +28,7 @@
                 <p class="muted preview">Mesaj yok</p>
                 {% endif %}
             </div>
+            {% if show_unread %}<span class="unread-dot" aria-label="Okunmamış mesaj"></span>{% endif %}
         </a>
         {% else %}
         <p class="muted">Henüz konuşma yok. Birinin profiline gidip "Mesaj gönder" de.</p>

@@ -234,6 +234,18 @@
             var p = item.querySelector('.preview');
             if (p) p.textContent = String(preview).slice(0, 40);
         }
+        // Açık OLMAYAN sohbete mesaj geldi → okunmamış işaretle (açık sohbet
+        // zaten okunuyor; kendi gönderdiğimiz mesaj da hep aktif sohbette).
+        // Temizleme: messagesPanel.js sohbeti açarken class+noktayı kaldırır.
+        if (!item.classList.contains('active')) {
+            item.classList.add('unread');
+            if (!item.querySelector('.unread-dot')) {
+                var dot = document.createElement('span');
+                dot.className = 'unread-dot';
+                dot.setAttribute('aria-label', 'Okunmamış mesaj');
+                item.appendChild(dot);
+            }
+        }
         var parent = item.parentNode;
         var first = parent ? parent.querySelector('.inbox-item') : null;
         if (first && first !== item) parent.insertBefore(item, first);
