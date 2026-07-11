@@ -56,3 +56,6 @@
    yeniden oluşuyor), bu yüzden script burada bir kez yüklenip document-level
    delegation ile çalışıyor — bkz. groupAdmin.js başındaki not. #}
 <script src="{{ url_for('static', filename='js/groupAdmin.js') }}"></script>
+{# groupCall.js: grup sesli/görüntülü arama (LiveKit) — panel AJAX ile
+   yeniden oluştuğu için document-level delegation ve initCallBar ile çalışır. #}
+<script src="{{ url_for('static', filename='js/groupCall.js') }}"></script>

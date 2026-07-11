@@ -24,4 +24,4 @@ from flask import Blueprint
 
 bp = Blueprint("messaging", __name__)
 
-from . import views, sending, creation, group_admin, reactions  # noqa: E402,F401
+from . import views, sending, creation, group_admin, reactions, group_calls  # noqa: E402,F401
