@@ -288,6 +288,13 @@
             <p class="story-caption" id="story-viewer-caption" hidden></p>
             <div class="story-paused-indicator" id="story-paused-indicator" hidden>⏸</div>
         </div>
+        {# Kendi hikayene yanıt verilemez (Instagram deseni) — stories.js
+           openViewer() içinde data.is_mine'a göre hidden ayarlanır. Yanıt
+           sahibine DM olarak gider (bkz. app/stories.py reply_to_story). #}
+        <form class="story-reply-bar" id="story-reply-form" hidden>
+            <input type="text" id="story-reply-input" placeholder="Yanıt gönder..." maxlength="500" aria-label="Hikayeye yanıt yaz" autocomplete="off">
+            <button type="submit" class="story-reply-send-btn" aria-label="Yanıtı gönder">➤</button>
+        </form>
     </div>
 </div>
 

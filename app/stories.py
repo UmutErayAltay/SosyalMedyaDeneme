@@ -12,6 +12,7 @@ from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .storage_helper import upload_image, upload_video
 from .blocks import is_blocked_either_way
+from .messaging._common import _get_or_create_conversation, _notify_conversation
 
 bp = Blueprint("stories", __name__)
 
@@ -170,6 +171,44 @@ def user_stories(user_id):
         is_mine=(user_id == me),
         stories=rows,
     )
+
+
+@bp.route("/stories/<story_id>/reply", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def reply_to_story(story_id):
+    """Hikayeye yanıt — Instagram deseni: sahibine DM olarak gider, hikayenin
+    görseli (varsa) bağlam için mesaja iliştirilir. Kapsam bilinçli dar:
+    yorum/beğeni gibi hikayeye özgü bir depolama YOK, doğrudan mevcut
+    mesajlaşma sistemine düşer (bkz. dosya başı yorumu)."""
+    sb = get_sb()
+    me = session["user"]["id"]
+    text = (request.get_json(silent=True) or {}).get("text", "").strip()
+    if not text:
+        return jsonify(error="Yanıt boş olamaz."), 400
+    if len(text) > 500:
+        return jsonify(error="Yanıt çok uzun."), 400
+
+    story = sb.table("stories").select("user_id, image_url").eq("id", story_id).execute().data
+    if not story:
+        return jsonify(error="Hikaye bulunamadı."), 404
+    owner_id = story[0]["user_id"]
+    if owner_id == me:
+        return jsonify(error="Kendi hikayene yanıt veremezsin."), 400
+    if is_blocked_either_way(sb, me, owner_id):
+        return jsonify(error="Bu kullanıcıya mesaj gönderemezsin."), 403
+
+    conv_id = _get_or_create_conversation(me, owner_id)
+    reply_text = f"↩️ Hikayene yanıt:\n{text}"
+    sb.table("messages").insert({
+        "conversation_id": conv_id,
+        "sender_id": me,
+        "content": reply_text,
+        "image_url": story[0].get("image_url"),
+    }).execute()
+    _notify_conversation(sb, conv_id, me)
+
+    return jsonify(ok=True, conversation_id=conv_id)
 
 
 @bp.route("/stories/<story_id>/delete", methods=["POST"])

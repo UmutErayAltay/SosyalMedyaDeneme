@@ -100,7 +100,12 @@
             html += '</div>';
         }
         if (msg.audio_url) {
-            html += '<audio src="' + escapeHtml(msg.audio_url) + '" class="msg-audio" controls></audio>';
+            html += '<div class="voice-player" data-voice-player>'
+                + '<button type="button" class="voice-play-btn" aria-label="Sesli mesajı oynat">▶</button>'
+                + '<div class="voice-waveform" aria-hidden="true"></div>'
+                + '<span class="voice-duration">0:00</span>'
+                + '<audio src="' + escapeHtml(msg.audio_url) + '" class="msg-audio" preload="metadata" hidden></audio>'
+                + '</div>';
         }
         if (msg.content) {
             html += '<p>' + escapeHtml(msg.content) + '</p>';
@@ -275,6 +280,11 @@
         // bu attribute'suz gelir, gerçek geçişlerde init normal çalışır.
         if (panel.dataset.chatInit === '1') return;
         panel.dataset.chatInit = '1';
+
+        // Sunucu tarafında render edilmiş (sayfa açılışı/AJAX panel) sesli
+        // mesajların dalga formunu kur — sonradan eklenenler appendMessage()
+        // içinde ayrıca kurulur (bkz. o fonksiyon).
+        if (window.initVoicePlayers) window.initVoicePlayers(stream);
 
         var conversationId = panel.dataset.conversationId;
         var sendUrl = panel.dataset.sendUrl;
@@ -510,6 +520,7 @@
 
             stream.insertAdjacentHTML('beforeend', buildMessageHtml(msg, isMine, opts));
             scrollToBottom();
+            if (window.initVoicePlayers) window.initVoicePlayers(stream.lastElementChild);
             return stream.lastElementChild;
         }
 
@@ -532,6 +543,7 @@
         var voiceRecordingStatus = document.getElementById('voice-recording-status');
         var voiceRecordingStatusText = document.getElementById('voice-recording-status-text');
         var voicePreviewAudio = document.getElementById('voice-preview-audio');
+        var voiceRecordWaveform = document.getElementById('voice-record-waveform');
         var recordedVoiceBlob = null;
         var sendAfterStop = false;
 
@@ -552,6 +564,54 @@
             var recordingStartedAt = 0;
             var recordingTimer = null;
 
+            // --- Kayıt sırasında canlı dalga formu (AnalyserNode) ---
+            // Aynı mediaStream'den beslenir; kayıt bittiğinde/silindiğinde
+            // audioCtx kapatılır (yoksa sekme açık kaldıkça mikrofon analiz
+            // düğümü serbest bırakılmaz).
+            var RECORD_BAR_COUNT = 20;
+            var waveformBars = [];
+            var analyserCtx = null;
+            var analyser = null;
+            var analyserFreqData = null;
+            var waveformRafId = null;
+
+            if (voiceRecordWaveform && !voiceRecordWaveform.children.length) {
+                var barsHtml = '';
+                for (var wi = 0; wi < RECORD_BAR_COUNT; wi++) barsHtml += '<span class="voice-bar"></span>';
+                voiceRecordWaveform.innerHTML = barsHtml;
+                waveformBars = Array.prototype.slice.call(voiceRecordWaveform.querySelectorAll('.voice-bar'));
+            }
+
+            function stopWaveformAnalyser() {
+                if (waveformRafId) { cancelAnimationFrame(waveformRafId); waveformRafId = null; }
+                if (analyserCtx) { try { analyserCtx.close(); } catch (e) { /* zaten kapalı olabilir */ } analyserCtx = null; }
+                analyser = null;
+                waveformBars.forEach(function (bar) { bar.style.height = '20%'; });
+            }
+
+            function startWaveformAnalyser() {
+                var Ctx = window.AudioContext || window.webkitAudioContext;
+                if (!Ctx || !waveformBars.length) return;
+                try {
+                    analyserCtx = new Ctx();
+                    analyser = analyserCtx.createAnalyser();
+                    analyser.fftSize = 64;
+                    analyserFreqData = new Uint8Array(analyser.frequencyBinCount);
+                    analyserCtx.createMediaStreamSource(mediaStream).connect(analyser);
+                    (function drawFrame() {
+                        if (!analyser) return;
+                        analyser.getByteFrequencyData(analyserFreqData);
+                        for (var i = 0; i < waveformBars.length; i++) {
+                            var v = analyserFreqData[i] || 0;
+                            waveformBars[i].style.height = Math.max(15, Math.round((v / 255) * 100)) + '%';
+                        }
+                        waveformRafId = requestAnimationFrame(drawFrame);
+                    })();
+                } catch (e) {
+                    // Web Audio API kısıtlıysa (nadir) sessizce geç — kayıt/gönderme etkilenmez
+                }
+            }
+
             function resetVoiceUI() {
                 input.hidden = false;
                 voiceRecordingStatus.hidden = true;
@@ -565,6 +625,7 @@
                 recordedVoiceBlob = null;
                 recordedChunks = [];
                 sendAfterStop = false;
+                stopWaveformAnalyser();
                 if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
             }
 
@@ -583,6 +644,7 @@
                 mediaRecorder.onstop = function () {
                     recordedVoiceBlob = new Blob(recordedChunks, { type: 'audio/webm' });
                     mediaStream.getTracks().forEach(function (t) { t.stop(); });
+                    stopWaveformAnalyser();
 
                     // Gönder tuşu kaydediyorsa, durdurmadan sonra direkt gönder
                     // (önizleme seçeneği atlanır). Sayaç durdurulup durum metni
@@ -616,6 +678,7 @@
                 voiceRecordingStatusText.textContent = '🔴 Kaydediliyor... 0:00';
                 voiceBtn.textContent = '⏹';
                 voiceBtn.classList.add('recording');
+                startWaveformAnalyser();
                 sendTyping(true, 'voice');
                 recordingTimer = setInterval(function () {
                     voiceRecordingStatusText.textContent = '🔴 Kaydediliyor... ' + formatElapsed(Date.now() - recordingStartedAt);
@@ -637,6 +700,117 @@
             });
 
             voiceDiscardBtn.addEventListener('click', resetVoiceUI);
+        }
+
+        // --- Sohbet içi mesaj arama ---
+        // Sonuç tıklanınca DOM'da (son N mesaj) varsa kaydırıp vurgular;
+        // yoksa (henüz yüklenmemiş eski mesaj) `?all=1#msg-<id>` ile tam
+        // geçmişi çeken tam sayfa gezinmeye düşer — aşağıdaki hash-jump
+        // bloğu o durumda devreye girer.
+        var searchToggleBtn = document.getElementById('msg-search-toggle-btn');
+        var searchBar = document.getElementById('msg-search-bar');
+        var searchInput = document.getElementById('msg-search-input');
+        var searchCloseBtn = document.getElementById('msg-search-close-btn');
+        var searchResults = document.getElementById('msg-search-results');
+
+        function highlightMatch(text, q) {
+            var idx = text.toLowerCase().indexOf(q.toLowerCase());
+            if (idx === -1) return escapeHtml(text);
+            var before = escapeHtml(text.slice(0, idx));
+            var match = escapeHtml(text.slice(idx, idx + q.length));
+            var after = escapeHtml(text.slice(idx + q.length));
+            return before + '<mark>' + match + '</mark>' + after;
+        }
+
+        function jumpToMessage(msgId) {
+            var target = stream.querySelector('[data-msg-id="' + msgId + '"]');
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                target.classList.add('msg-jump-highlight');
+                setTimeout(function () { target.classList.remove('msg-jump-highlight'); }, 1700);
+            } else {
+                window.location.href = '/messages/' + conversationId + '?all=1#msg-' + msgId;
+            }
+        }
+
+        function closeSearch() {
+            if (!searchBar) return;
+            searchBar.hidden = true;
+            searchResults.hidden = true;
+            searchResults.innerHTML = '';
+            searchInput.value = '';
+            if (searchToggleBtn) searchToggleBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        if (searchToggleBtn && searchBar && searchInput && searchResults) {
+            var searchDebounce = null;
+            var searchSeq = 0;
+
+            searchToggleBtn.addEventListener('click', function () {
+                if (searchBar.hidden) {
+                    searchBar.hidden = false;
+                    searchToggleBtn.setAttribute('aria-expanded', 'true');
+                    searchInput.focus();
+                } else {
+                    closeSearch();
+                }
+            });
+
+            if (searchCloseBtn) searchCloseBtn.addEventListener('click', closeSearch);
+
+            searchInput.addEventListener('input', function () {
+                var q = searchInput.value.trim();
+                clearTimeout(searchDebounce);
+                if (q.length < 2) {
+                    searchResults.hidden = true;
+                    searchResults.innerHTML = '';
+                    return;
+                }
+                searchDebounce = setTimeout(function () {
+                    var seq = ++searchSeq;
+                    fetch('/messages/' + conversationId + '/search?q=' + encodeURIComponent(q))
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (seq !== searchSeq) return; // bayat yanıt, daha yeni arama var
+                            var results = data.results || [];
+                            searchResults.hidden = false;
+                            if (results.length === 0) {
+                                searchResults.innerHTML = '<p class="msg-search-empty">Sonuç bulunamadı.</p>';
+                                return;
+                            }
+                            searchResults.innerHTML = results.map(function (r) {
+                                var senderLabel = r.mine ? 'Sen' : escapeHtml(r.sender);
+                                return '<button type="button" class="msg-search-result" data-msg-id="' + r.id + '">' +
+                                    '<span class="msg-search-sender">' + senderLabel + '</span>' +
+                                    '<span class="msg-search-snippet">' + highlightMatch(r.content, q) + '</span>' +
+                                    '</button>';
+                            }).join('');
+                        })
+                        .catch(function () { /* arama başarısız olursa sessizce geç */ });
+                }, 300);
+            });
+
+            searchResults.addEventListener('click', function (e) {
+                var item = e.target.closest('.msg-search-result');
+                if (!item) return;
+                jumpToMessage(item.dataset.msgId);
+                closeSearch();
+            });
+        }
+
+        // Sayfa `?all=1#msg-<id>` ile açıldıysa (arama sonucunda DOM'da
+        // bulunamayan eski mesaja tam-geçmiş üzerinden gelindi) hedefe kaydır.
+        var hashMatch = /^#msg-([0-9a-f-]{36})$/i.exec(window.location.hash);
+        if (hashMatch) {
+            var jumpTarget = stream.querySelector('[data-msg-id="' + hashMatch[1] + '"]');
+            if (jumpTarget) {
+                setTimeout(function () {
+                    jumpTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    jumpTarget.classList.add('msg-jump-highlight');
+                    setTimeout(function () { jumpTarget.classList.remove('msg-jump-highlight'); }, 1700);
+                }, 50);
+                history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
         }
 
         // --- GIF Toggle ve Search ---
@@ -879,6 +1053,7 @@
                     });
                     if (added) {
                         formatSharedPosts(stream);
+                        if (window.initVoicePlayers) window.initVoicePlayers(stream);
                         // Kullanıcı en alttaysa yeni mesaja kaydır (yukarı okuyorsa rahatsız etme)
                         if (stream.scrollHeight - stream.scrollTop - stream.clientHeight < 160) scrollToBottom();
                     }

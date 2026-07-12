@@ -48,6 +48,13 @@
                 {% endif %}
             </button>
             <div class="conv-call-buttons">
+                <button type="button" class="conv-call-btn" id="msg-search-toggle-btn"
+                        aria-label="Sohbette ara" title="Sohbette ara" aria-expanded="false">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                </button>
                 <button type="button" class="conv-call-btn" data-group-call="audio"
                         aria-label="Sesli arama başlat" title="Sesli arama">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -79,6 +86,13 @@
             {# Çevrimiçi göstergesi — chat.js /active ping yanıtıyla doldurur #}
             <span id="conv-presence" class="conv-presence" hidden></span>
             <div class="conv-call-buttons">
+                <button type="button" class="conv-call-btn" id="msg-search-toggle-btn"
+                        aria-label="Sohbette ara" title="Sohbette ara" aria-expanded="false">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                </button>
                 <button type="button" class="conv-call-btn" id="call-voice-btn"
                         aria-label="Sesli arama başlat" title="Sesli arama">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -100,6 +114,19 @@
             </div>
         {% endif %}
     </header>
+
+    {# Sohbet içi mesaj arama — msg-search-toggle-btn ile açılır/kapanır
+       (chat.js). Sonuç tıklanınca DOM'da açıksa kaydırıp vurgular, yoksa
+       (henüz yüklenmemiş eski mesaj) tam geçmişi (?all=1) çeker. #}
+    <div class="msg-search-bar" id="msg-search-bar" hidden>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" id="msg-search-input" placeholder="Sohbette ara..." aria-label="Sohbette mesaj ara">
+        <button type="button" id="msg-search-close-btn" aria-label="Aramayı kapat">×</button>
+    </div>
+    <div class="msg-search-results" id="msg-search-results" hidden></div>
 
     {# Grup arama çubuğu — başlığa gizli, groupCall.js tarafından doldurulur #}
     <div class="grp-call-bar" id="grp-call-bar" hidden></div>
@@ -130,7 +157,15 @@
                 <img src="{{ m.image_url }}" class="msg-image" alt="Görsel mesaj" loading="lazy">
             {% endif %}
             {% if m.audio_url %}
-                <audio src="{{ m.audio_url }}" class="msg-audio" controls></audio>
+                {# Dalga formu voiceWaveform.js tarafından decodeAudioData ile
+                   çizilir; native <audio> gizli kalıp SADECE oynatma motoru
+                   olarak kullanılır (controls YOK — özel play/seek arayüzü). #}
+                <div class="voice-player" data-voice-player>
+                    <button type="button" class="voice-play-btn" aria-label="Sesli mesajı oynat">▶</button>
+                    <div class="voice-waveform" aria-hidden="true"></div>
+                    <span class="voice-duration">0:00</span>
+                    <audio src="{{ m.audio_url }}" class="msg-audio" preload="metadata" hidden></audio>
+                </div>
             {% endif %}
             {% if m.content %}
                 <p>{{ m.content }}</p>
@@ -250,6 +285,7 @@
                       aria-label="Mesaj içeriği"></textarea>
             <div id="voice-recording-status" class="voice-recording-status" aria-live="polite" hidden>
                 <span id="voice-recording-status-text"></span>
+                <div id="voice-record-waveform" class="voice-record-waveform" aria-hidden="true"></div>
                 <button type="button" id="voice-stop-btn" class="voice-stop-inline-btn" aria-label="Kaydı durdur">⏹</button>
             </div>
             <audio id="voice-preview-audio" class="voice-preview-audio" hidden controls></audio>

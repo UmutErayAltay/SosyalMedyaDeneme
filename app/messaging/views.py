@@ -272,3 +272,39 @@ def mark_conversation_active(conversation_id):
     mark_active(me, conversation_id)
     here = sum(1 for uid in ids if uid != me and is_active_in(uid, conversation_id))
     return jsonify(ok=True, here=here)
+
+
+@bp.route("/<conversation_id>/search")
+@login_required
+@retry_on_connection_error
+def search_conversation_messages(conversation_id):
+    """Sohbet içi mesaj arama — sadece metin (content) alanında ILIKE.
+
+    Katılımcı olmayan 404 (enumeration koruması, mark-read/active ile aynı
+    desen). Sonuçlar en yeniden eskiye, `id` chat.js'in DOM'da (`[data-msg-id]`)
+    arayıp kaydırması veya bulunamazsa `?all=1#msg-<id>`'ye gitmesi için döner.
+    """
+    sb = get_sb()
+    me = session["user"]["id"]
+    q = request.args.get("q", "").strip()
+    part = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id).eq("user_id", me).execute().data
+    if not part:
+        abort(404)
+    if len(q) < 2:
+        return jsonify(results=[])
+
+    rows = sb.table("messages").select(
+        "id, content, created_at, sender_id, profiles!messages_sender_id_fkey(username)"
+    ).eq("conversation_id", conversation_id).ilike(
+        "content", f"%{q}%"
+    ).order("created_at", desc=True).limit(30).execute().data
+
+    results = [{
+        "id": r["id"],
+        "content": r["content"] or "",
+        "created_at": r["created_at"],
+        "mine": r["sender_id"] == me,
+        "sender": (r.get("profiles") or {}).get("username") or "?",
+    } for r in rows]
+    return jsonify(results=results)

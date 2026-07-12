@@ -97,6 +97,10 @@
     var viewerCaption = document.getElementById('story-viewer-caption');
     var navPrev = document.getElementById('story-nav-prev');
     var navNext = document.getElementById('story-nav-next');
+    var replyForm = document.getElementById('story-reply-form');
+    var replyInput = document.getElementById('story-reply-input');
+    var replySendBtn = replyForm ? replyForm.querySelector('.story-reply-send-btn') : null;
+    var replyAutoPaused = false;
 
     var currentStories = [];
     var currentIndex = 0;
@@ -242,6 +246,11 @@
             else { viewerAvatar.hidden = true; }
             deleteBtn.hidden = !data.is_mine;
             highlightBtn.hidden = !data.is_mine;
+            // Kendi hikayene yanıt verilemez (Instagram deseni)
+            if (replyForm) {
+                replyForm.hidden = data.is_mine;
+                if (replyInput) replyInput.value = '';
+            }
 
             buildProgressBars();
             viewerModal.hidden = false;
@@ -345,9 +354,55 @@
     document.addEventListener('keydown', function (e) {
         if (!viewerModal || viewerModal.hidden) return;
         if (e.key === 'Escape') { closeViewer(); return; }
+        // Yanıt kutusuna yazarken ok tuşları imleç hareketi için kullanılır —
+        // hikaye gezinmesini TETİKLEMESİN (kullanıcı metin içinde gezinemezdi)
+        if (document.activeElement === replyInput) return;
         if (e.key === 'ArrowRight') showStory(currentIndex + 1);
         else if (e.key === 'ArrowLeft') showStory(currentIndex - 1);
     });
+
+    // Yanıt kutusuna odaklanınca hikaye duraklat (Instagram deseni) — yazarken
+    // hikaye kayıp gitmesin. Yalnızca BU odaklanma duraklattıysa blur'da devam
+    // ettir (kullanıcı zaten manuel duraklatmışsa onu ezme).
+    if (replyInput) {
+        replyInput.addEventListener('focus', function () {
+            if (!isPaused) { replyAutoPaused = true; setPaused(true); }
+        });
+        replyInput.addEventListener('blur', function () {
+            if (replyAutoPaused) { replyAutoPaused = false; setPaused(false); }
+        });
+    }
+
+    if (replyForm) {
+        replyForm.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            var text = (replyInput.value || '').trim();
+            if (!text || !currentStories.length) return;
+            var storyId = currentStories[currentIndex].id;
+            replySendBtn.disabled = true;
+            try {
+                var res = await fetch('/stories/' + storyId + '/reply', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfHeader(),
+                        'X-Requested-With': 'fetch',
+                    },
+                    body: JSON.stringify({ text: text }),
+                });
+                var data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Yanıt gönderilemedi.');
+                replyInput.value = '';
+                var originalPlaceholder = replyInput.placeholder;
+                replyInput.placeholder = 'Gönderildi ✓';
+                setTimeout(function () { replyInput.placeholder = originalPlaceholder; }, 2000);
+            } catch (err) {
+                alert(err.message || 'Yanıt gönderilemedi.');
+            } finally {
+                replySendBtn.disabled = false;
+            }
+        });
+    }
 
     if (viewerModal) {
         viewerModal.addEventListener('click', function (e) {
