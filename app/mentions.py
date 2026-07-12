@@ -28,13 +28,19 @@ def extract_mentions(content: str) -> list[str]:
 
 
 def notify_mentions(sb, *, actor_id: str, content: str,
-                     post_id: str | None = None, comment_id: str | None = None) -> None:
+                     post_id: str | None = None, comment_id: str | None = None,
+                     conversation_id: str | None = None,
+                     allowed_ids: set | None = None) -> None:
     """İçerikte geçen, GERÇEKTEN VAR OLAN kullanıcı adlarına mention bildirimi yollar.
 
     sql/migration_mentions.sql henüz uygulanmamışsa notifications.type CHECK kısıtı
     'mention' değerini reddeder — post/yorum paylaşımı bundan etkilenmesin diye
     try/except ile sessizce atlanır (like/comment/follow gibi çekirdek bildirimler
     zaten ayrı notify() çağrılarıyla gönderilir, bu satır sadece ek bir bildirim).
+
+    `allowed_ids` verilmişse (mesaj etiketlemesi — bkz. messaging/sending.py)
+    SADECE bu kümedeki kullanıcı adları bildirim alır: bir sohbette geçmeyen
+    birini @etiketlemek onu mesajı görmediği halde bildirim göndermemeli.
     """
     usernames = extract_mentions(content)
     if not usernames:
@@ -42,9 +48,13 @@ def notify_mentions(sb, *, actor_id: str, content: str,
     try:
         for uname in usernames:
             prof = sb.table("profiles").select("id").ilike("username", uname).execute().data
-            if prof and prof[0]["id"] != actor_id:
-                notify(sb, recipient_id=prof[0]["id"], actor_id=actor_id,
-                       type_="mention", post_id=post_id, comment_id=comment_id)
+            if not prof or prof[0]["id"] == actor_id:
+                continue
+            if allowed_ids is not None and prof[0]["id"] not in allowed_ids:
+                continue
+            notify(sb, recipient_id=prof[0]["id"], actor_id=actor_id,
+                   type_="mention", post_id=post_id, comment_id=comment_id,
+                   conversation_id=conversation_id)
     except Exception:
         pass
 

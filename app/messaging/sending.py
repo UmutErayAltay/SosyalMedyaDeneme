@@ -7,6 +7,7 @@ from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..storage_helper import upload_image, upload_audio
 from ..blocks import is_blocked_either_way
+from ..mentions import notify_mentions
 
 
 @bp.route("/<conversation_id>/send", methods=["POST"])
@@ -115,6 +116,12 @@ def send_message(conversation_id):
         try:
             with app.test_request_context():
                 _notify_conversation(sb, conversation_id, me)
+                # @etiketleme SADECE sohbetin katılımcılarına bildirim gönderir —
+                # mesajı görmeyen biri @'lense bile bildirim almamalı.
+                if content:
+                    notify_mentions(sb, actor_id=me, content=content,
+                                     conversation_id=conversation_id,
+                                     allowed_ids={o["user_id"] for o in others})
         except Exception:
             pass  # bildirim düşmezse mesajın kendisi zaten ulaştı — kritik değil
 

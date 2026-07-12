@@ -7,6 +7,7 @@ from ._common import (_mark_read, _build_convos, unread_message_count,
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..auth import refresh_session_tokens
+from ..mentions import get_valid_usernames
 
 # Sohbet açılışında çekilen son mesaj sayısı — üzeri "Daha eski mesajları
 # yükle" butonuyla (?all=1) gelir. 150→50 küçültüldü (2. hız turu): hem
@@ -210,7 +211,7 @@ def conversation(conversation_id):
                group_name=group_name, group_members=other_profiles, member_map=member_map,
                conversation_id=conversation_id, me=session["user"],
                my_is_admin=my_is_admin if is_group else False,
-               has_older=has_older)
+               has_older=has_older, valid_usernames=get_valid_usernames(sb))
 
     if request.headers.get("X-Requested-With") == "fetch":
         return render_template("messages/_conversation_panel.html", **ctx)

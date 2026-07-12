@@ -49,7 +49,10 @@ _TARGET_BUILDERS = {
     "comment_reaction": lambda n: url_for("routes.post_detail", post_id=n["post_id"]),
     "follow": lambda n: url_for("routes.profile", username=n["actor"]["username"]),
     "message": lambda n: url_for("messaging.conversation", conversation_id=n["conversation_id"]),
-    "mention": lambda n: url_for("routes.post_detail", post_id=n["post_id"]),
+    # Mesajda etiketlenme post_id taşımaz — conversation_id'ye düşer
+    # (bkz. mentions.notify_mentions conversation_id parametresi).
+    "mention": lambda n: (url_for("routes.post_detail", post_id=n["post_id"]) if n.get("post_id")
+                           else url_for("messaging.conversation", conversation_id=n["conversation_id"])),
     "hashtag_post": lambda n: url_for("routes.post_detail", post_id=n["post_id"]),
 }
 
@@ -200,6 +203,8 @@ def _annotate(n: dict) -> dict:
     # (count kolonu yok) n.get("count") None/1 döner, tekil metin kalır.
     if n["type"] == "message" and (n.get("count") or 1) > 1:
         n["text"] = f"sana {n['count']} mesaj gönderdi"
+    if n["type"] == "mention" and not n.get("post_id"):
+        n["text"] = "bir mesajda seni etiketledi"
     builder = _TARGET_BUILDERS.get(n["type"])
     n["target_url"] = builder(n) if builder else url_for("routes.feed")
     return n
