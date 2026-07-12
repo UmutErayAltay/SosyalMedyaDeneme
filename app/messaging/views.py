@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from flask import render_template, request, session, abort, jsonify
 from . import bp
 from ._common import (_mark_read, _build_convos, unread_message_count,
-                      mark_active, _mark_message_notifications_read)
+                      mark_active, is_active_in, _mark_message_notifications_read)
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..auth import refresh_session_tokens
@@ -261,9 +261,14 @@ def mark_conversation_active(conversation_id):
     kullanılır. Katılımcı olmayan 404 (enumeration koruması)."""
     sb = get_sb()
     me = session["user"]["id"]
-    part = sb.table("conversation_participants").select("user_id").eq(
-        "conversation_id", conversation_id).eq("user_id", me).execute().data
-    if not part:
+    # TÜM katılımcılar tek sorguda: hem benim üyelik doğrulamam hem
+    # diğerlerinin aktiflik sayımı için (çevrimiçi göstergesi — chat.js
+    # yanıttaki `here` ile başlıkta "şu anda burada" gösterir)
+    parts = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id).execute().data
+    ids = [p["user_id"] for p in parts]
+    if me not in ids:
         abort(404)
     mark_active(me, conversation_id)
-    return jsonify(ok=True)
+    here = sum(1 for uid in ids if uid != me and is_active_in(uid, conversation_id))
+    return jsonify(ok=True, here=here)

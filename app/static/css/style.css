@@ -2662,6 +2662,17 @@ header[role="banner"] {
 /* Sohbet başlığındaki isim — profile giden link, başlık görünümü korunur */
 .conv-header-profile-link { color: inherit; }
 
+/* Çevrimiçi göstergesi — karşı taraf sohbeti şu an açık tutuyorsa (presence) */
+.conv-presence {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; color: var(--success-text); white-space: nowrap;
+}
+.conv-presence[hidden] { display: none; }
+.conv-presence::before {
+    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--success-text); flex-shrink: 0;
+}
+
 /* === Grup Sesli/Görüntülü Arama (LiveKit) === */
 /* Butonlar 1:1 ile ortak .conv-call-buttons/.conv-call-btn stilini kullanır */
 

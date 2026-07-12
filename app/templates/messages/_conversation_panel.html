@@ -17,6 +17,8 @@
         {% if is_group %}
             <h2>👥 {{ group_name or 'Grup' }}</h2>
             <span class="muted conv-member-count">{{ group_members|length + 1 }} kişi</span>
+            {# Çevrimiçi göstergesi — chat.js /active ping yanıtıyla doldurur #}
+            <span id="conv-presence" class="conv-presence" hidden></span>
             {# Buton herkese açık kalmalı: modal içindeki "Gruptan Ayrıl" tek erişim
                yolu bu buton — admin'e kapatılırsa non-admin üyeler gruptan ayrılamaz
                hale gelir. Sadece etiket role'e göre değişir, admin-only aksiyonlar
@@ -52,6 +54,8 @@
                     Bilinmeyen
                 {% endif %}
             </h2>
+            {# Çevrimiçi göstergesi — chat.js /active ping yanıtıyla doldurur #}
+            <span id="conv-presence" class="conv-presence" hidden></span>
             <div class="conv-call-buttons">
                 <button type="button" class="conv-call-btn" id="call-voice-btn"
                         aria-label="Sesli arama başlat" title="Sesli arama">

@@ -315,6 +315,19 @@
             fetch('/messages/' + cid + '/active', {
                 method: 'POST',
                 headers: { 'X-CSRF-Token': csrfAct ? csrfAct.value : '' }
+            }).then(function (r) { return r.json(); }).then(function (d) {
+                // Çevrimiçi göstergesi: sohbeti şu an açık tutan DİĞER katılımcılar
+                // (sunucu bellek-içi presence'tan sayar; 45sn TTL, 25sn ping)
+                var pres = document.getElementById('conv-presence');
+                if (!pres || !d) return;
+                var here = d.here || 0;
+                if (here > 0) {
+                    var grp = liveP.dataset.isGroup === '1';
+                    pres.textContent = grp ? here + ' kişi şu anda burada' : 'şu anda burada';
+                    pres.hidden = false;
+                } else {
+                    pres.hidden = true;
+                }
             }).catch(function () {});
         }
         pingActive();
