@@ -19,6 +19,33 @@
         return '/messages/message/' + msgId + '/react';
     }
 
+    // Sunucu render'ındaki linkify_mentions (mentions.py) filtresinin JS
+    // karşılığı — realtime/optimistic mesajlar Jinja'dan GEÇMEZ, bu yüzden
+    // @etiketleme burada da uygulanmazsa gönderim ANINDA düz metin görünürdü
+    // (panel yenilenince zaten linklenir). initConversation() her sohbet
+    // geçişinde currentValidUsernames'i panel'in data-valid-usernames'inden
+    // tazeler; mentions.py'deki MENTION_RE ile birebir aynı desen (Unicode
+    // harf/rakam/nokta/tire).
+    var currentValidUsernames = new Set();
+    var MENTION_RE_JS = /@([\p{L}\p{N}_.-]+)/gu;
+
+    function linkifyMentionsClient(text) {
+        if (!text || currentValidUsernames.size === 0) return escapeHtml(text || '');
+        var result = '';
+        var lastIndex = 0;
+        var match;
+        MENTION_RE_JS.lastIndex = 0;
+        while ((match = MENTION_RE_JS.exec(text)) !== null) {
+            var uname = match[1];
+            if (!currentValidUsernames.has(uname.toLowerCase())) continue;
+            result += escapeHtml(text.slice(lastIndex, match.index));
+            result += '<a href="/u/' + encodeURIComponent(uname) + '" class="mention-link">@' + escapeHtml(uname) + '</a>';
+            lastIndex = match.index + match[0].length;
+        }
+        result += escapeHtml(text.slice(lastIndex));
+        return result;
+    }
+
     // Karşı taraftan Realtime ile gelen INSERT payload'ı ham satırdır (JOIN
     // yok) — sticker_id varsa ama sticker objesi yoksa görsel URL'i ayrı bir
     // istekle çözülür (bkz. stickers.py get_sticker). Konuşmalar arası
@@ -108,7 +135,7 @@
                 + '</div>';
         }
         if (msg.content) {
-            html += '<p>' + escapeHtml(msg.content) + '</p>';
+            html += '<p>' + linkifyMentionsClient(msg.content) + '</p>';
         }
         var time = formatLocalTime(msg.created_at);
         html += '<span class="time">' + time;
@@ -319,6 +346,10 @@
         }
         var memberMap = {};
         try { memberMap = JSON.parse(panel.dataset.memberMap || '{}'); } catch (err) { memberMap = {}; }
+        try {
+            var validList = JSON.parse(panel.dataset.validUsernames || '[]');
+            currentValidUsernames = new Set(validList.map(function (u) { return u.toLowerCase(); }));
+        } catch (err) { currentValidUsernames = new Set(); }
         if (!conversationId || !sendUrl) return;
 
         // Sohbet içi "aktiflik" nabzı — bu sohbeti AÇIK tuttuğumuzu sunucuya
@@ -1200,7 +1231,7 @@
                         // Düzenleme formu AÇIKKEN gelen güncelleme (aynı sekmede
                         // ikinci bir istemci düzenlemiş olabilir) mevcut taslağı
                         // ezmesin diye form açıkken metin güncellenmez.
-                        if (editedP && !editForm) editedP.textContent = msg.content;
+                        if (editedP && !editForm) editedP.innerHTML = linkifyMentionsClient(msg.content);
                         if (msg.edited_at && el && !el.querySelector('.msg-edited-tag')) {
                             var timeElLive = el.querySelector('.time');
                             if (timeElLive) {
@@ -1245,13 +1276,14 @@
                 activeChannel = channel;
 
                 // "Yazıyor..." broadcast'i AYRI bir kanalda (mesaj kanalına
-                // dokunulmadı, bkz. yukarıdaki not). GEÇİCİ GERİ ALMA
-                // (2026-07-10): private:true canlıda CHANNEL_ERROR'a yol
-                // açtı (bkz. call.js'teki aynı geri alma notu) — kök neden
-                // netleşene kadar public kanala dönüldü, RLS policy'leri
-                // DB'de duruyor (sql/migration_realtime_broadcast_rls.sql).
+                // dokunulmadı, bkz. yukarıdaki not). private:true — izole
+                // Playwright testiyle doğrulandı (gerçek katılımcı SUBSCRIBED,
+                // katılımcı olmayan 3. kullanıcı CHANNEL_ERROR/Unauthorized).
+                // typing: policy'si (select+insert) zaten TÜM katılımcılara
+                // simetrik — call.js'teki calls: kanalının aksine mimari bir
+                // uyumsuzluk yok, bu yüzden ek bir SQL düzeltmesi gerekmedi.
                 typingChannel = window.supabaseClient.channel('typing:' + conversationId, {
-                    config: { broadcast: { self: false } }
+                    config: { broadcast: { self: false }, private: true }
                 });
                 typingChannel.on('broadcast', { event: 'typing' }, function (msg) {
                     if (!typingIndicator) return;
@@ -1349,7 +1381,7 @@
                 .then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); })
                 .then(function (result) {
                     if (!result.ok) throw new Error(result.data.error || 'Mesaj düzenlenemedi.');
-                    pEl.textContent = result.data.content;
+                    pEl.innerHTML = linkifyMentionsClient(result.data.content);
                     if (result.data.edited_at && !msgEl.querySelector('.msg-edited-tag')) {
                         var timeEl = msgEl.querySelector('.time');
                         if (timeEl) {

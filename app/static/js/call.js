@@ -714,14 +714,19 @@
         if (_outboundChannels[targetId]) return _outboundChannels[targetId];
         _outboundChannels[targetId] = new Promise(function (resolve, reject) {
             if (!window.supabaseClient) { reject(new Error('supabase yok')); return; }
-            // GEÇİCİ GERİ ALMA (2026-07-10): private:true burada canlıda
-            // CHANNEL_ERROR'a yol açtı (Realtime authorization RLS ile bu
-            // kanal tipi arasında teşhis edilmemiş bir uyumsuzluk — bkz.
-            // sql/migration_realtime_broadcast_rls.sql'deki policy'ler DB'de
-            // duruyor ama private:true olmadan devreye girmiyor). Kararlılık
-            // önce: kök neden netleşene kadar public kanala dönüldü.
+            // private:true — 2026-07-10'daki CHANNEL_ERROR'ın asıl kök nedeni
+            // izole testle bulundu: eski SELECT policy SADECE kanal sahibinin
+            // (hedefin) abone olmasına izin veriyordu, ama supabase-js'te
+            // GÖNDEREN taraf da (biz, burada) send()'den önce subscribe ile
+            // JOIN olmak zorunda — yani arayan taraf hiçbir zaman JOIN olamıyor,
+            // her arama CHANNEL_ERROR veriyordu (bayat token değildi). Düzeltme:
+            // migration_realtime_calls_select_fix.sql SELECT policy'sini INSERT
+            // policy'siyle simetrik yaptı (hedef VEYA hedefle ortak sohbeti olan
+            // biri abone olabilir) — Playwright ile 2 gerçek kullanıcıyla
+            // doğrulandı (pozitif: ortak sohbeti olan abone olup gönderebiliyor;
+            // negatif: alakasız 3. kullanıcı reddediliyor).
             var ch = window.supabaseClient.channel('calls:' + targetId, {
-                config: { broadcast: { self: false } }
+                config: { broadcast: { self: false }, private: true }
             });
             ch.subscribe(function (status) {
                 if (status === 'SUBSCRIBED') resolve(ch);
@@ -1006,9 +1011,11 @@
         }
 
         try {
-            // GEÇİCİ GERİ ALMA (2026-07-10) — bkz. getOutboundChannel'daki not
+            // private:true — RLS izole testiyle doğrulandı (bkz. sql/migration_
+            // realtime_broadcast_rls.sql + migration_realtime_calls_select_fix.sql).
+            // Sadece kanalın sahibi VEYA hedefle ortak sohbeti olan biri abone olabilir.
             state.callsChannel = window.supabaseClient.channel('calls:' + meId, {
-                config: { broadcast: { self: false } }
+                config: { broadcast: { self: false }, private: true }
             });
 
             state.callsChannel.on('broadcast', { event: 'call-signal' }, function (msg) {

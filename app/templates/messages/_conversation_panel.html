@@ -11,7 +11,8 @@
      data-my-username="{{ me.username or 'Sen' }}"
      data-my-avatar="{{ me.avatar_url or '' }}"
      data-is-group="{{ '1' if is_group else '0' }}"
-     data-member-map="{{ (member_map if is_group else {})|tojson|forceescape }}">
+     data-member-map="{{ (member_map if is_group else {})|tojson|forceescape }}"
+     data-valid-usernames="{{ valid_usernames|list|tojson|forceescape }}">
     <header class="conv-header">
         <a href="{{ url_for('messaging.inbox') }}" class="conv-back-link" aria-label="Mesajlara dön">← Geri</a>
         {% if is_group %}
