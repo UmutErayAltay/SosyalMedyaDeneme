@@ -162,11 +162,20 @@ def edit_message(message_id):
     if len(content) > 2000:
         return jsonify(error="Mesaj çok uzun."), 400
 
-    updated = sb.table("messages").update({"content": content}).eq(
-        "id", message_id).eq("sender_id", me).execute().data
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        updated = sb.table("messages").update({"content": content, "edited_at": now}).eq(
+            "id", message_id).eq("sender_id", me).execute().data
+    except Exception:
+        # edited_at migration henüz uygulanmamışsa (sql/migration_message_edit.sql)
+        # "düzenlendi" etiketi olmadan sessizce content'i güncelle
+        updated = sb.table("messages").update({"content": content}).eq(
+            "id", message_id).eq("sender_id", me).execute().data
+        now = None
     if not updated:
         return jsonify(error="Mesaj bulunamadı."), 404
-    return jsonify(ok=True, content=content)
+    return jsonify(ok=True, content=content, edited_at=now)
 
 
 @bp.route("/<conversation_id>/share-post/<post_id>", methods=["POST"])

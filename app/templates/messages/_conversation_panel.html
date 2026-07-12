@@ -190,6 +190,7 @@
             {% endif %}
             <span class="time">
                 {{ m.created_at|local_time('%H:%M') }}
+                {% if m.edited_at %}<span class="msg-edited-tag" title="Düzenlendi">(düzenlendi)</span>{% endif %}
                 {% if m.sender_id == me.id and not is_group %}
                     <span class="read-receipt {{ 'read' if m.read_at }}"
                           aria-label="{{ 'Okundu' if m.read_at else 'İletildi' }}">{{ '✓✓' if m.read_at else '✓' }}</span>

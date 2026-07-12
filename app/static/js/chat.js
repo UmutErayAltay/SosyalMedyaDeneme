@@ -112,6 +112,9 @@
         }
         var time = formatLocalTime(msg.created_at);
         html += '<span class="time">' + time;
+        if (msg.edited_at) {
+            html += ' <span class="msg-edited-tag" title="Düzenlendi">(düzenlendi)</span>';
+        }
         if (isMine) {
             var read = !!msg.read_at;
             html += ' <span class="read-receipt' + (read ? ' read' : '') + '" aria-label="' + (read ? 'Okundu' : 'İletildi') + '">'
@@ -1198,6 +1201,16 @@
                         // ikinci bir istemci düzenlemiş olabilir) mevcut taslağı
                         // ezmesin diye form açıkken metin güncellenmez.
                         if (editedP && !editForm) editedP.textContent = msg.content;
+                        if (msg.edited_at && el && !el.querySelector('.msg-edited-tag')) {
+                            var timeElLive = el.querySelector('.time');
+                            if (timeElLive) {
+                                var liveTag = document.createElement('span');
+                                liveTag.className = 'msg-edited-tag';
+                                liveTag.title = 'Düzenlendi';
+                                liveTag.textContent = '(düzenlendi)';
+                                timeElLive.insertBefore(liveTag, timeElLive.firstChild.nextSibling);
+                            }
+                        }
                     }
                     // Karşı taraf mesajımızı okudu — checkmark'ı canlı güncelle
                     if (msg.sender_id === window.ME_ID && msg.read_at) {
@@ -1337,6 +1350,16 @@
                 .then(function (result) {
                     if (!result.ok) throw new Error(result.data.error || 'Mesaj düzenlenemedi.');
                     pEl.textContent = result.data.content;
+                    if (result.data.edited_at && !msgEl.querySelector('.msg-edited-tag')) {
+                        var timeEl = msgEl.querySelector('.time');
+                        if (timeEl) {
+                            var tag = document.createElement('span');
+                            tag.className = 'msg-edited-tag';
+                            tag.title = 'Düzenlendi';
+                            tag.textContent = '(düzenlendi)';
+                            timeEl.insertBefore(tag, timeEl.firstChild.nextSibling);
+                        }
+                    }
                     cancelEdit();
                 })
                 .catch(function (err) {

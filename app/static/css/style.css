@@ -837,6 +837,9 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 .read-receipt { margin-left: 2px; letter-spacing: -2px; }
 .read-receipt.read { color: var(--color-blue-400); letter-spacing: normal; }
 
+/* Düzenlenmiş mesaj etiketi — WhatsApp/Telegram deseni, zaman damgasının yanında */
+.msg-edited-tag { margin-left: 3px; font-style: italic; opacity: 0.8; }
+
 /* "Yazıyor..." göstergesi */
 .typing-indicator {
     font-size: 12px; color: var(--muted); font-style: italic;
