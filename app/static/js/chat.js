@@ -1124,9 +1124,14 @@
         if (window.supabaseClient) {
             try {
                 var topic = 'messages:' + conversationId;
-                // self:false — kendi "yazıyor" broadcast'imizi kendimize geri göstermeyelim
+                // self:false — kendi "yazıyor" broadcast'imizi kendimize geri göstermeyelim.
+                // private:true — RLS izole testiyle doğrulandı (migration_realtime_
+                // messages_channel_rls.sql): sadece bu sohbetin katılımcıları abone
+                // olabilir/gönderebilir; postgres_changes (asıl mesaj teslimi) zaten
+                // tablo RLS'i ile korunuyordu ve private:true'dan ETKİLENMEDİĞİ ayrıca
+                // doğrulandı (gerçek INSERT ile test edildi, olay hâlâ akıyor).
                 var channel = window.supabaseClient.channel(topic, {
-                    config: { broadcast: { self: false } }
+                    config: { broadcast: { self: false }, private: true }
                 });
                 channel.on('postgres_changes', {
                     event: 'INSERT',
