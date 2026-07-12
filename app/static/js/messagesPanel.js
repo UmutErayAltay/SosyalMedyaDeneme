@@ -91,16 +91,18 @@
             if (!newPanel || !oldPanel) throw new Error('Panel bulunamadı');
             oldPanel.replaceWith(newPanel);
 
-            // Grup yönetim modalı #conversation-panel'in KARDEŞİ olarak
-            // render edilir (bkz. _conversation_panel.html), bu yüzden yukarıdaki
-            // replaceWith onu kapsamaz — atlanırsa AJAX ile açılan grup
-            // sohbetlerinde modal hiç DOM'a girmez ve "Yönet" butonu hiçbir şey
+            // Bazı modaller (grup yönetimi, medya galerisi) #conversation-panel'in
+            // KARDEŞİ olarak render edilir (bkz. _conversation_panel.html), bu
+            // yüzden yukarıdaki replaceWith onları kapsamaz — atlanırsa AJAX ile
+            // açılan sohbetlerde modal hiç DOM'a girmez, butonları hiçbir şey
             // yapmaz (eski/yanlış conversation_id'li kalıntı da aynı şekilde
             // sorun olurdu). Burada eskisi silinip taze markup'la değiştirilir.
-            var oldModal = document.getElementById('group-manage-modal');
-            if (oldModal) oldModal.remove();
-            var newModal = temp.querySelector('#group-manage-modal');
-            if (newModal) newPanel.insertAdjacentElement('afterend', newModal);
+            ['group-manage-modal', 'msg-media-modal'].forEach(function (modalId) {
+                var oldModal = document.getElementById(modalId);
+                if (oldModal) oldModal.remove();
+                var newModal = temp.querySelector('#' + modalId);
+                if (newModal) newPanel.insertAdjacentElement('afterend', newModal);
+            });
             // Tüketilen ön-yükleme tekrar kullanılmasın — aynı sohbete ikinci
             // tıklama TAZE panel çeker (aradaki mesajlar kaçmasın)
             delete prefetchCache[url];

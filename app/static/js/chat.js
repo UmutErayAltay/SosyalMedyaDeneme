@@ -129,8 +129,11 @@
             html += '<button type="button" data-emoji="' + em + '" aria-label="' + em + ' tepkisi">' + em + '</button>';
         });
         html += '</div>';
-        // Sadece kendi mesajım silinebilir (sunucu render'ıyla aynı desen)
+        // Sadece kendi mesajım silinebilir/düzenlenebilir (sunucu render'ıyla aynı desen)
         if (isMine) {
+            if (msg.content) {
+                html += '<button class="msg-edit-btn" aria-label="Mesajı düzenle" type="button">✏️</button>';
+            }
             html += '<button class="msg-delete-btn" aria-label="Mesajı sil" type="button">🗑</button>';
         }
         html += '</div>';
@@ -217,6 +220,14 @@
             var img = e.target.closest('.msg-image');
             if (img && !img.closest('.uploading') && img.closest('#stream')) {
                 lightboxImg.src = img.src;
+                lightbox.classList.remove('hidden');
+                return;
+            }
+            // Medya galerisi grid'indeki görseller de aynı lightbox'ı kullanır
+            // (bkz. msgMedia.js) — ayrı bir büyütme mekanizması gerekmez.
+            var galleryImg = e.target.closest('#msg-media-images img');
+            if (galleryImg) {
+                lightboxImg.src = galleryImg.src;
                 lightbox.classList.remove('hidden');
             }
         });
@@ -1175,15 +1186,27 @@
                     table: 'messages',
                     filter: 'conversation_id=eq.' + conversationId
                 }, function (payload) {
-                    // Karşı taraf mesajımızı okudu — checkmark'ı canlı güncelle
                     var msg = payload.new;
-                    if (msg.sender_id !== window.ME_ID || !msg.read_at) return;
                     var el = stream.querySelector('[data-msg-id="' + msg.id + '"]');
-                    var receipt = el && el.querySelector('.read-receipt');
-                    if (receipt) {
-                        receipt.textContent = '✓✓';
-                        receipt.classList.add('read');
-                        receipt.setAttribute('aria-label', 'Okundu');
+                    // Karşı taraf mesajı düzenlediyse metni canlı güncelle (kendi
+                    // düzenlemem zaten yerel olarak güncellendi, tekrar dokunmaya
+                    // gerek yok — ama zararsız olduğu için filtrelemiyoruz)
+                    if (el && payload.old && msg.content !== payload.old.content) {
+                        var editedP = el.querySelector('p');
+                        var editForm = el.querySelector('.msg-edit-form');
+                        // Düzenleme formu AÇIKKEN gelen güncelleme (aynı sekmede
+                        // ikinci bir istemci düzenlemiş olabilir) mevcut taslağı
+                        // ezmesin diye form açıkken metin güncellenmez.
+                        if (editedP && !editForm) editedP.textContent = msg.content;
+                    }
+                    // Karşı taraf mesajımızı okudu — checkmark'ı canlı güncelle
+                    if (msg.sender_id === window.ME_ID && msg.read_at) {
+                        var receipt = el && el.querySelector('.read-receipt');
+                        if (receipt) {
+                            receipt.textContent = '✓✓';
+                            receipt.classList.add('read');
+                            receipt.setAttribute('aria-label', 'Okundu');
+                        }
                     }
                 }).on('postgres_changes', {
                     event: 'DELETE',
@@ -1258,6 +1281,77 @@
             }
         }
     };
+
+    // === Mesaj Düzenleme — Document Delegation ===
+    // Metni <p>'nin YERİNE bir textarea + Kaydet/İptal koyar (WhatsApp/Telegram
+    // deseni) — reactions/delete ile aynı document-level delegation (panel
+    // AJAX geçişlerinden bağımsız çalışsın diye).
+    function startMessageEdit(msgEl, pEl, msgId) {
+        if (msgEl.querySelector('.msg-edit-form')) return; // zaten düzenleme açık
+        var originalText = pEl.textContent;
+
+        var form = document.createElement('div');
+        form.className = 'msg-edit-form';
+        var textarea = document.createElement('textarea');
+        textarea.className = 'msg-edit-textarea';
+        textarea.value = originalText;
+        var actions = document.createElement('div');
+        actions.className = 'msg-edit-actions';
+        var cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'msg-edit-cancel';
+        cancelBtn.textContent = 'İptal';
+        var saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.className = 'msg-edit-save';
+        saveBtn.textContent = 'Kaydet';
+        actions.appendChild(cancelBtn);
+        actions.appendChild(saveBtn);
+        form.appendChild(textarea);
+        form.appendChild(actions);
+
+        pEl.hidden = true;
+        pEl.insertAdjacentElement('afterend', form);
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+        function cancelEdit() {
+            form.remove();
+            pEl.hidden = false;
+        }
+
+        function saveEdit() {
+            var newText = textarea.value.trim();
+            if (!newText || newText === originalText) { cancelEdit(); return; }
+            saveBtn.disabled = true;
+            var csrfInput = document.querySelector('input[name="csrf_token"]');
+            fetch('/messages/message/' + msgId + '/edit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfInput ? csrfInput.value : '',
+                },
+                body: JSON.stringify({ content: newText }),
+            })
+                .then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); })
+                .then(function (result) {
+                    if (!result.ok) throw new Error(result.data.error || 'Mesaj düzenlenemedi.');
+                    pEl.textContent = result.data.content;
+                    cancelEdit();
+                })
+                .catch(function (err) {
+                    window.appAlert(err.message || 'Mesaj düzenlenemedi.');
+                    saveBtn.disabled = false;
+                });
+        }
+
+        cancelBtn.addEventListener('click', cancelEdit);
+        saveBtn.addEventListener('click', saveEdit);
+        textarea.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+            else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); }
+        });
+    }
 
     // === Mesaj Tepkileri (Emoji Reactions) — Document Delegation ===
     // Picker tetikleme, emoji seçimi, chip tıklaması (panel AJAX geçişlerinden bağımsız)
@@ -1438,6 +1532,18 @@
                     console.error('Mesaj silinemedi:', err);
                 });
             })();
+            return;
+        }
+
+        // 5. Mesaj düzenleme (sadece kendi mesajım, sunucu tarafında da kontrol edilir)
+        var editBtn = e.target.closest('.msg-edit-btn');
+        if (editBtn) {
+            e.preventDefault();
+            var editMsgEl = editBtn.closest('.msg');
+            var editMsgId = editMsgEl && editMsgEl.dataset.msgId;
+            var editP = editMsgEl && editMsgEl.querySelector('p');
+            if (!editMsgId || !editP) return;
+            startMessageEdit(editMsgEl, editP, editMsgId);
             return;
         }
 

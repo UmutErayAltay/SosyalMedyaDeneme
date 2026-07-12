@@ -907,6 +907,37 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 .msg:hover .msg-delete-btn { opacity: 0.7; }
 .msg-delete-btn:hover { color: var(--danger); opacity: 1; }
 
+/* Mesaj düzenleme butonu — msg-delete-btn ile aynı hover deseni, sadece
+   metni olan kendi mesajlarımda render edilir. */
+.msg-edit-btn {
+    opacity: 0; font-size: 13px; background: none; border: none;
+    cursor: pointer; color: var(--text); padding: 0;
+    margin-left: 4px; transition: opacity 0.15s;
+    font-family: var(--font-body);
+    vertical-align: middle;
+}
+.msg:hover .msg-edit-btn { opacity: 0.7; }
+.msg-edit-btn:hover { opacity: 1; }
+
+/* Düzenleme formu — <p>'nin yerine geçer (WhatsApp/Telegram deseni) */
+.msg-edit-form { display: flex; flex-direction: column; gap: 6px; margin: 4px 0; }
+.msg-edit-textarea {
+    width: 100%; min-height: 40px; resize: vertical; font-family: var(--font-body);
+    font-size: 14px; padding: 6px 8px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+}
+.msg.mine .msg-edit-textarea { background: var(--bg); color: var(--text); }
+.msg-edit-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.msg-edit-cancel, .msg-edit-save {
+    font-size: 12px; padding: 3px 10px; border-radius: var(--radius-full);
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+    cursor: pointer;
+}
+.msg-edit-save { border-color: var(--primary); background: var(--primary); color: var(--bg); }
+.msg-edit-save:hover { opacity: 0.9; }
+.msg-edit-save:disabled { opacity: 0.6; cursor: default; }
+.msg-edit-cancel:hover { background: var(--border); }
+
 /* Emoji seçim paneli — position:FIXED (absolute DEĞİL). Önceden .msg'e göre
    absolute konumlanıyordu; bu, .message-stream'in (overflow-y:auto)
    scrollHeight'ını büyütüyordu — picker açılınca mesaj listesi "büyüyüp
@@ -1387,6 +1418,30 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 .modal-close:hover { background: var(--border); color: var(--text); }
 .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
 .modal-body textarea { min-height: 100px; }
+
+/* Sohbet medya galerisi — msg-media-toggle-btn ile açılır (kullanıcı isteği:
+   eski paylaşılan görsel/sesli mesajlara tek yerden hızlı erişim). */
+.msg-media-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.msg-media-tab {
+    flex: 1; padding: 8px; border: none; background: none; cursor: pointer;
+    color: var(--muted); font-size: 14px; border-bottom: 2px solid transparent;
+    font-family: var(--font-body);
+}
+.msg-media-tab.active { color: var(--text); border-bottom-color: var(--primary); font-weight: 600; }
+.msg-media-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    max-height: 50vh; overflow-y: auto;
+}
+.msg-media-grid[hidden] { display: none; }
+.msg-media-grid img {
+    width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+.msg-media-audio-list {
+    display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto;
+}
+.msg-media-audio-list[hidden] { display: none; }
+.msg-media-audio-list .voice-player { max-width: none; }
 
 /* Hikaye çubuğu (feed'in üstü) */
 .stories-bar {

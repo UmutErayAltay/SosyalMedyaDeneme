@@ -55,6 +55,15 @@
                         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </button>
+                <button type="button" class="conv-call-btn" id="msg-media-toggle-btn"
+                        aria-label="Paylaşılan medya" title="Paylaşılan medya">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <path d="M21 15l-5-5L5 21"/>
+                    </svg>
+                </button>
                 <button type="button" class="conv-call-btn" data-group-call="audio"
                         aria-label="Sesli arama başlat" title="Sesli arama">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -91,6 +100,15 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                          stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                </button>
+                <button type="button" class="conv-call-btn" id="msg-media-toggle-btn"
+                        aria-label="Paylaşılan medya" title="Paylaşılan medya">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <path d="M21 15l-5-5L5 21"/>
                     </svg>
                 </button>
                 <button type="button" class="conv-call-btn" id="call-voice-btn"
@@ -208,8 +226,13 @@
                 <button type="button" data-emoji="😢" aria-label="Üzül tepkisi">😢</button>
                 <button type="button" data-emoji="🔥" aria-label="Ateş tepkisi">🔥</button>
             </div>
-            {# Sadece kendi mesajım silinebilir (hover'da belirir, react-trigger'la aynı desen) #}
+            {# Sadece kendi mesajım silinebilir/düzenlenebilir (hover'da belirir,
+               react-trigger'la aynı desen). Düzenleme SADECE metni olan
+               mesajlarda gösterilir — görsel/ses/sticker eki değişmez. #}
             {% if m.sender_id == me.id %}
+            {% if m.content %}
+            <button class="msg-edit-btn" aria-label="Mesajı düzenle" type="button">✏️</button>
+            {% endif %}
             <button class="msg-delete-btn" aria-label="Mesajı sil" type="button">🗑</button>
             {% endif %}
             </div>{# /msg-react-row #}
@@ -308,6 +331,28 @@
         </div>
         <div id="gif-results-msg" class="gif-results-grid"></div>
         <p id="gif-loading-msg-msg" class="muted center" hidden>Yükleniyor...</p>
+    </div>
+</div>
+
+{# Paylaşılan medya galerisi — msg-media-toggle-btn ile açılır. Grup/1:1
+   ayrımı yok, her sohbette render edilir (bkz. messagesPanel.js — AJAX
+   panel swap'ında group-manage-modal ile aynı listede yeniden ekleniyor). #}
+<div class="modal-overlay" id="msg-media-modal" role="dialog" aria-modal="true"
+     aria-labelledby="msg-media-modal-title" data-conversation-id="{{ conversation_id }}" hidden>
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="msg-media-modal-title">Paylaşılan Medya</h2>
+            <button type="button" class="modal-close" id="close-msg-media-modal" aria-label="Kapat">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="msg-media-tabs" role="tablist">
+                <button type="button" class="msg-media-tab active" data-media-tab="images" role="tab" aria-selected="true">Görseller</button>
+                <button type="button" class="msg-media-tab" data-media-tab="audios" role="tab" aria-selected="false">Sesli Mesajlar</button>
+            </div>
+            <div id="msg-media-images" class="msg-media-grid" role="tabpanel"></div>
+            <div id="msg-media-audios" class="msg-media-audio-list" role="tabpanel" hidden></div>
+            <p id="msg-media-empty" class="muted center" hidden>Henüz paylaşılan medya yok.</p>
+        </div>
     </div>
 </div>
 

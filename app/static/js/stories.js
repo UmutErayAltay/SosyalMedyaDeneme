@@ -397,7 +397,7 @@
                 replyInput.placeholder = 'Gönderildi ✓';
                 setTimeout(function () { replyInput.placeholder = originalPlaceholder; }, 2000);
             } catch (err) {
-                alert(err.message || 'Yanıt gönderilemedi.');
+                window.appAlert(err.message || 'Yanıt gönderilemedi.');
             } finally {
                 replySendBtn.disabled = false;
             }

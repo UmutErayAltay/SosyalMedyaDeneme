@@ -139,6 +139,29 @@ def delete_message(message_id):
     return jsonify(ok=True)
 
 
+@bp.route("/message/<message_id>/edit", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def edit_message(message_id):
+    """Kendi mesajının metnini düzenler (delete_message ile aynı sahiplik
+    deseni). Görsel/ses/sticker mesajlarının EKİ değişmez, sadece metin
+    (content) güncellenir — bu yüzden yalnızca content'i olan mesajlarda
+    UI'da düzenle butonu gösterilir (bkz. chat.js/_conversation_panel.html)."""
+    sb = get_sb()
+    me = session["user"]["id"]
+    content = (request.get_json(silent=True) or {}).get("content", "").strip()
+    if not content:
+        return jsonify(error="Mesaj boş olamaz."), 400
+    if len(content) > 2000:
+        return jsonify(error="Mesaj çok uzun."), 400
+
+    updated = sb.table("messages").update({"content": content}).eq(
+        "id", message_id).eq("sender_id", me).execute().data
+    if not updated:
+        return jsonify(error="Mesaj bulunamadı."), 404
+    return jsonify(ok=True, content=content)
+
+
 @bp.route("/<conversation_id>/share-post/<post_id>", methods=["POST"])
 @login_required
 @retry_on_connection_error

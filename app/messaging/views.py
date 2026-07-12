@@ -308,3 +308,29 @@ def search_conversation_messages(conversation_id):
         "sender": (r.get("profiles") or {}).get("username") or "?",
     } for r in rows]
     return jsonify(results=results)
+
+
+@bp.route("/<conversation_id>/media")
+@login_required
+@retry_on_connection_error
+def conversation_media(conversation_id):
+    """Sohbette paylaşılan tüm görsel/ses medyasını TEK listede döner
+    (galeri paneli — kullanıcı isteği: eski medyaya hızlı erişim). Sayfalama
+    yok — bu ölçekteki (arkadaş grubu) bir sohbette medya sayısı sınırlı,
+    diğer basit listelerle (grup üye listesi vb.) aynı yaklaşım."""
+    sb = get_sb()
+    me = session["user"]["id"]
+    part = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id).eq("user_id", me).execute().data
+    if not part:
+        abort(404)
+
+    rows = sb.table("messages").select(
+        "id, image_url, audio_url, created_at"
+    ).eq("conversation_id", conversation_id).order("created_at", desc=True).execute().data
+
+    images = [{"id": r["id"], "url": r["image_url"], "created_at": r["created_at"]}
+              for r in rows if r.get("image_url")]
+    audios = [{"id": r["id"], "url": r["audio_url"], "created_at": r["created_at"]}
+              for r in rows if r.get("audio_url")]
+    return jsonify(images=images, audios=audios)
