@@ -515,9 +515,11 @@
         // "Sil" butonu SADECE bir kayıt hazırken Gönder'in yanında belirir.
         var voiceBtn = document.getElementById('voice-record-btn');
         var voiceDiscardBtn = document.getElementById('voice-discard-btn');
+        var voiceStopBtn = document.getElementById('voice-stop-btn');
         var voiceRecordingStatus = document.getElementById('voice-recording-status');
         var voicePreviewAudio = document.getElementById('voice-preview-audio');
         var recordedVoiceBlob = null;
+        var sendAfterStop = false;
 
         function formatElapsed(ms) {
             var totalSec = Math.floor(ms / 1000);
@@ -540,6 +542,7 @@
                 input.hidden = false;
                 voiceRecordingStatus.hidden = true;
                 voiceRecordingStatus.textContent = '';
+                voiceStopBtn.hidden = true;
                 voicePreviewAudio.hidden = true;
                 voicePreviewAudio.removeAttribute('src');
                 voiceDiscardBtn.hidden = true;
@@ -548,6 +551,7 @@
                 voiceBtn.classList.remove('recording');
                 recordedVoiceBlob = null;
                 recordedChunks = [];
+                sendAfterStop = false;
                 if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
             }
 
@@ -566,7 +570,25 @@
                 mediaRecorder.onstop = function () {
                     recordedVoiceBlob = new Blob(recordedChunks, { type: 'audio/webm' });
                     mediaStream.getTracks().forEach(function (t) { t.stop(); });
+
+                    // Gönder tuşu kaydediyorsa, durdurmadan sonra direkt gönder
+                    // (önizleme seçeneği atlanır). Sayaç durdurulup durum metni
+                    // güncellenir — yoksa gönderim sürerken "Kaydediliyor..."
+                    // saymaya devam ediyordu; karşı tarafın "kaydediyor"
+                    // göstergesi de burada kapatılır (normal akıştaki gibi).
+                    if (sendAfterStop) {
+                        sendAfterStop = false;
+                        if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
+                        voiceRecordingStatus.textContent = '📤 Gönderiliyor...';
+                        voiceStopBtn.hidden = true;
+                        sendTyping(false);
+                        form.requestSubmit();
+                        return;
+                    }
+
+                    // Normal akış: kayıt bitti, kullanıcı sil/gönder seçebilir
                     voiceRecordingStatus.hidden = true;
+                    voiceStopBtn.hidden = true;
                     voicePreviewAudio.src = URL.createObjectURL(recordedVoiceBlob);
                     voicePreviewAudio.hidden = false;
                     voiceDiscardBtn.hidden = false;
@@ -580,6 +602,7 @@
                 recordingStartedAt = Date.now();
                 input.hidden = true;
                 voiceRecordingStatus.hidden = false;
+                voiceStopBtn.hidden = false;
                 voiceRecordingStatus.textContent = '🔴 Kaydediliyor... 0:00';
                 voiceBtn.textContent = '⏹';
                 voiceBtn.classList.add('recording');
@@ -594,6 +617,12 @@
                     mediaRecorder.stop();
                 } else {
                     startRecording();
+                }
+            });
+
+            voiceStopBtn.addEventListener('click', function () {
+                if (mediaRecorder && mediaRecorder.state === 'recording') {
+                    mediaRecorder.stop();
                 }
             });
 
@@ -669,6 +698,13 @@
         // --- Form submit: AJAX + optimistic UI (görsel VEYA sesli kayıt) ---
         form.addEventListener('submit', async function (e) {
             e.preventDefault();
+
+            // Kaydediyse: durdurup, onstop çağrılınca yeniden submit et
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                sendAfterStop = true;
+                mediaRecorder.stop();
+                return;
+            }
 
             // Bekleyen bir ses kaydı varsa (Sil butonu görünürken) TEK Gönder
             // butonu onu gönderir — metin/görsel akışından tamamen ayrı bir yol.

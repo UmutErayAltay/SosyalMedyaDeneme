@@ -2663,10 +2663,7 @@ header[role="banner"] {
 .conv-header-profile-link { color: inherit; }
 
 /* === Grup Sesli/Görüntülü Arama (LiveKit) === */
-/* Başlıkta grup arama butonları — 1:1 arama butonlarıyla aynı stil */
-.grp-call-buttons {
-    display: flex; gap: 8px;
-}
+/* Butonlar 1:1 ile ortak .conv-call-buttons/.conv-call-btn stilini kullanır */
 
 /* Ana arama çubuğu — mesaj akışının üstte yapışan kısımı */
 .grp-call-bar {
