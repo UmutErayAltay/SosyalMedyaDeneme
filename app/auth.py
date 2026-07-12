@@ -11,6 +11,7 @@ import time
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app
 from supabase import create_client
 from .supabase_client import get_sb, get_auth, call_with_ssl_retry
+from .rate_limit import is_rate_limited
 
 bp = Blueprint("auth", __name__)
 
@@ -78,6 +79,12 @@ def register():
         password = request.form.get("password", "").strip()
         username = request.form.get("username", "").strip()
 
+        # Spam hesap oluşturmayı yavaşlatır (IP başına) — gerçek kullanıcı
+        # trafiği gelmeden önce eklenmesi gereken bir güvenlik önlemi.
+        if is_rate_limited(f"register:{request.remote_addr or 'unknown'}", 5, 600):
+            flash("Çok fazla kayıt denemesi yaptın. Lütfen biraz sonra tekrar dene.", "error")
+            return redirect(url_for("auth.register"))
+
         if not email or not password or not username:
             flash("Tüm alanları doldur.", "error")
             return redirect(url_for("auth.register"))
@@ -135,6 +142,11 @@ def login():
     if request.method == "POST":
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "").strip()
+
+        # Kaba kuvvet (brute force) denemelerini yavaşlatır — IP başına.
+        if is_rate_limited(f"login:{request.remote_addr or 'unknown'}", 10, 300):
+            flash("Çok fazla giriş denemesi yaptın. Lütfen biraz sonra tekrar dene.", "error")
+            return redirect(url_for("auth.login"))
 
         try:
             res = call_with_ssl_retry(

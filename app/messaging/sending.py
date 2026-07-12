@@ -8,6 +8,7 @@ from ..supabase_client import get_sb, retry_on_connection_error
 from ..storage_helper import upload_image, upload_audio
 from ..blocks import is_blocked_either_way
 from ..mentions import notify_mentions
+from ..rate_limit import is_rate_limited
 
 
 @bp.route("/<conversation_id>/send", methods=["POST"])
@@ -31,6 +32,15 @@ def send_message(conversation_id):
     sticker_id = request.form.get("sticker_id", "").strip()
     gif_url = request.form.get("gif_url", "").strip()
     wants_json = "application/json" in request.headers.get("Accept", "")
+
+    # Kullanıcı bazlı (IP değil — aynı ev/ofisteki birden fazla arkadaş
+    # birbirini kilitlemesin) mesaj taşkını sınırı: dakikada 30 mesaj insan
+    # kullanımı için bol, betik tabanlı bir taşkını yavaşlatır.
+    if is_rate_limited(f"send_message:{me}", 30, 60):
+        if wants_json:
+            return jsonify({"error": "rate_limited"}), 429
+        flash("Çok hızlı mesaj gönderiyorsun, biraz yavaşla.", "error")
+        return redirect(url_for("messaging.conversation", conversation_id=conversation_id))
 
     # Engelleme: konuşma bir engellemeden ÖNCE başlamış olabilir — her mesaj
     # gönderiminde diğer katılımcı(lar)la aramda bir engelleme var mı kontrol et.
