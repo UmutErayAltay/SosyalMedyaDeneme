@@ -24,7 +24,29 @@
                hale gelir. Sadece etiket role'e göre değişir, admin-only aksiyonlar
                zaten modal içinde {% if my_is_admin %} ile korunuyor. #}
             <button type="button" class="btn btn-ghost small conv-manage-btn" id="open-group-manage-modal"
-                    data-conversation-id="{{ conversation_id }}">{{ '⚙️ Yönet' if my_is_admin else '👥 Üyeler' }}</button>
+                    data-conversation-id="{{ conversation_id }}">
+                {% if my_is_admin %}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08
+                             a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09
+                             a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20
+                             a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08
+                             a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09
+                             a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4
+                             a2 2 0 0 0-2-2z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <span>Yönet</span>
+                {% else %}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <span>Üyeler</span>
+                {% endif %}
+            </button>
             <div class="conv-call-buttons">
                 <button type="button" class="conv-call-btn" data-group-call="audio"
                         aria-label="Sesli arama başlat" title="Sesli arama">
@@ -226,8 +248,10 @@
         <div class="composer-input-area" id="composer-input-area">
             <textarea name="content" id="msg-input" placeholder="Mesaj yaz..." rows="1"
                       aria-label="Mesaj içeriği"></textarea>
-            <div id="voice-recording-status" class="voice-recording-status" aria-live="polite" hidden></div>
-            <button type="button" id="voice-stop-btn" class="msg-icon-btn msg-stop-btn" aria-label="Kaydı durdur" hidden>⏹</button>
+            <div id="voice-recording-status" class="voice-recording-status" aria-live="polite" hidden>
+                <span id="voice-recording-status-text"></span>
+                <button type="button" id="voice-stop-btn" class="voice-stop-inline-btn" aria-label="Kaydı durdur">⏹</button>
+            </div>
             <audio id="voice-preview-audio" class="voice-preview-audio" hidden controls></audio>
         </div>
 

@@ -530,6 +530,7 @@
         var voiceDiscardBtn = document.getElementById('voice-discard-btn');
         var voiceStopBtn = document.getElementById('voice-stop-btn');
         var voiceRecordingStatus = document.getElementById('voice-recording-status');
+        var voiceRecordingStatusText = document.getElementById('voice-recording-status-text');
         var voicePreviewAudio = document.getElementById('voice-preview-audio');
         var recordedVoiceBlob = null;
         var sendAfterStop = false;
@@ -554,8 +555,7 @@
             function resetVoiceUI() {
                 input.hidden = false;
                 voiceRecordingStatus.hidden = true;
-                voiceRecordingStatus.textContent = '';
-                voiceStopBtn.hidden = true;
+                voiceRecordingStatusText.textContent = '';
                 voicePreviewAudio.hidden = true;
                 voicePreviewAudio.removeAttribute('src');
                 voiceDiscardBtn.hidden = true;
@@ -592,8 +592,7 @@
                     if (sendAfterStop) {
                         sendAfterStop = false;
                         if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
-                        voiceRecordingStatus.textContent = '📤 Gönderiliyor...';
-                        voiceStopBtn.hidden = true;
+                        voiceRecordingStatusText.textContent = '📤 Gönderiliyor...';
                         sendTyping(false);
                         form.requestSubmit();
                         return;
@@ -601,7 +600,6 @@
 
                     // Normal akış: kayıt bitti, kullanıcı sil/gönder seçebilir
                     voiceRecordingStatus.hidden = true;
-                    voiceStopBtn.hidden = true;
                     voicePreviewAudio.src = URL.createObjectURL(recordedVoiceBlob);
                     voicePreviewAudio.hidden = false;
                     voiceDiscardBtn.hidden = false;
@@ -615,13 +613,12 @@
                 recordingStartedAt = Date.now();
                 input.hidden = true;
                 voiceRecordingStatus.hidden = false;
-                voiceStopBtn.hidden = false;
-                voiceRecordingStatus.textContent = '🔴 Kaydediliyor... 0:00';
+                voiceRecordingStatusText.textContent = '🔴 Kaydediliyor... 0:00';
                 voiceBtn.textContent = '⏹';
                 voiceBtn.classList.add('recording');
                 sendTyping(true, 'voice');
                 recordingTimer = setInterval(function () {
-                    voiceRecordingStatus.textContent = '🔴 Kaydediliyor... ' + formatElapsed(Date.now() - recordingStartedAt);
+                    voiceRecordingStatusText.textContent = '🔴 Kaydediliyor... ' + formatElapsed(Date.now() - recordingStartedAt);
                 }, 500);
             }
 

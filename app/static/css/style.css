@@ -787,7 +787,7 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 }
 
 .conv-header { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
-.conv-manage-btn { margin-left: auto; }
+.conv-manage-btn { margin-left: auto; display: flex; align-items: center; gap: 6px; }
 
 /* Grup yönetim modalı (grup-manage-modal) — .modal-overlay/.modal deseni
    new-group-modal ile aynı, [hidden] varyantı zaten .modal-overlay için
@@ -1032,11 +1032,21 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 #voice-record-btn.recording { color: var(--danger); animation: pulse-rec 1.2s infinite; }
 @keyframes pulse-rec { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .voice-recording-status {
-    display: flex; align-items: center; height: 40px; padding: 0 12px;
+    display: flex; align-items: center; justify-content: space-between; height: 40px; padding: 0 8px 0 12px;
     border: 1px solid var(--border); border-radius: 8px; background: var(--card);
     color: var(--danger); font-size: 14px;
 }
 .voice-recording-status[hidden] { display: none; }
+/* Kayıt sırasında durdurma butonu — durum metniyle AYNI satırda (kullanıcı
+   isteği: alt satıra kayıp görsel bozukluk yaratmasın), sabit boyutlu daire. */
+.voice-stop-inline-btn {
+    flex-shrink: 0; width: 28px; height: 28px; margin: 0; padding: 0;
+    border: none; border-radius: 50%; background: var(--danger); color: #fff;
+    font-size: 13px; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+}
+.voice-stop-inline-btn:hover { opacity: 0.85; }
+.voice-stop-inline-btn:active { transform: scale(0.94); }
 .voice-preview-audio { width: 100%; height: 40px; }
 .msg-audio { display: block; max-width: 240px; margin-bottom: 4px; }
 
