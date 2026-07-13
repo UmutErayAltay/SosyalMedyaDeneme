@@ -28,7 +28,7 @@
         <div class="avatar large avatar-placeholder" aria-hidden="true"></div>
     {% endif %}
     <div class="profile-info">
-        <h1>{{ profile.username }}</h1>
+        <h1>{{ profile.username }}{% if is_private %} 🔒{% endif %}</h1>
         {% if profile.full_name %}<p class="muted">{{ profile.full_name }}</p>{% endif %}
         {% if profile.bio %}<p class="bio">{{ profile.bio }}</p>{% endif %}
         {% if profile.created_at %}
@@ -53,7 +53,7 @@
                     <button type="submit" class="btn btn-ghost">Engeli kaldır</button>
                 </form>
             {% else %}
-                {# Takip menüsü (takip ediyorsam) ya da takip butonu #}
+                {# Takip menüsü (takip ediyorsam), pending butonu, ya da takip butonu #}
                 {% if is_following %}
                     <div class="profile-follow-menu-wrap">
                         <button type="button"
@@ -79,19 +79,33 @@
                             </button>
                         </div>
                     </div>
-                {% else %}
-                    {# user-id + yakın arkadaş URL'leri: takip sonrası butonun
-                       menüye dönüşümünde (createFollowMenu) taşınmaları gerekir #}
+                {% elif is_pending_request %}
+                    {# İstek gönderildi — geri çekebilir #}
                     <button type="button"
-                            class="btn btn-primary profile-follow-btn"
+                            class="btn btn-ghost profile-follow-btn"
                             data-following="0"
+                            data-pending="1"
                             data-username="{{ profile.username }}"
                             data-user-id="{{ profile.id }}"
                             data-follow-url="{{ url_for('social.toggle_follow', username=profile.username) }}"
                             data-add-close-friend-url="{{ url_for('close_friends.add_close_friend') }}"
                             data-remove-close-friend-url="{{ url_for('close_friends.remove_close_friend', user_id=profile.id) }}"
-                            aria-label="Takip et">
-                        Takip et
+                            aria-label="İstek gönderildi">
+                        ✓ İstek Gönderildi
+                    </button>
+                {% else %}
+                    {# Takip et veya takip isteği gönder (gizli profil) #}
+                    <button type="button"
+                            class="btn btn-primary profile-follow-btn"
+                            data-following="0"
+                            data-pending="0"
+                            data-username="{{ profile.username }}"
+                            data-user-id="{{ profile.id }}"
+                            data-follow-url="{{ url_for('social.toggle_follow', username=profile.username) }}"
+                            data-add-close-friend-url="{{ url_for('close_friends.add_close_friend') }}"
+                            data-remove-close-friend-url="{{ url_for('close_friends.remove_close_friend', user_id=profile.id) }}"
+                            aria-label="{% if is_private %}Takip isteği gönder{% else %}Takip et{% endif %}">
+                        {% if is_private %}Takip İsteği Gönder{% else %}Takip et{% endif %}
                     </button>
                 {% endif %}
 
@@ -166,6 +180,8 @@
                 aria-controls="panel-bookmarks" class="tab-btn" tabindex="-1">Kaydedilenler</button>
         <button type="button" role="tab" id="tab-stickers" aria-selected="false"
                 aria-controls="panel-stickers" class="tab-btn" tabindex="-1">🏷️ Çıkartmalarım</button>
+        <button type="button" role="tab" id="tab-archive" aria-selected="false"
+                aria-controls="panel-archive" class="tab-btn" tabindex="-1">🗄️ Arşiv</button>
         {% endif %}
     </div>
 
@@ -174,7 +190,11 @@
         {% for p in posts %}
             {{ pc.post_card(p, profile.username, profile.avatar_url, is_self) }}
         {% else %}
-            <p class="muted">Henüz post yok.</p>
+            {% if is_private and not is_self and not is_following %}
+                <p class="muted">Bu hesap gizlidir. Gönderileri görmek için takip isteği gönder.</p>
+            {% else %}
+                <p class="muted">Henüz post yok.</p>
+            {% endif %}
         {% endfor %}
     </section>
 
@@ -252,6 +272,15 @@
             <p class="muted center">Yükleniyor...</p>
         </div>
     </section>
+
+    <section id="panel-archive" role="tabpanel" aria-labelledby="tab-archive" class="tabpanel" hidden>
+        <h2 class="sr-only">Arşiv</h2>
+        {% for p in archived_posts %}
+            {{ pc.post_card(p, profile.username, profile.avatar_url, is_self) }}
+        {% else %}
+            <p class="muted">Arşivlenmiş gönderin yok.</p>
+        {% endfor %}
+    </section>
     {% endif %}
 </div>
 
@@ -277,6 +306,10 @@
     </div>
 </div>
 
+<script>
+    // Profil gizliyse, takip butonunun metni değiştirilecek
+    window._isPrivate = {{ is_private|tojson }};
+</script>
 <script src="{{ url_for('static', filename='js/follow.js') }}"></script>
 <script src="{{ url_for('static', filename='js/likes.js') }}"></script>
 <script src="{{ url_for('static', filename='js/polls.js') }}"></script>

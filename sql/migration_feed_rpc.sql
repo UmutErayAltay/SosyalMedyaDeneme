@@ -16,22 +16,27 @@ stable
 set search_path = public
 as $$
 with vis as (
-  -- 1) Taslak olmayan, engel olmayan, görünürlüğe uygun postlar (offset + limit)
+  -- 1) Taslak olmayan, arşivlenmiş olmayan, engel olmayan, görünürlüğe uygun postlar (offset + limit)
   select p.*
   from posts p
   where coalesce(p.is_draft, false) = false
+    and coalesce(p.is_archived, false) = false
+    -- Gizli profil kontrolü: kendi postları VEYA profil herkese açık VEYA accepted takipçi
+    and (p.user_id = p_me
+         or not coalesce((select pr.is_private from profiles pr where pr.id = p.user_id), false)
+         or exists (select 1 from follows f2 where f2.follower_id = p_me and f2.following_id = p.user_id and f2.status = 'accepted'))
     -- İki yönlü engel: ben onu VEYA o beni engellemişse gizle
     and not exists (
       select 1 from blocks b
       where (b.blocker_id = p_me and b.blocked_id = p.user_id)
          or (b.blocker_id = p.user_id and b.blocked_id = p_me)
     )
-    -- Görünürlük kontrolü: public VEYA (followers: takip ediyor) VEYA (close_friends: yakın arkadaş)
+    -- Görünürlük kontrolü: public VEYA (followers: takip ediyor ACCEPTED) VEYA (close_friends: yakın arkadaş)
     and (
       p.visibility = 'public'
       or (p.visibility = 'followers' and (p.user_id = p_me or exists (
             select 1 from follows f
-            where f.follower_id = p_me and f.following_id = p.user_id)))
+            where f.follower_id = p_me and f.following_id = p.user_id and f.status = 'accepted')))
       or (p.visibility = 'close_friends' and (p.user_id = p_me or exists (
             select 1 from close_friends cf
             where cf.owner_id = p.user_id and cf.friend_id = p_me)))

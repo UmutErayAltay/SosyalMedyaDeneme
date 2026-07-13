@@ -20,6 +20,8 @@ NOTIFICATION_TYPES = [
     ("comment_like", "notify_comment_like", "Yorum beğenileri", "Yorumunu biri beğendiğinde"),
     ("comment_reaction", "notify_comment_reaction", "Yorum tepkileri", "Yorumuna biri emoji tepkisi verdiğinde"),
     ("follow", "notify_follow", "Takipçiler", "Biri seni takip etmeye başladığında"),
+    ("follow_request", "notify_follow_request", "Takip İstekleri", "Gizli profiline biri takip isteği gönderdiğinde"),
+    ("follow_accept", "notify_follow_accept", "İstek Kabülleri", "Takip isteğin kabul edildiğinde"),
     ("message", "notify_message", "Mesajlar", "Sana mesaj geldiğinde"),
     ("mention", "notify_mention", "Etiketlenmeler", "Bir gönderide etiketlendiğinde"),
     ("hashtag_post", "notify_hashtag_post", "Takip edilen etiketler", "Takip ettiğin bir etikette yeni paylaşım olduğunda"),
@@ -48,6 +50,8 @@ _TARGET_BUILDERS = {
     "comment_like": lambda n: url_for("routes.post_detail", post_id=n["post_id"]),
     "comment_reaction": lambda n: url_for("routes.post_detail", post_id=n["post_id"]),
     "follow": lambda n: url_for("routes.profile", username=n["actor"]["username"]),
+    "follow_request": lambda n: url_for("social.list_follow_requests"),
+    "follow_accept": lambda n: url_for("routes.profile", username=n["actor"]["username"]),
     "message": lambda n: url_for("messaging.conversation", conversation_id=n["conversation_id"]),
     # Mesajda etiketlenme post_id taşımaz — conversation_id'ye düşer
     # (bkz. mentions.notify_mentions conversation_id parametresi).
@@ -63,6 +67,8 @@ _TEXT = {
     "comment_like": "yorumunu beğendi",
     "comment_reaction": "yorumuna tepki verdi",
     "follow": "seni takip etmeye başladı",
+    "follow_request": "sana takip isteği gönderdi",
+    "follow_accept": "takip isteğini kabul etti",
     "message": "sana mesaj gönderdi",
     "mention": "seni bir gönderide etiketledi",
     "hashtag_post": "takip ettiğin bir etikette yeni post paylaştı",

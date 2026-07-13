@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}2FA Kurulumu{% endblock %}
+{% block content %}
+<div class="auth-card" style="max-width: 450px;">
+    <h1>2FA Kur</h1>
+    <p class="muted">Telefonuna bir authenticator uygulaması indir (Google Authenticator, Authy vb.) ve bu QR kodunu tara.</p>
+
+    {% if qr_code %}
+    <div style="margin: 20px 0; text-align: center;">
+        <div style="display: inline-block; border: 1px solid #ccc; padding: 10px; background: white;">
+            {{ qr_code | safe }}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if secret %}
+    <div style="margin: 20px 0; padding: 10px; background: rgba(0,0,0,0.05); border-radius: 4px; font-family: monospace; font-size: 14px; word-break: break-all;">
+        <strong>Gizli anahtar (manuel giriş için):</strong><br>{{ secret }}
+    </div>
+    {% endif %}
+
+    <p class="muted" style="margin-top: 20px;">Authenticator'da kodu kaydetdikten sonra, 6 haneli kodu gir:</p>
+
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Authenticator Kodu
+            <input type="text" name="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="000000" required autofocus>
+        </label>
+        <button type="submit" class="btn btn-primary">2FA'yı Etkinleştir</button>
+        <a href="{{ url_for('routes.profile_edit') }}" class="btn btn-ghost">İptal</a>
+    </form>
+</div>
+{% endblock %}

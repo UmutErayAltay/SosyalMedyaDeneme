@@ -67,11 +67,15 @@ with cand as (
        + (select count(*) from comments c where c.post_id = p.id) as _score
   from posts p
   where coalesce(p.is_draft, false) = false
+    and coalesce(p.is_archived, false) = false
     and p.visibility = 'public'
     and p.created_at >= now() - interval '7 days'
     and p.user_id <> p_me
     and not exists (select 1 from follows f
                     where f.follower_id = p_me and f.following_id = p.user_id)
+    -- Gizli profil kontrolü: yazarın profili açık VEYA (zaten takip ediyor — önceki satırda false ama accepted kontrol edelim)
+    and (not coalesce((select pr.is_private from profiles pr where pr.id = p.user_id), false)
+         or exists (select 1 from follows f2 where f2.follower_id = p_me and f2.following_id = p.user_id and f2.status = 'accepted'))
     and not exists (
       select 1 from blocks b
       where (b.blocker_id = p_me and b.blocked_id = p.user_id)
@@ -87,13 +91,14 @@ from cand
 $$;
 
 -- Profil: viewer'a görünür post listesi + beğendikleri + (kendisiyse)
--- kaydettikleri + takipçi sayıları TEK round-trip'te.
+-- kaydettikleri + takipçi sayıları + özel profil alanları TEK round-trip'te.
 -- Görünürlük semantiği app/visibility.py filter_visible ile birebir:
 -- public → herkes; close_friends → yazar viewer'ı yakın arkadaş eklediyse
 -- veya kendisiyse; DİĞER HER DEĞER (followers, NULL, bilinmeyen) →
--- viewer yazarı takip ediyorsa veya kendisiyse. (Feed'dekinden farklı:
+-- viewer yazarı (ACCEPTED olarak) takip ediyorsa veya kendisiyse. (Feed'dekinden farklı:
 -- feed NULL visibility'yi gizler, profil 'followers' gibi davranır —
 -- bu fark mevcut Python kodundan geliyor, AYNEN korunuyor.)
+-- is_private=true ve viewer accepted değilse (ve owner değilse) posts boş array döner.
 create or replace function public.profile_page_data(p_viewer uuid, p_owner uuid, p_include_bookmarks boolean default false)
 returns jsonb
 language sql
@@ -103,7 +108,8 @@ as $$
 with visible as (
   select p.id
   from posts p
-  where (
+  where coalesce(p.is_archived, false) = false
+    and (
       p.visibility = 'public'
       or (p.visibility = 'close_friends' and (p.user_id = p_viewer or exists (
             select 1 from close_friends cf
@@ -111,7 +117,7 @@ with visible as (
       or (coalesce(p.visibility, 'followers') not in ('public', 'close_friends')
           and (p.user_id = p_viewer or exists (
             select 1 from follows f
-            where f.follower_id = p_viewer and f.following_id = p.user_id)))
+            where f.follower_id = p_viewer and f.following_id = p.user_id and f.status = 'accepted')))
     )
     and not exists (
       select 1 from blocks b
@@ -120,6 +126,11 @@ with visible as (
     )
 )
 select jsonb_build_object(
+  'is_private', coalesce((select pr.is_private from profiles pr where pr.id = p_owner), false),
+  'is_following', exists (select 1 from follows
+                          where follower_id = p_viewer and following_id = p_owner and status = 'accepted'),
+  'is_pending_request', p_viewer <> p_owner and exists (select 1 from follows
+                                                        where follower_id = p_viewer and following_id = p_owner and status = 'pending'),
   'posts', (
     select coalesce(jsonb_agg(
              enrich_post_json(p.id, p_viewer)
@@ -128,6 +139,8 @@ select jsonb_build_object(
     from posts p
     where p.user_id = p_owner
       and coalesce(p.is_draft, false) = false
+      and (p_viewer = p_owner or not coalesce((select pr.is_private from profiles pr where pr.id = p_owner), false)
+           or exists (select 1 from follows f where f.follower_id = p_viewer and f.following_id = p_owner and f.status = 'accepted'))
       and p.id in (select id from visible)
   ),
   'liked_posts', (
@@ -137,6 +150,8 @@ select jsonb_build_object(
     from likes lk
     join posts p on p.id = lk.post_id
     where lk.user_id = p_owner
+      and (p_viewer = p_owner or not coalesce((select pr.is_private from profiles pr where pr.id = p_owner), false)
+           or exists (select 1 from follows f where f.follower_id = p_viewer and f.following_id = p_owner and f.status = 'accepted'))
       and p.id in (select id from visible)
   ),
   'bookmarked_posts', case when p_include_bookmarks then (
@@ -149,10 +164,8 @@ select jsonb_build_object(
     where bm.user_id = p_viewer
       and p.id in (select id from visible)
   ) else '[]'::jsonb end,
-  'followers_count', (select count(*) from follows where following_id = p_owner),
-  'following_count', (select count(*) from follows where follower_id = p_owner),
-  'is_following', exists (select 1 from follows
-                          where follower_id = p_viewer and following_id = p_owner)
+  'followers_count', (select count(*) from follows where following_id = p_owner and status = 'accepted'),
+  'following_count', (select count(*) from follows where follower_id = p_owner and status = 'accepted')
 )
 $$;
 

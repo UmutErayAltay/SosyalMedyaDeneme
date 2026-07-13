@@ -140,7 +140,7 @@ def hashtag_posts(tag):
                     followed_ids = followed_future.result()
                     close_friend_ids = close_future.result()
 
-                posts = filter_visible(posts, followed_ids, close_friend_ids)
+                posts = filter_visible(sb, posts, followed_ids, close_friend_ids, me)
                 posts = filter_not_blocked(posts, blocked_ids)
                 _attach_post_metrics(sb, posts, me)
                 attach_polls(sb, posts, me)

@@ -66,15 +66,15 @@ def search():
         # hata vermez — açık isimle istenen var olmayan bir kolon HATA verirdi.
         posts_query = sb.table("posts").select(
             "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
-        ).ilike("content", f"%{q}%")
+        ).ilike("content", f"%{q}%").eq("is_draft", False).eq("is_archived", False)
         if date_from:
             posts_query = posts_query.gte("created_at", date_from)
         if date_to:
             # gün sonu dahil edilsin diye 23:59:59'a kadar genişletilir
             posts_query = posts_query.lte("created_at", f"{date_to}T23:59:59")
         posts = posts_query.order("created_at", desc=True).limit(50).execute().data
-        posts = [p for p in posts if not p.get("is_draft")]  # taslaklar aramada görünmez
-        posts = filter_visible(posts, followed_and_self_ids(sb, me), close_friend_author_ids(sb, me))
+        posts = [p for p in posts if not p.get("is_draft")]  # taslaklar aramada görünmez (fallback koruma)
+        posts = filter_visible(sb, posts, followed_and_self_ids(sb, me), close_friend_author_ids(sb, me), me)
         posts = filter_not_blocked(posts, blocked_ids)
         _attach_post_metrics(sb, posts, me)
         attach_polls(sb, posts, me)
@@ -168,14 +168,28 @@ def discover():
         try:
             posts = sb.table("posts").select(select_cols).gte(
                 "created_at", cutoff
-            ).eq("visibility", "public").eq("is_draft", False).execute().data
+            ).eq("visibility", "public").eq("is_draft", False).eq("is_archived", False).execute().data
         except Exception:
             posts = sb.table("posts").select(select_cols).gte("created_at", cutoff).execute().data
 
         posts = [p for p in posts if p["user_id"] not in exclude_ids]
         close_friend_ids = close_friend_author_ids(sb, me)
-        posts = filter_visible(posts, exclude_ids, close_friend_ids)
+        posts = filter_visible(sb, posts, exclude_ids, close_friend_ids, me)
         posts = filter_not_blocked(posts, blocked_ids)
+
+        # Gizli profil kontrolü (Python fallback): is_private=true ve viewer accepted değilse gösterme
+        if posts:
+            # Yazar is_private durumunu toplu çek
+            author_ids = {p.get("user_id") for p in posts if p.get("user_id")}
+            is_private_map = {}
+            if author_ids:
+                try:
+                    profiles = sb.table("profiles").select("id, is_private").in_("id", list(author_ids)).execute().data
+                    is_private_map = {p["id"]: p.get("is_private", False) for p in profiles}
+                except Exception:
+                    pass
+            # is_private filtresi: gizli profil ve viewer accepted değilse ele
+            posts = [p for p in posts if not (is_private_map.get(p.get("user_id"), False) and p.get("user_id") != me and p.get("user_id") not in exclude_ids)]
 
         # Paralel: post metrics ve polls çek
         def _attach_metrics():

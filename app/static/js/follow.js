@@ -60,30 +60,82 @@ document.addEventListener("click", (e) => {
     });
 });
 
-// Profil sayfası: takip butonu (takip değil, menü yok)
+// Profil sayfası: takip butonu (takip/pending/unfollow durumu)
 document.addEventListener("click", (e) => {
     const btn = e.target.closest(".profile-follow-btn");
     if (!btn) return;
 
     e.preventDefault();
-    // ANINDA menüye dönüş — önceden sunucu yanıtı bekleniyordu ve kullanıcı
-    // "Takipten çık" seçeneğine hemen ulaşamıyordu (kullanıcı raporu).
     const ds = Object.assign({}, btn.dataset);
-    const wrap = createFollowMenu(ds);
-    btn.replaceWith(wrap);
+    const isPending = btn.dataset.pending === "1";
 
-    _enqueueFollow(ds.username, async () => {
-        try {
-            const res = await fetch(ds.followUrl, { method: "POST", headers: _followHeaders() });
-            if (!res.ok) throw new Error("İstek başarısız: " + res.status);
-            const data = await res.json();
-            _updateFollowerStat(data);
-        } catch (err) {
-            console.error("Takip başarısız:", err);
-            // Geri al: menü hâlâ yerindeyse butona çevir
-            if (wrap.isConnected) wrap.replaceWith(createFollowButton(ds));
+    if (isPending) {
+        // Pending → isteği geri çek (iptal et)
+        // Optimistic: hemen normal button'a dön
+        btn.textContent = window._isPrivate ? "Takip İsteği Gönder" : "Takip et";
+        btn.classList.add("btn-primary");
+        btn.classList.remove("btn-ghost");
+        btn.dataset.pending = "0";
+
+        _enqueueFollow(ds.username, async () => {
+            try {
+                const res = await fetch(ds.followUrl, { method: "POST", headers: _followHeaders() });
+                if (!res.ok) throw new Error("İstek başarısız");
+                const data = await res.json();
+                _updateFollowerStat(data);
+            } catch (err) {
+                console.error("İstek geri alınamadı:", err);
+                // Geri al: pending durumuna dön
+                if (btn.isConnected) {
+                    btn.textContent = "✓ İstek Gönderildi";
+                    btn.classList.remove("btn-primary");
+                    btn.classList.add("btn-ghost");
+                    btn.dataset.pending = "1";
+                }
+            }
+        });
+    } else {
+        // Gizli profil: pending istek yolla, public: takip et (menü)
+        if (window._isPrivate) {
+            // Gizli profil: baştan pending düğmesi göster (optimistic)
+            const pendingBtn = createPendingButton(ds);
+            btn.replaceWith(pendingBtn);
+
+            _enqueueFollow(ds.username, async () => {
+                try {
+                    const res = await fetch(ds.followUrl, { method: "POST", headers: _followHeaders() });
+                    if (!res.ok) throw new Error("İstek başarısız: " + res.status);
+                    const data = await res.json();
+                    _updateFollowerStat(data);
+
+                    // Beklenmedik: is_pending false dönerse normal butona dön
+                    if (!data.is_pending && pendingBtn.isConnected) {
+                        pendingBtn.replaceWith(createFollowButton(ds));
+                    }
+                } catch (err) {
+                    console.error("Takip isteği başarısız:", err);
+                    if (pendingBtn.isConnected) pendingBtn.replaceWith(createFollowButton(ds));
+                }
+            });
+        } else {
+            // Public profil: ANINDA menüye dönüştür (mevcut davranış)
+            const wrap = createFollowMenu(ds);
+            btn.replaceWith(wrap);
+
+            _enqueueFollow(ds.username, async () => {
+                try {
+                    const res = await fetch(ds.followUrl, { method: "POST", headers: _followHeaders() });
+                    if (!res.ok) throw new Error("İstek başarısız: " + res.status);
+                    const data = await res.json();
+                    _updateFollowerStat(data);
+                } catch (err) {
+                    console.error("Takip başarısız:", err);
+                    // Geri al: menü hâlâ yerindeyse butona çevir
+                    if (wrap.isConnected) wrap.replaceWith(createFollowButton(ds));
+                }
+            });
         }
-    });
+    }
 });
 
 // Profil sayfası: takip menüsü
@@ -263,19 +315,21 @@ document.addEventListener("keydown", (e) => {
     }
 });
 
-// Menü → "Takip et" butonuna dönüştürücü helper (unfollow + hata geri alma)
+// Menü → "Takip et"/"Takip İsteği Gönder" butonuna dönüştürücü helper (unfollow + hata geri alma)
 function createFollowButton(data) {
     const newBtn = document.createElement("button");
     newBtn.type = "button";
     newBtn.className = "btn btn-primary profile-follow-btn";
     newBtn.dataset.following = "0";
+    newBtn.dataset.pending = "0";
     newBtn.dataset.username = data.username;
     newBtn.dataset.userId = data.userId;
     newBtn.dataset.followUrl = data.followUrl;
     newBtn.dataset.addCloseFriendUrl = data.addCloseFriendUrl;
     newBtn.dataset.removeCloseFriendUrl = data.removeCloseFriendUrl;
-    newBtn.setAttribute("aria-label", "Takip et");
-    newBtn.textContent = "Takip et";
+    const text = window._isPrivate ? "Takip İsteği Gönder" : "Takip et";
+    newBtn.setAttribute("aria-label", text);
+    newBtn.textContent = text;
     return newBtn;
 }
 
@@ -323,4 +377,21 @@ function createFollowMenu(data) {
     wrap.appendChild(menu);
 
     return wrap;
+}
+
+// Pending button — "İstek Gönderildi" durumu
+function createPendingButton(data) {
+    const newBtn = document.createElement("button");
+    newBtn.type = "button";
+    newBtn.className = "btn btn-ghost profile-follow-btn";
+    newBtn.dataset.following = "0";
+    newBtn.dataset.pending = "1";
+    newBtn.dataset.username = data.username;
+    newBtn.dataset.userId = data.userId;
+    newBtn.dataset.followUrl = data.followUrl;
+    newBtn.dataset.addCloseFriendUrl = data.addCloseFriendUrl;
+    newBtn.dataset.removeCloseFriendUrl = data.removeCloseFriendUrl;
+    newBtn.setAttribute("aria-label", "İstek gönderildi");
+    newBtn.textContent = "✓ İstek Gönderildi";
+    return newBtn;
 }

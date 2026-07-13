@@ -31,6 +31,50 @@ def _reset_rate_limited(ip: str) -> bool:
     return len(attempts) > _RESET_MAX_ATTEMPTS
 
 
+def _check_banned(user_id: str) -> bool:
+    """Kullanıcı hesabı askıya alınmış mı kontrol et.
+
+    True döndürürse hesap banned, Supabase oturumu temizlenir.
+    """
+    try:
+        prof = get_sb().table("profiles").select(
+            "is_banned"
+        ).eq("id", user_id).execute()
+        prof_data = prof.data[0] if prof.data else {}
+        if prof_data.get("is_banned"):
+            try:
+                get_auth().auth.sign_out()
+            except Exception:
+                pass
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _finalize_login(user_id: str, email: str, access_token: str, refresh_token: str = None) -> bool:
+    """Session'ı tam kur: profile verisi + token'lar.
+
+    Ban kontrolü yapıldıktan SONRA çağrılmalı. True döndürürse başarılı.
+    """
+    try:
+        prof = get_sb().table("profiles").select(
+            "avatar_url, username, is_admin"
+        ).eq("id", user_id).execute()
+        prof_data = prof.data[0] if prof.data else {}
+    except Exception:
+        prof_data = {}
+
+    session["user"] = {"id": user_id, "email": email}
+    session["access_token"] = access_token
+    session["refresh_token"] = refresh_token
+    session.permanent = True
+    session["user"]["avatar_url"] = prof_data.get("avatar_url")
+    session["user"]["username"] = prof_data.get("username")
+    session["user"]["is_admin"] = bool(prof_data.get("is_admin"))
+    return True
+
+
 def _save_session(res):
     """sign_in cevabindan session bilgisini sakla (avatar_url, is_admin dahil).
 
@@ -41,33 +85,11 @@ def _save_session(res):
     user = getattr(res, "user", None)
     s = getattr(res, "session", None)
     if user and s and getattr(s, "access_token", None):
-        # Profile'dan avatar_url/username/is_admin/is_banned'i session'dan
-        # ÖNCE çek — yasaklı bir hesap için session'ı hiç kurmayacağız.
-        try:
-            prof = get_sb().table("profiles").select(
-                "avatar_url, username, is_admin, is_banned"
-            ).eq("id", user.id).execute()
-            prof_data = prof.data[0] if prof.data else {}
-        except Exception:
-            prof_data = {}
-
-        if prof_data.get("is_banned"):
-            try:
-                get_auth().auth.sign_out()
-            except Exception:
-                pass
+        # Ban kontrolü — session kurmadan önce
+        if _check_banned(user.id):
             return "banned"
 
-        session["user"] = {"id": user.id, "email": user.email}
-        session["access_token"] = s.access_token
-        session["refresh_token"] = getattr(s, "refresh_token", None)
-        session.permanent = True
-        session["user"]["avatar_url"] = prof_data.get("avatar_url")
-        session["user"]["username"] = prof_data.get("username")
-        # is_admin SADECE navbar linkini göstermek için cache'lenir — gerçek
-        # yetki kontrolü (admin_required) her istekte DB'den taze okur.
-        session["user"]["is_admin"] = bool(prof_data.get("is_admin"))
-
+        _finalize_login(user.id, user.email, s.access_token, getattr(s, "refresh_token", None))
         return True
     return False
 
@@ -155,14 +177,44 @@ def login():
                     "password": password,
                 })
             )
-            result = _save_session(res)
-            if result == "banned":
+
+            # Ban kontrolü önce
+            if _check_banned(res.user.id):
                 flash("Hesabın askıya alınmış. Bir yöneticiyle iletişime geç.", "error")
                 return redirect(url_for("auth.login"))
-            if not result:
-                flash("E-posta veya şifre hatalı.", "error")
-                return redirect(url_for("auth.login"))
+
+            # MFA kontrolü: sign_in başarılı ve ban değil, ama session HENÜZ kurmamışız
+            has_totp = False
+            try:
+                tmp = create_client(
+                    current_app.config["SUPABASE_URL"],
+                    current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+                )
+                tmp.auth.set_session(res.session.access_token, res.session.refresh_token)
+                factors = tmp.auth.mfa.list_factors()
+
+                # Aktif TOTP factor var mı?
+                has_totp = any(
+                    f.factor_type == "totp" and f.status == "verified"
+                    for f in (factors.totp or [])
+                )
+            except Exception:
+                # MFA kontrolü başarısız — 2FA yok sayılır, normal giriş devam et
+                pass
+
+            if has_totp:
+                # 2FA gerekli — session KURMADAN pending state al
+                session["mfa_pending_user_id"] = res.user.id
+                session["mfa_pending_email"] = res.user.email
+                session["mfa_pending_access_token"] = res.session.access_token
+                session["mfa_pending_refresh_token"] = res.session.refresh_token
+                flash("2FA kodu gir.", "info")
+                return redirect(url_for("auth.mfa_verify"))
+
+            # 2FA yok — normal session kurulumu
+            _finalize_login(res.user.id, res.user.email, res.session.access_token, getattr(res.session, "refresh_token", None))
             return redirect(url_for("routes.feed"))
+
         except Exception as e:
             msg = str(e)
             if "Invalid login credentials" in msg:
@@ -185,6 +237,227 @@ def logout():
     session.clear()
     flash("Çıkış yapıldı.", "success")
     return redirect(url_for("auth.login"))
+
+
+@bp.route("/2fa/verify", methods=["GET", "POST"])
+def mfa_verify():
+    """Login sırasında 2FA (TOTP) kodu doğrulaması.
+
+    GET: Kod girme formunu göster.
+    POST: Kodu doğrula, başarılıysa tam session kurulup feed'e yönlendir.
+    """
+    # MFA beklemede mi?
+    if "mfa_pending_user_id" not in session:
+        flash("2FA süreci başlatılmamış.", "error")
+        return redirect(url_for("auth.login"))
+
+    if request.method == "POST":
+        code = request.form.get("code", "").strip()
+
+        if not code or len(code) != 6 or not code.isdigit():
+            flash("Lütfen 6 haneli kodu gir.", "error")
+            return redirect(url_for("auth.mfa_verify"))
+
+        try:
+            # Geçici client: MFA doğrulama için
+            tmp = create_client(
+                current_app.config["SUPABASE_URL"],
+                current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+            )
+            tmp.auth.set_session(
+                session["mfa_pending_access_token"],
+                session["mfa_pending_refresh_token"],
+            )
+
+            # Aktif TOTP factor'ü bul
+            factors = tmp.auth.mfa.list_factors()
+            totp_factor = None
+            for f in (factors.totp or []):
+                if f.status == "verified":
+                    totp_factor = f
+                    break
+
+            if not totp_factor:
+                flash("Aktif 2FA bulunamadı.", "error")
+                session.pop("mfa_pending_user_id", None)
+                session.pop("mfa_pending_email", None)
+                session.pop("mfa_pending_access_token", None)
+                session.pop("mfa_pending_refresh_token", None)
+                return redirect(url_for("auth.login"))
+
+            # TOTP kodunu doğrula (login sırasında challenge+verify birlikte)
+            tmp.auth.mfa.challenge_and_verify({
+                "factor_id": totp_factor.id,
+                "code": code,
+            })
+
+            # Başarılı — geçici state'ten veriyi al
+            user_id = session.pop("mfa_pending_user_id")
+            email = session.pop("mfa_pending_email")
+            access_token = session.pop("mfa_pending_access_token")
+            refresh_token = session.pop("mfa_pending_refresh_token")
+
+            # Ban kontrolü (double check)
+            if _check_banned(user_id):
+                flash("Hesabın askıya alınmış. Bir yöneticiyle iletişime geç.", "error")
+                return redirect(url_for("auth.login"))
+
+            # Tam session kurulumu (profile verisi dahil)
+            _finalize_login(user_id, email, access_token, refresh_token)
+
+            flash("2FA doğrulandı, hoş geldin!", "success")
+            return redirect(url_for("routes.feed"))
+
+        except Exception as e:
+            msg = str(e)
+            if "Invalid verification code" in msg or "invalid_code" in msg:
+                flash("Geçersiz 2FA kodu.", "error")
+            else:
+                flash(f"2FA hatası: {msg}", "error")
+            return redirect(url_for("auth.mfa_verify"))
+
+    return render_template("auth/mfa_verify.html", me=session.get("user"))
+
+
+@bp.route("/2fa/enroll", methods=["GET", "POST"])
+def mfa_enroll():
+    """2FA (TOTP) kaydı: QR kodu göster ve doğrula.
+
+    GET: QR kodu + secret'ı göster.
+    POST: Doğrulama kodunu al, kurulumu tamamla.
+    """
+    # Kullanıcı oturum açmış mı?
+    if "user" not in session:
+        flash("Giriş yap.", "error")
+        return redirect(url_for("auth.login"))
+
+    user_id = session["user"]["id"]
+
+    # GET: QR kod + secret göster
+    if request.method == "GET":
+        # Zaten kurulu mu kontrol et (geçici client ile list_factors)
+        try:
+            tmp = create_client(
+                current_app.config["SUPABASE_URL"],
+                current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+            )
+            tmp.auth.set_session(session["access_token"], session["refresh_token"])
+            factors = tmp.auth.mfa.list_factors()
+
+            if any(f.factor_type == "totp" and f.status == "verified" for f in (factors.totp or [])):
+                flash("2FA zaten etkinleştirilmiş. Devre dışı bırak ve tekrar denemeyi dene.", "warning")
+                return redirect(url_for("routes.profile_edit"))
+        except Exception:
+            pass  # MFA kontrolü başarısız — devam et
+
+        # Geçici client ile enrollment başlat
+        try:
+            tmp = create_client(
+                current_app.config["SUPABASE_URL"],
+                current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+            )
+            tmp.auth.set_session(session["access_token"], session["refresh_token"])
+
+            # TOTP enrollment: QR kod + secret dön
+            enrollment = tmp.auth.mfa.enroll({"factor_type": "totp"})
+
+            # Session'a geçici olarak kaydet (POST'ta kullanacağız)
+            session["mfa_enrollment_id"] = enrollment.id
+            session["mfa_enrollment_secret"] = getattr(enrollment.totp, "secret", "")
+
+            return render_template(
+                "auth/mfa_enroll.html",
+                me=session.get("user"),
+                qr_code=getattr(enrollment.totp, "qr_code", ""),
+                secret=session["mfa_enrollment_secret"],
+            )
+        except Exception as e:
+            flash(f"2FA kurulum hatası: {e}", "error")
+            return redirect(url_for("routes.profile_edit"))
+
+    # POST: Verification kodunu doğrula
+    if request.method == "POST":
+        code = request.form.get("code", "").strip()
+
+        if not code or len(code) != 6 or not code.isdigit():
+            flash("Lütfen 6 haneli kodu gir.", "error")
+            return redirect(url_for("auth.mfa_enroll"))
+
+        enrollment_id = session.pop("mfa_enrollment_id", None)
+        if not enrollment_id:
+            flash("Geçersiz 2FA kurulum oturumu.", "error")
+            return redirect(url_for("routes.profile_edit"))
+
+        try:
+            tmp = create_client(
+                current_app.config["SUPABASE_URL"],
+                current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+            )
+            tmp.auth.set_session(session["access_token"], session["refresh_token"])
+
+            # TOTP kodunu doğrula: önce challenge oluştur, sonra verify et
+            challenge_resp = tmp.auth.mfa.challenge({"factor_id": enrollment_id})
+            tmp.auth.mfa.verify({
+                "factor_id": enrollment_id,
+                "challenge_id": challenge_resp.id,
+                "code": code,
+            })
+
+            session.pop("mfa_enrollment_secret", None)
+            flash("2FA başarıyla etkinleştirildi!", "success")
+            return redirect(url_for("routes.profile_edit"))
+
+        except Exception as e:
+            msg = str(e)
+            if "Invalid verification code" in msg or "invalid_code" in msg:
+                flash("Geçersiz doğrulama kodu. Tekrar dene.", "error")
+            else:
+                flash(f"2FA doğrulama hatası: {e}", "error")
+            return redirect(url_for("auth.mfa_enroll"))
+
+    return render_template("auth/mfa_enroll.html", me=session.get("user"))
+
+
+@bp.route("/2fa/disable", methods=["POST"])
+def mfa_disable():
+    """2FA (TOTP) devre dışı bırakma.
+
+    CSRF korumalı POST isteği — geçerli oturum gerekli.
+    """
+    if "user" not in session:
+        flash("Giriş yap.", "error")
+        return redirect(url_for("auth.login"))
+
+    user_id = session["user"]["id"]
+
+    try:
+        # Kurulu TOTP factor'ü bul ve kaldır
+        tmp = create_client(
+            current_app.config["SUPABASE_URL"],
+            current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+        )
+        tmp.auth.set_session(session["access_token"], session["refresh_token"])
+
+        factors = tmp.auth.mfa.list_factors()
+        totp_factor = None
+        for f in (factors.totp or []):
+            if f.status == "verified":
+                totp_factor = f
+                break
+
+        if not totp_factor:
+            flash("Etkin 2FA bulunamadı.", "warning")
+            return redirect(url_for("routes.profile_edit"))
+
+        # TOTP factor'ü unenroll et
+        tmp.auth.mfa.unenroll({"factor_id": totp_factor.id})
+
+        flash("2FA devre dışı bırakıldı.", "success")
+        return redirect(url_for("routes.profile_edit"))
+
+    except Exception as e:
+        flash(f"2FA devre dışı bırakma hatası: {e}", "error")
+        return redirect(url_for("routes.profile_edit"))
 
 
 @bp.route("/forgot-password", methods=["GET", "POST"])

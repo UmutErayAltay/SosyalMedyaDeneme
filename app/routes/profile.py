@@ -74,10 +74,23 @@ def profile(username):
         followers_count = data.get("followers_count", 0)
         following_count = data.get("following_count", 0)
         is_following = False if is_self else data.get("is_following", False)
+        is_pending_request = False if is_self else data.get("is_pending_request", False)
+        is_private = data.get("is_private", False)
         # is_blocked_by_me: BEN onu engelledim mi? (RPC'de bu bilgi yok, single-way check)
         is_blocked_by_me = False
         if not is_self:
             is_blocked_by_me = has_blocked(sb, me, prof["id"])
+        # archived_posts: sadece is_self; RPC'de bu yok, ayrı sorgu
+        archived_posts = []
+        if is_self:
+            try:
+                archived_posts = sb.table("posts").select(
+                    "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+                ).eq("user_id", prof["id"]).eq("is_archived", True).order("archived_at", desc=True).execute().data
+                _attach_post_metrics(sb, archived_posts, me)
+                attach_polls(sb, archived_posts, me)
+            except Exception:
+                archived_posts = []
     else:
         # Fallback: eski çok-sorgulu yol (davranış birebir aynı)
         def _fetch_visible_author_ids():
@@ -111,7 +124,7 @@ def profile(username):
             try:
                 return sb.table("follows").select(
                     "follower_id", count="exact", head=True
-                ).eq("following_id", prof["id"]).execute().count or 0
+                ).eq("following_id", prof["id"]).eq("status", "accepted").execute().count or 0
             except Exception:
                 return 0
 
@@ -119,7 +132,7 @@ def profile(username):
             try:
                 return sb.table("follows").select(
                     "following_id", count="exact", head=True
-                ).eq("follower_id", prof["id"]).execute().count or 0
+                ).eq("follower_id", prof["id"]).eq("status", "accepted").execute().count or 0
             except Exception:
                 return 0
 
@@ -127,10 +140,28 @@ def profile(username):
             if is_self:
                 return False
             try:
-                f = sb.table("follows").select().eq("follower_id", me).eq(
+                f = sb.table("follows").select("status").eq("follower_id", me).eq(
                     "following_id", prof["id"]
                 ).execute()
-                return bool(f.data)
+                return bool(f.data and f.data[0].get("status") == "accepted")
+            except Exception:
+                return False
+
+        def _fetch_is_pending_request():
+            if is_self:
+                return False
+            try:
+                f = sb.table("follows").select("status").eq("follower_id", me).eq(
+                    "following_id", prof["id"]
+                ).execute()
+                return bool(f.data and f.data[0].get("status") == "pending")
+            except Exception:
+                return False
+
+        def _fetch_is_private():
+            try:
+                p = sb.table("profiles").select("is_private").eq("id", prof["id"]).execute()
+                return bool(p.data and p.data[0].get("is_private"))
             except Exception:
                 return False
 
@@ -146,6 +177,8 @@ def profile(username):
             followers_fut = executor.submit(_fetch_followers_count)
             following_fut = executor.submit(_fetch_following_count)
             is_following_fut = executor.submit(_fetch_is_following)
+            is_pending_request_fut = executor.submit(_fetch_is_pending_request)
+            is_private_fut = executor.submit(_fetch_is_private)
 
             # Filtreleri bekle (posts sorgusu için gerekli)
             visible_author_ids = visible_fut.result()
@@ -156,7 +189,7 @@ def profile(username):
             def _fetch_posts_filtered():
                 posts_data = sb.table("posts").select(
                     "*, likes(count), comments(count)"
-                ).eq("user_id", prof["id"]).order("created_at", desc=True).execute().data
+                ).eq("user_id", prof["id"]).eq("is_archived", False).order("created_at", desc=True).execute().data
                 posts_data = [p for p in posts_data if not p.get("is_draft")]
                 posts_data = filter_visible(posts_data, visible_author_ids, close_friend_ids)
                 posts_data = filter_not_blocked(posts_data, blocked_ids)
@@ -175,9 +208,15 @@ def profile(username):
             followers_count = followers_fut.result()
             following_count = following_fut.result()
             is_following = is_following_fut.result()
+            is_pending_request = is_pending_request_fut.result()
+            is_private = is_private_fut.result()
 
             # Level 2 sonucunu topla
             posts = posts_fut.result()
+
+            # is_private filtering (RPC ile aynı: private ve viewer accepted değilse posts boş)
+            if is_private and not is_self and not is_following:
+                posts = []
 
             # Level 3 (posts bitince): metrics ve polls
             metrics_fut = executor.submit(_attach_post_metrics, sb, posts, me)
@@ -189,7 +228,7 @@ def profile(username):
                     return []
                 posts_data = sb.table("posts").select(
                     "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
-                ).in_("id", liked_ids).execute().data
+                ).in_("id", liked_ids).eq("is_archived", False).execute().data
                 posts_data = filter_visible(posts_data, visible_author_ids, close_friend_ids)
                 posts_data = filter_not_blocked(posts_data, blocked_ids)
                 _attach_post_metrics(sb, posts_data, me)
@@ -208,7 +247,7 @@ def profile(username):
                     return []
                 posts_data = sb.table("posts").select(
                     "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
-                ).in_("id", bm_ids).execute().data
+                ).in_("id", bm_ids).eq("is_archived", False).execute().data
                 posts_data = filter_visible(posts_data, visible_author_ids, close_friend_ids)
                 posts_data = filter_not_blocked(posts_data, blocked_ids)
                 _attach_post_metrics(sb, posts_data, me)
@@ -219,8 +258,19 @@ def profile(username):
                     p["bookmark_collection_id"] = collection_by_post.get(p["id"])
                 return posts_data
 
+            def _fetch_archived_posts():
+                if not is_self:
+                    return []
+                posts_data = sb.table("posts").select(
+                    "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+                ).eq("user_id", prof["id"]).eq("is_archived", True).order("archived_at", desc=True).execute().data
+                _attach_post_metrics(sb, posts_data, me)
+                attach_polls(sb, posts_data, me)
+                return posts_data
+
             liked_posts_fut = executor.submit(_fetch_liked_posts)
             bookmarked_posts_fut = executor.submit(_fetch_bookmarked_posts)
+            archived_posts_fut = executor.submit(_fetch_archived_posts)
 
             # Level 3 sonuçlarını topla (metrics ve polls posts'u modifiye ediyor)
             metrics_fut.result()
@@ -229,6 +279,11 @@ def profile(username):
             # Level 3+ sonuçlarını topla
             liked_posts = liked_posts_fut.result()
             bookmarked_posts = bookmarked_posts_fut.result()
+            archived_posts = archived_posts_fut.result()
+
+            # is_private filtering fallback'te de (RPC ile tutarlı)
+            if is_private and not is_self and not is_following:
+                liked_posts = []
 
         # is_blocked_by_me: BEN onu engelledim mi?
         is_blocked_by_me = False
@@ -256,9 +311,10 @@ def profile(username):
 
     return render_template("profile.html", profile=prof, posts=posts,
                            media_posts=media_posts, liked_posts=liked_posts,
-                           bookmarked_posts=bookmarked_posts,
+                           bookmarked_posts=bookmarked_posts, archived_posts=archived_posts,
                            bookmark_collections=bookmark_collections,
                            is_self=is_self, is_following=is_following,
+                           is_pending_request=is_pending_request, is_private=is_private,
                            is_blocked_by_me=is_blocked_by_me, is_close_friend=is_close_friend,
                            me=session.get("user"),
                            valid_usernames=valid_usernames,
@@ -282,12 +338,12 @@ def _follow_list(username: str, kind: str):
     if kind == "followers":
         rows = sb.table("follows").select(
             "profiles!follows_follower_id_fkey(id, username, avatar_url, full_name)"
-        ).eq("following_id", prof["id"]).execute().data
+        ).eq("following_id", prof["id"]).eq("status", "accepted").execute().data
         title = "Takipçiler"
     else:
         rows = sb.table("follows").select(
             "profiles!follows_following_id_fkey(id, username, avatar_url, full_name)"
-        ).eq("follower_id", prof["id"]).execute().data
+        ).eq("follower_id", prof["id"]).eq("status", "accepted").execute().data
         title = "Takip Edilenler"
 
     users = [r["profiles"] for r in rows if r.get("profiles")]
@@ -464,10 +520,10 @@ def insights():
 
     total_followers = sb.table("follows").select(
         "follower_id", count="exact", head=True
-    ).eq("following_id", me).execute().count or 0
+    ).eq("following_id", me).eq("status", "accepted").execute().count or 0
     total_following = sb.table("follows").select(
         "following_id", count="exact", head=True
-    ).eq("follower_id", me).execute().count or 0
+    ).eq("follower_id", me).eq("status", "accepted").execute().count or 0
 
     avg_engagement = round((total_likes + total_comments) / total_posts, 1) if total_posts else 0
 

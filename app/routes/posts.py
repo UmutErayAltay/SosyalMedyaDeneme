@@ -80,9 +80,9 @@ def feed():
                        "likes(count), comments(count)")
         blocked_ids_fb = blocked_user_ids(sb, me)
         try:
-            # Görünürlük + engelleme + taslak filtreleri SQL seviyesinde uygulanır
+            # Görünürlük + engelleme + taslak + arşiv filtreleri SQL seviyesinde uygulanır
             # (sayfalama sonrası Python'da süzmek PAGE_SIZE'ı tutarsız hale getirirdi).
-            query = sb.table("posts").select(select_cols).or_(visible_or_filter(sb, me)).eq("is_draft", False)
+            query = sb.table("posts").select(select_cols).or_(visible_or_filter(sb, me)).eq("is_draft", False).eq("is_archived", False)
             if blocked_ids_fb:
                 query = query.not_.in_("user_id", list(blocked_ids_fb))
             posts = query.order("created_at", desc=True).range(offset, offset + PAGE_SIZE).execute().data
@@ -92,6 +92,22 @@ def feed():
             posts = sb.table("posts").select(select_cols).order(
                 "created_at", desc=True
             ).range(offset, offset + PAGE_SIZE).execute().data
+
+        # Gizli profil kontrolü (Python fallback): is_private=true ve viewer accepted değilse gösterme
+        visible_author_ids = followed_and_self_ids(sb, me)
+        if posts:
+            # Yazar is_private durumunu toplu çek
+            author_ids = {p.get("user_id") for p in posts if p.get("user_id")}
+            is_private_map = {}
+            if author_ids:
+                try:
+                    profiles = sb.table("profiles").select("id, is_private").in_("id", list(author_ids)).execute().data
+                    is_private_map = {p["id"]: p.get("is_private", False) for p in profiles}
+                except Exception:
+                    pass
+            # is_private filtresi: gizli profil ve viewer accepted değilse ele
+            posts = [p for p in posts if not (is_private_map.get(p.get("user_id"), False) and p.get("user_id") != me and p.get("user_id") not in visible_author_ids)]
+
         has_next = len(posts) > PAGE_SIZE
         posts = posts[:PAGE_SIZE]
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -123,7 +139,7 @@ def feed():
         try:
             rows = sb.table("posts").select("id, image_url, image_urls").eq(
                 "user_id", me
-            ).eq("is_draft", False).order("created_at", desc=True).limit(6).execute().data
+            ).eq("is_draft", False).eq("is_archived", False).order("created_at", desc=True).limit(6).execute().data
             for p in rows:
                 img = (p.get("image_urls") or [None])[0] or p.get("image_url")
                 if img:
@@ -557,6 +573,43 @@ def delete_post(post_id):
     ).execute()
     flash("Post silindi.", "success")
     return redirect(url_for("routes.feed"))
+
+
+@bp.route("/post/<post_id>/archive", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def toggle_archive(post_id):
+    """Postu arşivle/arşivden çıkar (toggle). Sadece sahibi yapabilir."""
+    sb = get_sb()
+    me = _my_id()
+
+    # Sahiplik kontrolü: sadece kendi postunu arşivle
+    post = sb.table("posts").select("id, is_archived").eq("id", post_id).eq(
+        "user_id", me
+    ).execute()
+    if not post.data:
+        abort(404)
+
+    post = post.data[0]
+    is_currently_archived = post.get("is_archived", False)
+
+    # Toggle: arşivlenmiş ise çıkar, değilse arşivle
+    update_data = {"is_archived": not is_currently_archived}
+    if not is_currently_archived:
+        # Arşivlerken archived_at damgasını ayarla
+        update_data["archived_at"] = datetime.now(timezone.utc).isoformat()
+    else:
+        # Arşivden çıkarırken archived_at temizle
+        update_data["archived_at"] = None
+
+    sb.table("posts").update(update_data).eq("id", post_id).execute()
+
+    if not is_currently_archived:
+        flash("Post arşivlendi.", "success")
+    else:
+        flash("Post arşivden çıkarıldı.", "success")
+
+    return redirect(request.referrer or url_for("routes.feed"))
 
 
 @bp.route("/taslaklar")

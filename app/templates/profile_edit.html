@@ -36,6 +36,22 @@
         <br>
         <a href="{{ url_for('blocks.blocked_list') }}">🚫 Engellenen kullanıcılar</a>
     </p>
+
+    <hr style="margin: 24px 0;">
+
+    <h2 style="font-size: 16px; margin-bottom: 12px;">2FA (İki Faktörlü Doğrulama)</h2>
+    <p class="muted">Hesabını authenticator uygulaması ile ekstra koruma sağla.</p>
+
+    <div style="margin-top: 12px;">
+        <form method="get" action="{{ url_for('auth.mfa_enroll') }}" style="display: inline;">
+            <button type="submit" class="btn btn-primary" onclick="this.form.method='get'">2FA'yı Etkinleştir</button>
+        </form>
+
+        <form method="post" action="{{ url_for('auth.mfa_disable') }}" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-ghost" onclick="return confirm('2FA devre dışı bırakılacak. Emin misin?')">2FA'yı Kapat</button>
+        </form>
+    </div>
 </div>
 <script>
     // Avatar önizleme

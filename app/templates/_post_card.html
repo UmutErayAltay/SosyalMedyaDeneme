@@ -85,6 +85,12 @@
             </form>
         {% endif %}
         {% if allow_delete %}
+            <form action="{{ url_for('routes.toggle_archive', post_id=p.id) }}" method="post" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-ghost">
+                    {{ '🗄️ Arşivden Çıkar' if p.is_archived else '🗄️ Arşivle' }}
+                </button>
+            </form>
             <a href="{{ url_for('routes.edit_post', post_id=p.id) }}" class="btn btn-ghost" aria-label="Postu düzenle">✏️ Düzenle</a>
             <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
                   data-confirm="Bu postu silmek istiyor musun?">

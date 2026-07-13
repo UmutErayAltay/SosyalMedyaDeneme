@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Takip İstekleri{% endblock %}
+{% block content %}
+
+<header class="card profile-header">
+    <div class="profile-info">
+        <h1>Takip İstekleri</h1>
+    </div>
+</header>
+
+<section class="follow-list">
+    {% for u in users %}
+    <div class="card search-user">
+        <a href="{{ url_for('routes.profile', username=u.username) }}" class="user-link">
+            {% if u.avatar_url %}
+                <img src="{{ u.avatar_url }}" class="avatar" alt="" loading="lazy">
+            {% else %}
+                <div class="avatar avatar-placeholder" aria-hidden="true"></div>
+            {% endif %}
+            <div>
+                <strong>{{ u.username }}</strong>
+                {% if u.full_name %}<p class="muted">{{ u.full_name }}</p>{% endif %}
+            </div>
+        </a>
+        <div style="display: flex; gap: 0.5rem;">
+            <form action="{{ url_for('social.accept_follow_request', follower_id=u.id) }}" method="post" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-primary" aria-label="{{ u.username }} takip isteğini kabul et">Kabul Et</button>
+            </form>
+            <form action="{{ url_for('social.reject_follow_request', follower_id=u.id) }}" method="post" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-ghost" aria-label="{{ u.username }} takip isteğini reddet">Reddet</button>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <p class="muted center">Bekleyen takip isteğin yok.</p>
+    {% endfor %}
+</section>
+
+{% endblock %}

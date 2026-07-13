@@ -1,5 +1,5 @@
 """Sosyal etkileşimler: beğeni, yorum, takip."""
-from flask import Blueprint, request, redirect, url_for, session, flash, abort, jsonify
+from flask import Blueprint, request, redirect, url_for, session, flash, abort, jsonify, render_template
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .notifications import notify
@@ -334,10 +334,12 @@ def toggle_follow(username):
     sb = get_sb()
     me = session["user"]["id"]
 
-    target = sb.table("profiles").select("id").eq("username", username).execute()
+    target = sb.table("profiles").select("id, is_private").eq("username", username).execute()
     if not target.data:
         abort(404)
-    target_id = target.data[0]["id"]
+    target_data = target.data[0]
+    target_id = target_data["id"]
+    is_private = target_data.get("is_private", False)
 
     if target_id == me:
         flash("Kendini takip edemezsin.", "error")
@@ -349,29 +351,119 @@ def toggle_follow(username):
         flash("Bu kullanıcıyı takip edemezsin.", "error")
         return redirect(url_for("routes.profile", username=username))
 
-    existing = sb.table("follows").select().eq("follower_id", me).eq(
+    existing = sb.table("follows").select("status").eq("follower_id", me).eq(
         "following_id", target_id
     ).execute()
     if existing.data:
+        # Varsa sil (pending veya accepted, hangisi olursa olsun)
         sb.table("follows").delete().eq("follower_id", me).eq(
             "following_id", target_id
         ).execute()
         following = False
+        is_pending = False
     else:
-        sb.table("follows").insert({
-            "follower_id": me, "following_id": target_id
-        }).execute()
-        following = True
-        notify(sb, recipient_id=target_id, actor_id=me, type_="follow")
+        # Yeni takip isteği
+        if is_private:
+            # Gizli profil: pending istek gönder
+            sb.table("follows").insert({
+                "follower_id": me, "following_id": target_id, "status": "pending"
+            }).execute()
+            following = False
+            is_pending = True
+            notify(sb, recipient_id=target_id, actor_id=me, type_="follow_request")
+        else:
+            # Herkese açık profil: direkt accepted
+            sb.table("follows").insert({
+                "follower_id": me, "following_id": target_id, "status": "accepted"
+            }).execute()
+            following = True
+            is_pending = False
+            notify(sb, recipient_id=target_id, actor_id=me, type_="follow")
 
     # AJAX isteği ise JSON dön, değilse redirect
     if request.headers.get("X-Requested-With") == "fetch":
+        # followers_count: accepted olan takipçi sayısı (pending sayılmaz)
         followers_count = len(sb.table("follows").select("follower_id").eq(
             "following_id", target_id
-        ).execute().data)
-        return jsonify(following=following, followers_count=followers_count)
+        ).eq("status", "accepted").execute().data)
+        return jsonify(following=following, followers_count=followers_count, is_pending=is_pending)
 
     return redirect(url_for("routes.profile", username=username))
+
+
+# ----------------------- TAKIP İSTEKLERİ (özel profiller) -----------------------
+
+@bp.route("/follow-requests")
+@login_required
+@retry_on_connection_error
+def list_follow_requests():
+    """Bekleyen (pending) takip istekleri listesi."""
+    sb = get_sb()
+    me = session["user"]["id"]
+
+    requests = sb.table("follows").select(
+        "follower_id, created_at, profiles!follows_follower_id_fkey(id, username, avatar_url, full_name)"
+    ).eq("following_id", me).eq("status", "pending").order("created_at", desc=True).execute().data
+
+    users = [r["profiles"] for r in requests if r.get("profiles")]
+    for u in users:
+        u["is_self"] = u["id"] == me
+
+    return render_template("follow_requests.html", users=users, me=session.get("user"))
+
+
+@bp.route("/follow-requests/<follower_id>/accept", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def accept_follow_request(follower_id):
+    """Pending takip isteğini kabul et (sadece alıcı yapabilir)."""
+    sb = get_sb()
+    me = session["user"]["id"]
+
+    # Sadece ALICI (me) kabul edebilir
+    follow_req = sb.table("follows").select("status").eq("follower_id", follower_id).eq(
+        "following_id", me
+    ).execute()
+
+    if not follow_req.data or follow_req.data[0].get("status") != "pending":
+        abort(404)  # Enumeration önleme: geçersiz istek veya zaten accepted
+
+    sb.table("follows").update({"status": "accepted"}).eq(
+        "follower_id", follower_id
+    ).eq("following_id", me).execute()
+
+    notify(sb, recipient_id=follower_id, actor_id=me, type_="follow_accept")
+
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify(ok=True)
+    flash("Takip isteği kabul edildi.", "success")
+    return redirect(request.referrer or url_for("social.list_follow_requests"))
+
+
+@bp.route("/follow-requests/<follower_id>/reject", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def reject_follow_request(follower_id):
+    """Pending takip isteğini reddet (sadece alıcı yapabilir)."""
+    sb = get_sb()
+    me = session["user"]["id"]
+
+    # Sadece ALICI (me) reddedebilir
+    follow_req = sb.table("follows").select("status").eq("follower_id", follower_id).eq(
+        "following_id", me
+    ).execute()
+
+    if not follow_req.data or follow_req.data[0].get("status") != "pending":
+        abort(404)  # Enumeration önleme
+
+    sb.table("follows").delete().eq("follower_id", follower_id).eq(
+        "following_id", me
+    ).execute()
+
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify(ok=True)
+    flash("Takip isteği reddedildi.", "success")
+    return redirect(request.referrer or url_for("social.list_follow_requests"))
 
 
 # ----------------------- KAYDEDİLENLER (bookmarks) -----------------------
