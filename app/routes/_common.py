@@ -166,6 +166,68 @@ def _my_id() -> str:
     return session["user"]["id"]
 
 
+def _can_view_post(sb, post: dict, me: str) -> bool:
+    """Post görüntülemeye izin verilen postları kontrol eder.
+
+    - Sahibi ise True
+    - Arşivlenmiş ise False (sahibi dışında kimse göremez)
+    - İki-yönlü engel varsa False
+    - Yazarın profili gizli (is_private=True) ve viewer accepted-takipçi değilse False
+    - visibility="followers" ve viewer accepted-takipçi değilse False
+    - visibility="close_friends" ve viewer yakın arkadaş değilse False
+    - Aksi halde True
+    """
+    from ..blocks import is_blocked_either_way
+
+    # Sahibi görebilir
+    if post.get("user_id") == me:
+        return True
+
+    # Arşivlenmiş post sadece sahibe görünür
+    if post.get("is_archived"):
+        return False
+
+    # Engelleme kontrolü
+    if is_blocked_either_way(sb, me, post.get("user_id")):
+        return False
+
+    # Yazarın profili gizli mi kontrol et
+    try:
+        author_profile = sb.table("profiles").select("is_private").eq(
+            "id", post.get("user_id")
+        ).execute().data
+        if author_profile and author_profile[0].get("is_private"):
+            # Yazarın profili gizli — accepted takipçi mi kontrol et
+            follow = sb.table("follows").select("status").eq(
+                "follower_id", me
+            ).eq("following_id", post.get("user_id")).execute().data
+            if not follow or follow[0].get("status") != "accepted":
+                return False
+    except Exception:
+        pass
+
+    # Visibility kontrolleri
+    visibility = post.get("visibility", "public")
+
+    if visibility == "followers":
+        # Sadece accepted takipçiler görebilir
+        follow = sb.table("follows").select("status").eq(
+            "follower_id", me
+        ).eq("following_id", post.get("user_id")).execute().data
+        if not follow or follow[0].get("status") != "accepted":
+            return False
+
+    elif visibility == "close_friends":
+        # Sadece yakın arkadaşlar görebilir
+        is_close = sb.table("close_friends").select("owner_id").eq(
+            "owner_id", post.get("user_id")
+        ).eq("friend_id", me).execute().data
+        if not is_close:
+            return False
+
+    return True
+
+
 def _attach_post_metrics(sb, posts: list, me: str) -> None:
     """Postlara like_count / comment_count / liked_by_me / my_reaction /
     bookmarked_by_me ekler.

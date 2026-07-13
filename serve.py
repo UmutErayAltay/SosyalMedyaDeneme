@@ -12,6 +12,18 @@ import os
 from app import create_app
 
 app = create_app()
+
+# Production ortamında FLASK_SECRET_KEY zorunludur (zayıf varsayılan değer kabul edilmez)
+if app.config.get("SECRET_KEY") == "degistir-beni":
+    raise RuntimeError(
+        "FLASK_SECRET_KEY ortam değişkeni production'da zorunludur. "
+        "Lütfen güvenli bir anahtar belirle."
+    )
+
+# Session cookie güvenlik ayarları (production)
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
 # Statik dosyalar artık ?v=<mtime> ile sürümleniyor (bkz. app/__init__.py
 # _static_cache_bust) — dosya değişince URL de değişir, tarayıcı yeni halini
 # çekmek ZORUNDA kalır. Bu sayede uzun cache hem güvenli hem hızlı: eski

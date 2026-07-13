@@ -252,6 +252,11 @@ def mfa_verify():
         return redirect(url_for("auth.login"))
 
     if request.method == "POST":
+        # 2FA brute force denemelerini yavaşlatır (IP başına)
+        if is_rate_limited(f"2fa_verify:{request.remote_addr or 'unknown'}", 8, 300):
+            flash("Çok fazla 2FA denemesi yaptın. Lütfen biraz sonra tekrar dene.", "error")
+            return redirect(url_for("auth.mfa_verify"))
+
         code = request.form.get("code", "").strip()
 
         if not code or len(code) != 6 or not code.isdigit():

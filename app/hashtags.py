@@ -119,7 +119,7 @@ def hashtag_posts(tag):
             if post_ids:
                 posts = sb.table("posts").select(
                     "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
-                ).in_("id", post_ids).order("created_at", desc=True).execute().data
+                ).in_("id", post_ids).eq("is_archived", False).eq("is_draft", False).order("created_at", desc=True).execute().data
 
                 # Paralel: blocked_ids, followed_ids, close_friend_ids çek
                 def _fetch_blocked():
@@ -256,7 +256,7 @@ def _trending_hashtags(sb, hours: int = 24, limit: int = 10) -> list[dict]:
         # exception yukarı çıkar, get_cached cache'e yazmaz, dışarıda yakalanır.
         recent_posts = sb.table("posts").select("id").gte(
             "created_at", cutoff
-        ).eq("visibility", "public").execute().data
+        ).eq("visibility", "public").eq("is_archived", False).eq("is_draft", False).execute().data
         post_ids = [p["id"] for p in recent_posts]
         if not post_ids:
             return []

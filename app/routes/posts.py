@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import time as _time
 from flask import render_template, request, redirect, url_for, session, abort, flash, make_response
 from . import bp
-from ._common import _my_id, _attach_post_metrics, fetch_sidebar_context, fetch_stats_and_bio, PAGE_SIZE
+from ._common import _my_id, _attach_post_metrics, fetch_sidebar_context, fetch_stats_and_bio, PAGE_SIZE, _can_view_post
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..storage_helper import upload_images, upload_video
@@ -464,29 +464,9 @@ def post_detail(post_id):
     if post.get("is_draft") and post["user_id"] != me:
         abort(404)
 
-    # Engelleme (iki yönlü): post sahibiyle aramda herhangi bir yönde engelleme
-    # varsa post hiç yokmuş gibi davran.
-    if post["user_id"] != me and is_blocked_either_way(sb, me, post["user_id"]):
+    # Kapsamlı görüntüleme izin kontrolleri: engelleme, arşiv, gizli profil, visibility
+    if not _can_view_post(sb, post, me):
         abort(404)
-
-    # Sadece takipçilere özel post: yazar değilsen ve yazarı takip etmiyorsan
-    # 404 (var olmadığı gibi davran — erişim reddi ayrı bir mesajla "bu post
-    # var ama gizli" sinyali vermez, enumeration'ı önler).
-    if post.get("visibility") == "followers" and post["user_id"] != me:
-        following = sb.table("follows").select("follower_id").eq(
-            "follower_id", me
-        ).eq("following_id", post["user_id"]).execute().data
-        if not following:
-            abort(404)
-
-    # Sadece yakın arkadaşlara özel post: yazar değilsen ve seni yakın arkadaş
-    # listesine eklememişse 404.
-    if post.get("visibility") == "close_friends" and post["user_id"] != me:
-        is_close = sb.table("close_friends").select("owner_id").eq(
-            "owner_id", post["user_id"]
-        ).eq("friend_id", me).execute().data
-        if not is_close:
-            abort(404)
 
     # Görüntüleme sayısını kaydet (tüm access kontrolleri geçtikten sonra)
     record_view(sb, post_id, me, post["user_id"])

@@ -18,8 +18,15 @@ REACTIONS = {"like": "👍", "love": "❤️", "haha": "😂", "wow": "😮", "s
 @login_required
 @retry_on_connection_error
 def toggle_like(post_id):
+    from .routes._common import _can_view_post
+
     sb = get_sb()
     me = session["user"]["id"]
+
+    # Post erişimini kontrol et
+    post = sb.table("posts").select("*").eq("id", post_id).execute().data
+    if not post or not _can_view_post(sb, post[0], me):
+        abort(404)
 
     reaction = request.form.get("reaction") or request.args.get("reaction") or "like"
     if reaction not in REACTIONS:
@@ -63,6 +70,8 @@ def toggle_like(post_id):
 @login_required
 @retry_on_connection_error
 def add_comment(post_id):
+    from .routes._common import _can_view_post
+
     content = request.form.get("content", "").strip()
     sticker_id = request.form.get("sticker_id", "").strip()
     gif_url = request.form.get("gif_url", "").strip()
@@ -70,6 +79,11 @@ def add_comment(post_id):
     # Sticker var mı kontrol et
     me = session["user"]
     sb = get_sb()
+
+    # Post erişimini kontrol et
+    post = sb.table("posts").select("*").eq("id", post_id).execute().data
+    if not post or not _can_view_post(sb, post[0], me["id"]):
+        abort(404)
     if sticker_id:
         try:
             sticker = sb.table("stickers").select("id").eq("id", sticker_id).execute()
@@ -148,8 +162,18 @@ def delete_comment(comment_id):
 @login_required
 @retry_on_connection_error
 def toggle_comment_like(comment_id):
+    from .routes._common import _can_view_post
+
     sb = get_sb()
     me = session["user"]["id"]
+
+    # Comment'ten post_id ve user_id'yi bul ve post erişimini kontrol et
+    c = sb.table("comments").select("post_id, user_id").eq("id", comment_id).execute().data
+    if not c:
+        abort(404)
+    post = sb.table("posts").select("*").eq("id", c[0]["post_id"]).execute().data
+    if not post or not _can_view_post(sb, post[0], me):
+        abort(404)
 
     existing = sb.table("comment_likes").select("user_id").eq(
         "comment_id", comment_id
@@ -164,10 +188,8 @@ def toggle_comment_like(comment_id):
             "comment_id": comment_id, "user_id": me
         }).execute()
         liked = True
-        c = sb.table("comments").select("user_id, post_id").eq("id", comment_id).execute().data
-        if c:
-            notify(sb, recipient_id=c[0]["user_id"], actor_id=me,
-                   type_="comment_like", post_id=c[0]["post_id"], comment_id=comment_id)
+        notify(sb, recipient_id=c[0]["user_id"], actor_id=me,
+               type_="comment_like", post_id=c[0]["post_id"], comment_id=comment_id)
 
     count = len(sb.table("comment_likes").select("user_id").eq(
         "comment_id", comment_id
@@ -191,6 +213,8 @@ def react_comment(comment_id):
     Request body: {"reaction": "❤️"}
     comment_reactions tablosu henüz oluşturulmadıysa 503 döner.
     """
+    from .routes._common import _can_view_post
+
     sb = get_sb()
     me = session["user"]["id"]
 
@@ -208,6 +232,11 @@ def react_comment(comment_id):
         abort(404)  # Enumeration koruması
     comment_owner_id = c.data[0]["user_id"]
     post_id = c.data[0]["post_id"]
+
+    # Post erişimini kontrol et
+    post = sb.table("posts").select("*").eq("id", post_id).execute().data
+    if not post or not _can_view_post(sb, post[0], me):
+        abort(404)
 
     try:
         existing = sb.table("comment_reactions").select().eq(
@@ -259,12 +288,19 @@ def react_comment(comment_id):
 @login_required
 @retry_on_connection_error
 def reply_comment(post_id, parent_id):
+    from .routes._common import _can_view_post
+
     content = request.form.get("content", "").strip()
     sticker_id = request.form.get("sticker_id", "").strip()
     gif_url = request.form.get("gif_url", "").strip()
 
     me = session["user"]
     sb = get_sb()
+
+    # Post erişimini kontrol et
+    post = sb.table("posts").select("*").eq("id", post_id).execute().data
+    if not post or not _can_view_post(sb, post[0], me["id"]):
+        abort(404)
 
     # Sticker var mı kontrol et
     if sticker_id:
