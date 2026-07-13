@@ -28,7 +28,7 @@
         <div class="avatar large avatar-placeholder" aria-hidden="true"></div>
     {% endif %}
     <div class="profile-info">
-        <h1>{{ profile.username }}{% if is_private %} 🔒{% endif %}</h1>
+        <h1>{{ profile.username }}{% if is_private %} 🔒{% endif %}{% if is_online %}<span class="online-dot" title="Aktif" aria-label="Aktif"></span>{% endif %}</h1>
         {% if profile.full_name %}<p class="muted">{{ profile.full_name }}</p>{% endif %}
         {% if profile.bio %}<p class="bio">{{ profile.bio }}</p>{% endif %}
         {% if profile.created_at %}
@@ -140,6 +140,12 @@
                             <input type="hidden" name="target_id" value="{{ profile.id }}">
                             <button type="submit" class="profile-actions-menu-item">
                                 🚩 Şikayet et
+                            </button>
+                        </form>
+                        <form action="{{ url_for('mutes.toggle_mute', user_id=profile.id) }}" method="post" class="profile-actions-menu-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="profile-actions-menu-item">
+                                {{ '🔔 Sessizi Kaldır' if is_muted else '🔕 Sessize Al' }}
                             </button>
                         </form>
                     </div>

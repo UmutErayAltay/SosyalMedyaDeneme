@@ -13,6 +13,7 @@ from ..stories import active_stories_bar
 from ..mentions import notify_mentions, get_valid_usernames, extract_mentions
 from ..visibility import visible_or_filter
 from ..blocks import blocked_user_ids, is_blocked_either_way
+from ..mutes import muted_user_ids
 from ..polls import create_poll, attach_polls
 from ..memories import get_memories
 from ..post_views import record_view, get_view_count
@@ -79,12 +80,15 @@ def feed():
         select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url), "
                        "likes(count), comments(count)")
         blocked_ids_fb = blocked_user_ids(sb, me)
+        muted_ids_fb = muted_user_ids(sb, me)
         try:
             # Görünürlük + engelleme + taslak + arşiv filtreleri SQL seviyesinde uygulanır
             # (sayfalama sonrası Python'da süzmek PAGE_SIZE'ı tutarsız hale getirirdi).
             query = sb.table("posts").select(select_cols).or_(visible_or_filter(sb, me)).eq("is_draft", False).eq("is_archived", False)
             if blocked_ids_fb:
                 query = query.not_.in_("user_id", list(blocked_ids_fb))
+            if muted_ids_fb:
+                query = query.not_.in_("user_id", list(muted_ids_fb))
             posts = query.order("created_at", desc=True).range(offset, offset + PAGE_SIZE).execute().data
         except Exception:
             # sql/migration_post_visibility.sql henüz uygulanmamışsa 'visibility'
@@ -374,7 +378,7 @@ def create_post():
         notify_mentions(sb, actor_id=_my_id(), content=content, post_id=post_id)
         notify_hashtag_followers(sb, actor_id=_my_id(), post_id=post_id, tags=extract_hashtags(content))
     if post_id and has_poll:
-        create_poll(sb, post_id, poll_options)
+        create_poll(sb, poll_options, post_id=post_id)
 
     if is_draft:
         if is_scheduled:

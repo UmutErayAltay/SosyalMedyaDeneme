@@ -282,24 +282,31 @@ def search_conversation_messages(conversation_id):
     """Sohbet içi mesaj arama — sadece metin (content) alanında ILIKE.
 
     Katılımcı olmayan 404 (enumeration koruması, mark-read/active ile aynı
-    desen). Sonuçlar en yeniden eskiye, `id` chat.js'in DOM'da (`[data-msg-id]`)
+    desen). Sayfalama: ?offset=N query param ile (varsayılan 0); her sayfada
+    30 sonuç. Sonuçlar en yeniden eskiye, `id` chat.js'in DOM'da (`[data-msg-id]`)
     arayıp kaydırması veya bulunamazsa `?all=1#msg-<id>`'ye gitmesi için döner.
     """
     sb = get_sb()
     me = session["user"]["id"]
     q = request.args.get("q", "").strip()
+    offset = request.args.get("offset", 0, type=int)
+
     part = sb.table("conversation_participants").select("user_id").eq(
         "conversation_id", conversation_id).eq("user_id", me).execute().data
     if not part:
         abort(404)
     if len(q) < 2:
-        return jsonify(results=[])
+        return jsonify(results=[], has_next=False)
 
+    # Sayfalama: 31 satır çek (31. satırın varlığı has_next'i belirtir)
     rows = sb.table("messages").select(
         "id, content, created_at, sender_id, profiles!messages_sender_id_fkey(username)"
     ).eq("conversation_id", conversation_id).ilike(
         "content", f"%{q}%"
-    ).order("created_at", desc=True).limit(30).execute().data
+    ).order("created_at", desc=True).limit(31).offset(offset).execute().data
+
+    has_next = len(rows) > 30
+    results_30 = rows[:30]
 
     results = [{
         "id": r["id"],
@@ -307,8 +314,10 @@ def search_conversation_messages(conversation_id):
         "created_at": r["created_at"],
         "mine": r["sender_id"] == me,
         "sender": (r.get("profiles") or {}).get("username") or "?",
-    } for r in rows]
-    return jsonify(results=results)
+    } for r in results_30]
+
+    next_offset = offset + 30 if has_next else None
+    return jsonify(results=results, has_next=has_next, next_offset=next_offset)
 
 
 @bp.route("/<conversation_id>/media")

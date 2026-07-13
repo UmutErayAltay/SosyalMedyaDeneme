@@ -192,6 +192,14 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>
             </form>
+            {% else %}
+            <form action="{{ url_for('reports.create_report') }}" method="post" class="inline"
+                  data-confirm="Bu yorumu şikayet etmek istiyor musun?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="target_type" value="comment">
+                <input type="hidden" name="target_id" value="{{ c.id }}">
+                <button type="submit" class="btn btn-ghost" aria-label="Yorumu şikayet et">🚩</button>
+            </form>
             {% endif %}
             <div class="comment-react-wrap" data-react-url="{{ url_for('social.react_comment', comment_id=c.id) }}">
                 {% if c.reactions %}
@@ -286,6 +294,14 @@
                           data-confirm="Yorumu sil?">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>
+                    </form>
+                    {% else %}
+                    <form action="{{ url_for('reports.create_report') }}" method="post" class="inline"
+                          data-confirm="Bu yanıtı şikayet etmek istiyor musun?">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="target_type" value="comment">
+                        <input type="hidden" name="target_id" value="{{ r.id }}">
+                        <button type="submit" class="btn btn-ghost" aria-label="Yanıtı şikayet et">🚩</button>
                     </form>
                     {% endif %}
                     <div class="comment-react-wrap" data-react-url="{{ url_for('social.react_comment', comment_id=r.id) }}">

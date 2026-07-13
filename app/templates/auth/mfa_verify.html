@@ -2,11 +2,11 @@
 {% block title %}2FA Doğrulaması{% endblock %}
 {% block content %}
 <div class="auth-card">
-    <h1>2FA Kodunu Gir</h1>
+    <h1>2FA Doğrulama</h1>
     <p class="muted">Authenticator uygulamandan 6 haneli kodu gir.</p>
     <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label>2FA Kodu
+        <label>Doğrulama Kodu
             <input type="text" name="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="000000" required autofocus>
         </label>
         <button type="submit" class="btn btn-primary">Doğrula</button>

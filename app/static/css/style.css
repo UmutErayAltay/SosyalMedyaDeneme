@@ -2933,3 +2933,14 @@ header[role="banner"] {
     background: var(--color-red-400);
 }
 .conv-header-profile-link:hover { text-decoration: underline; }
+
+/* Aktiflik göstergesi — yeşil nokta */
+.online-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-green-700);
+    margin-left: 4px;
+    vertical-align: middle;
+}

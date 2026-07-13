@@ -364,7 +364,10 @@ def mfa_enroll():
             tmp.auth.set_session(session["access_token"], session["refresh_token"])
 
             # TOTP enrollment: QR kod + secret dön
-            enrollment = tmp.auth.mfa.enroll({"factor_type": "totp"})
+            # issuer EXPLICIT verilmezse Supabase, projenin Site URL ayarına
+            # (örn. "localhost:3000") düşüyor — authenticator'da site adı
+            # yerine bu görünüyordu, elle site adı veriyoruz.
+            enrollment = tmp.auth.mfa.enroll({"factor_type": "totp", "issuer": "Sosyal Medya"})
 
             # Session'a geçici olarak kaydet (POST'ta kullanacağız)
             session["mfa_enrollment_id"] = enrollment.id

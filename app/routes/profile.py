@@ -309,6 +309,14 @@ def profile(username):
             # Henüz active değilse, graceful degrade
             pass
 
+    # Online status (son 2dk içinde aktif mi)
+    from ..presence import is_online
+    is_online_status = is_online(prof["id"])
+
+    # Muted status (ben onu mute ettim mi?)
+    from ..mutes import muted_user_ids
+    is_muted = not is_self and prof["id"] in muted_user_ids(sb, me)
+
     return render_template("profile.html", profile=prof, posts=posts,
                            media_posts=media_posts, liked_posts=liked_posts,
                            bookmarked_posts=bookmarked_posts, archived_posts=archived_posts,
@@ -316,6 +324,7 @@ def profile(username):
                            is_self=is_self, is_following=is_following,
                            is_pending_request=is_pending_request, is_private=is_private,
                            is_blocked_by_me=is_blocked_by_me, is_close_friend=is_close_friend,
+                           is_online=is_online_status, is_muted=is_muted,
                            me=session.get("user"),
                            valid_usernames=valid_usernames,
                            highlights=highlights,

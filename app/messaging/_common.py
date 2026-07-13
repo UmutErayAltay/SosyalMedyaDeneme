@@ -259,15 +259,26 @@ def _build_convos(sb, me: str) -> list[dict]:
             last_by_cid = messages_future.result()
             unread_cids = unread_future.result()
 
+        # Online status'leri hesapla (1:1 sohbetlerde diğer taraf için)
+        from ..presence import is_online
+
         convos = []
         for cid in cids:
             meta = conv_meta.get(cid, {})
             is_group = bool(meta.get("is_group"))
             other_list = others_by_cid.get(cid, [])
+            other_user = None if is_group else (other_list[0] if other_list else None)
+
+            # 1:1 sohbetlerde diğer kullanıcının online status'ü
+            is_online_status = False
+            if other_user and not is_group:
+                is_online_status = is_online(other_user["id"])
+
             convos.append({
                 "id": cid,
                 "last_message": last_by_cid.get(cid),
-                "other_user": None if is_group else (other_list[0] if other_list else None),
+                "other_user": other_user,
+                "is_online": is_online_status,
                 "is_group": is_group,
                 "name": meta.get("name") if is_group else None,
                 "member_count": len(other_list) + 1 if is_group else None,

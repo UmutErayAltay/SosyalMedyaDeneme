@@ -31,6 +31,11 @@ with vis as (
       where (b.blocker_id = p_me and b.blocked_id = p.user_id)
          or (b.blocker_id = p.user_id and b.blocked_id = p_me)
     )
+    -- Sessize alınan kullanıcılar: ben bu kişiyi mute ettmişsem feed'de gösterme
+    and not exists (
+      select 1 from muted_users mu
+      where mu.muter_id = p_me and mu.muted_id = p.user_id
+    )
     -- Görünürlük kontrolü: public VEYA (followers: takip ediyor ACCEPTED) VEYA (close_friends: yakın arkadaş)
     and (
       p.visibility = 'public'

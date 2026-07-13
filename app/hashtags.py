@@ -55,14 +55,25 @@ def sync_post_hashtags(sb, post_id: str, content: str) -> None:
     if not tags:
         return
     try:
-        for tag in tags:
-            existing = sb.table("hashtags").select("id").eq("tag", tag).execute().data
-            hashtag_id = existing[0]["id"] if existing else (
-                sb.table("hashtags").insert({"tag": tag}).execute().data[0]["id"]
-            )
-            sb.table("post_hashtags").insert({
-                "post_id": post_id, "hashtag_id": hashtag_id,
-            }).execute()
+        # N+1 düzeltme: tüm hashtag'leri TÜM sorguda al
+        existing_tags = sb.table("hashtags").select("id, tag").in_("tag", tags).execute().data
+        tag_to_id = {t["tag"]: t["id"] for t in existing_tags}
+
+        # Yok olanları toplu insert et (supabase-py batch insert desteği)
+        missing_tags = [t for t in tags if t not in tag_to_id]
+        if missing_tags:
+            inserted = sb.table("hashtags").insert(
+                [{"tag": t} for t in missing_tags]
+            ).execute().data
+            for row in inserted:
+                tag_to_id[row["tag"]] = row["id"]
+
+        # post_hashtags'ı toplu insert et
+        post_hashtags_rows = [
+            {"post_id": post_id, "hashtag_id": tag_to_id[t]}
+            for t in tags
+        ]
+        sb.table("post_hashtags").insert(post_hashtags_rows).execute()
     except Exception:
         pass
 

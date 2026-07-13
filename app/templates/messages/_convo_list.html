@@ -19,6 +19,7 @@
             {% else %}
                 <div class="avatar avatar-placeholder" aria-hidden="true"></div>
             {% endif %}
+            {% if not c.is_group and c.is_online %}<span class="online-dot" title="Aktif" aria-label="Aktif"></span>{% endif %}
             <div>
                 <strong>{{ c.name if c.is_group else (c.other_user.username if c.other_user else 'Bilinmeyen') }}</strong>
                 {% if c.is_group %}<span class="muted"> · {{ c.member_count }} kişi</span>{% endif %}
