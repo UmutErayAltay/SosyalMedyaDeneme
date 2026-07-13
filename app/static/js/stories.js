@@ -21,6 +21,10 @@
     var storyImagePreview = document.getElementById('story-image-preview');
     var storyVideoInput = document.getElementById('story-video-input');
     var storyVideoPreview = document.getElementById('story-video-preview');
+    var storyPollToggleBtn = document.getElementById('story-poll-toggle-btn');
+    var storyPollAddOptionBtn = document.getElementById('story-poll-add-option-btn');
+    var storyPollCancelBtn = document.getElementById('story-poll-cancel-btn');
+    var storyPollContainer = document.getElementById('story-poll-options-container');
 
     function openStoryModal() {
         if (!storyModal) return;
@@ -38,6 +42,7 @@
         if (form) form.reset();
         if (storyImagePreview) storyImagePreview.innerHTML = '';
         if (storyVideoPreview) { storyVideoPreview.style.display = 'none'; storyVideoPreview.removeAttribute('src'); }
+        if (storyPollContainer) storyPollContainer.hidden = true;
     }
 
     if (addStoryBtn) addStoryBtn.addEventListener('click', openStoryModal);
@@ -81,6 +86,53 @@
         if (e.key === 'Escape' && storyModal && !storyModal.hidden) closeStoryModal();
     });
 
+    // Hikaye formu: anket toggle ve seçenek ekleme
+    if (storyPollToggleBtn) {
+        storyPollToggleBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            if (storyPollContainer) {
+                var isHidden = storyPollContainer.hidden;
+                storyPollContainer.hidden = !isHidden;
+                if (!isHidden && storyImageInput) storyImageInput.value = '';
+                if (!isHidden && storyImagePreview) storyImagePreview.innerHTML = '';
+                if (!isHidden && storyVideoInput) storyVideoInput.value = '';
+                if (!isHidden && storyVideoPreview) storyVideoPreview.style.display = 'none';
+            }
+        });
+    }
+
+    if (storyPollAddOptionBtn) {
+        storyPollAddOptionBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            var hidden3 = storyPollContainer.querySelector('input[name="poll_option_3"]');
+            var hidden4 = storyPollContainer.querySelector('input[name="poll_option_4"]');
+            if (hidden3 && hidden3.hidden) {
+                hidden3.hidden = false;
+                return;
+            }
+            if (hidden4 && hidden4.hidden) {
+                hidden4.hidden = false;
+            }
+        });
+    }
+
+    if (storyPollCancelBtn) {
+        storyPollCancelBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            if (storyPollContainer) {
+                storyPollContainer.hidden = true;
+                if (storyPollContainer.querySelector('input[name="poll_option_3"]')) {
+                    storyPollContainer.querySelector('input[name="poll_option_3"]').hidden = true;
+                }
+                if (storyPollContainer.querySelector('input[name="poll_option_4"]')) {
+                    storyPollContainer.querySelector('input[name="poll_option_4"]').hidden = true;
+                }
+                var inputs = storyPollContainer.querySelectorAll('input[type="text"]');
+                inputs.forEach(function (inp) { inp.value = ''; });
+            }
+        });
+    }
+
     // ============================================================
     // --- Hikaye görüntüleyici ---
     // ============================================================
@@ -101,6 +153,9 @@
     var replyInput = document.getElementById('story-reply-input');
     var replySendBtn = replyForm ? replyForm.querySelector('.story-reply-send-btn') : null;
     var replyAutoPaused = false;
+    var reactionsBar = document.getElementById('story-reactions-bar');
+    var pollWidget = document.getElementById('story-poll-widget');
+    var pollContainer = document.getElementById('story-poll-container');
 
     var currentStories = [];
     var currentIndex = 0;
@@ -179,6 +234,47 @@
         }
     }
 
+    function renderStoryPoll(poll) {
+        if (!pollContainer) return;
+        pollContainer.innerHTML = '';
+        var widget = document.createElement('div');
+        widget.className = 'poll-widget';
+
+        // DOM API ile inşa edilir (innerHTML string birleştirme DEĞİL) — opt.text
+        // kullanıcı girdisi (anket seçeneği), innerHTML'e ham gömmek XSS riski taşır.
+        poll.options.forEach(function (opt) {
+            var optBtn = document.createElement('button');
+            optBtn.className = 'poll-option' + (poll.my_vote === opt.id ? ' voted' : '');
+            optBtn.dataset.optionId = opt.id;
+            optBtn.dataset.pollId = poll.id;
+            optBtn.setAttribute('aria-label', opt.text + ', yüzde ' + opt.pct + ', ' + opt.votes + ' oy');
+
+            var textSpan = document.createElement('span');
+            textSpan.className = 'poll-option-text';
+            textSpan.textContent = opt.text;
+
+            var bar = document.createElement('div');
+            bar.className = 'poll-option-bar';
+            bar.style.width = opt.pct + '%';
+
+            var pctSpan = document.createElement('span');
+            pctSpan.className = 'poll-option-pct';
+            pctSpan.textContent = opt.pct + '%';
+
+            optBtn.appendChild(textSpan);
+            optBtn.appendChild(bar);
+            optBtn.appendChild(pctSpan);
+            widget.appendChild(optBtn);
+        });
+
+        var totalDiv = document.createElement('div');
+        totalDiv.className = 'poll-total';
+        totalDiv.textContent = poll.total_votes + ' oy';
+        widget.appendChild(totalDiv);
+
+        pollContainer.appendChild(widget);
+    }
+
     function showStory(index) {
         clearTimer();
         isPaused = false;
@@ -214,6 +310,17 @@
         viewerImage.hidden = true;
         viewerImage.removeAttribute('src');
 
+        // Anket render'ı (varsa)
+        if (pollWidget && pollContainer) {
+            if (s.poll) {
+                renderStoryPoll(s.poll);
+                pollWidget.hidden = false;
+            } else {
+                pollContainer.innerHTML = '';
+                pollWidget.hidden = true;
+            }
+        }
+
         if (s.video_url) {
             viewerVideo.src = s.video_url;
             viewerVideo.hidden = false;
@@ -246,10 +353,13 @@
             else { viewerAvatar.hidden = true; }
             deleteBtn.hidden = !data.is_mine;
             highlightBtn.hidden = !data.is_mine;
-            // Kendi hikayene yanıt verilemez (Instagram deseni)
+            // Kendi hikayene yanıt/tepki verilemez (Instagram deseni)
             if (replyForm) {
                 replyForm.hidden = data.is_mine;
                 if (replyInput) replyInput.value = '';
+            }
+            if (reactionsBar) {
+                reactionsBar.hidden = data.is_mine;
             }
 
             buildProgressBars();
@@ -279,6 +389,8 @@
         currentStories = [];
         var indicator = document.getElementById('story-paused-indicator');
         if (indicator) indicator.hidden = true;
+        if (pollContainer) pollContainer.innerHTML = '';
+        if (pollWidget) pollWidget.hidden = true;
         if (lastFocused) lastFocused.focus();
     }
 
@@ -350,6 +462,91 @@
             }
         });
     }
+
+    // Emoji tepkisi butonları — Instagram tarzı hızlı tepkiler
+    if (reactionsBar) {
+        reactionsBar.addEventListener('click', async function (e) {
+            var btn = e.target.closest('.story-reaction-btn');
+            if (!btn) return;
+            e.preventDefault();
+            if (btn.dataset.busy === '1') return;
+            btn.dataset.busy = '1';
+
+            var emoji = btn.dataset.emoji;
+            var storyId = currentStories[currentIndex] ? currentStories[currentIndex].id : null;
+            if (!storyId) {
+                btn.dataset.busy = '0';
+                return;
+            }
+
+            try {
+                var formData = new FormData();
+                formData.append('emoji', emoji);
+                formData.append('csrf_token', csrfHeader());
+
+                var res = await fetch('/stories/' + storyId + '/react', {
+                    method: 'POST', body: formData,
+                    headers: { 'X-Requested-With': 'fetch', 'X-CSRF-Token': csrfHeader() },
+                });
+                if (!res.ok) throw new Error('İstek başarısız');
+
+                // Görsel onay: buton patlama animasyonu (transform scale)
+                btn.style.transform = 'scale(1.3)';
+                setTimeout(function () { btn.style.transform = 'scale(1)'; }, 200);
+            } catch (err) {
+                console.error('Tepki gönderilemedi:', err);
+            } finally {
+                btn.dataset.busy = '0';
+            }
+        });
+    }
+
+    // Anket oy verme — document-level delegation (AJAX'ta yenilenen anket için)
+    document.addEventListener('click', async function (e) {
+        var btn = e.target.closest('.poll-option[data-poll-id][data-option-id]');
+        if (!btn || !reactionsBar || reactionsBar.hidden) return;  // Sadece hikaye görüntüleyicide
+        e.preventDefault();
+        if (btn.dataset.busy === '1') return;
+        btn.dataset.busy = '1';
+
+        var pollId = btn.dataset.pollId;
+        var optionId = btn.dataset.optionId;
+        var voteUrl = '/poll/' + pollId + '/vote';
+
+        try {
+            var formData = new FormData();
+            formData.append('option_id', optionId);
+            formData.append('csrf_token', csrfHeader());
+
+            var res = await fetch(voteUrl, {
+                method: 'POST', body: formData,
+                headers: { 'X-Requested-With': 'fetch', 'X-CSRF-Token': csrfHeader() },
+            });
+            if (!res.ok) throw new Error('İstek başarısız');
+            var data = await res.json();
+
+            var widget = pollContainer.querySelector('.poll-widget');
+            if (widget) {
+                var totalEl = widget.querySelector('.poll-total');
+                if (totalEl) totalEl.textContent = data.total_votes + ' oy';
+
+                data.options.forEach(function (opt) {
+                    var optBtn = widget.querySelector('[data-option-id="' + opt.id + '"]');
+                    if (!optBtn) return;
+                    optBtn.classList.toggle('voted', data.my_vote === opt.id);
+                    var bar = optBtn.querySelector('.poll-option-bar');
+                    if (bar) bar.style.width = opt.pct + '%';
+                    var pct = optBtn.querySelector('.poll-option-pct');
+                    if (pct) pct.textContent = opt.pct + '%';
+                    optBtn.setAttribute('aria-label', opt.text + ', yüzde ' + opt.pct + ', ' + opt.votes + ' oy');
+                });
+            }
+        } catch (err) {
+            console.error('Oy kullanılamadı:', err);
+        } finally {
+            btn.dataset.busy = '0';
+        }
+    });
 
     document.addEventListener('keydown', function (e) {
         if (!viewerModal || viewerModal.hidden) return;

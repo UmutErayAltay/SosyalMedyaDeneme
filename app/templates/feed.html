@@ -253,11 +253,23 @@
             <div id="story-image-preview" class="image-preview-grid" aria-live="polite"></div>
             <video id="story-video-preview" class="post-video-preview" controls style="display:none"></video>
 
+            <div id="story-poll-options-container" class="poll-options-container" hidden>
+                <input type="text" name="poll_option_1" placeholder="Seçenek 1" maxlength="80">
+                <input type="text" name="poll_option_2" placeholder="Seçenek 2" maxlength="80">
+                <input type="text" name="poll_option_3" placeholder="Seçenek 3 (opsiyonel)" maxlength="80" hidden>
+                <input type="text" name="poll_option_4" placeholder="Seçenek 4 (opsiyonel)" maxlength="80" hidden>
+                <div class="poll-options-actions">
+                    <button type="button" class="btn btn-ghost small" id="story-poll-add-option-btn">+ Seçenek ekle</button>
+                    <button type="button" class="btn btn-ghost small" id="story-poll-cancel-btn">Anketi iptal et</button>
+                </div>
+            </div>
+
             <div class="story-attach-row">
                 <label class="story-attach-label" for="story-image-input">📷 Görsel</label>
                 <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" hidden id="story-image-input">
                 <label class="story-attach-label" for="story-video-input">🎥 Video</label>
                 <input type="file" name="video" accept="video/mp4,video/webm,video/quicktime" hidden id="story-video-input">
+                <button type="button" class="story-attach-label" id="story-poll-toggle-btn">📊 Anket</button>
             </div>
 
             <button type="submit" class="btn btn-primary btn-full">Paylaş</button>
@@ -288,6 +300,22 @@
             <p class="story-caption" id="story-viewer-caption" hidden></p>
             <div class="story-paused-indicator" id="story-paused-indicator" hidden>⏸</div>
         </div>
+
+        {# Hikaye anket widget'ı (varsa story.poll) #}
+        <div class="story-poll-widget" id="story-poll-widget" hidden>
+            <div class="poll-widget" id="story-poll-container"></div>
+        </div>
+
+        {# Emoji tepkisi butonu şeridi — Instagram tarzı hızlı tepkiler #}
+        <div class="story-reactions-bar" id="story-reactions-bar" hidden>
+            <button type="button" class="story-reaction-btn" data-emoji="❤️" aria-label="Beğen">❤️</button>
+            <button type="button" class="story-reaction-btn" data-emoji="😂" aria-label="Komik">😂</button>
+            <button type="button" class="story-reaction-btn" data-emoji="😮" aria-label="Şaşırt">😮</button>
+            <button type="button" class="story-reaction-btn" data-emoji="😢" aria-label="Üzül">😢</button>
+            <button type="button" class="story-reaction-btn" data-emoji="🔥" aria-label="Harika">🔥</button>
+            <button type="button" class="story-reaction-btn" data-emoji="👏" aria-label="Alkış">👏</button>
+        </div>
+
         {# Kendi hikayene yanıt verilemez (Instagram deseni) — stories.js
            openViewer() içinde data.is_mine'a göre hidden ayarlanır. Yanıt
            sahibine DM olarak gider (bkz. app/stories.py reply_to_story). #}
