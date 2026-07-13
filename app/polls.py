@@ -16,10 +16,24 @@ from .supabase_client import get_sb, retry_on_connection_error
 bp = Blueprint("polls", __name__)
 
 
-def create_poll(sb, post_id: str, options: list[str]) -> None:
-    """Yeni bir post için anket + seçenekleri oluşturur."""
+def create_poll(sb, options: list[str], post_id: str = None, story_id: str = None) -> None:
+    """Yeni bir anket oluşturur — post veya hikaye için.
+
+    İkisinden TAM OLARAK BİRİ verilmeli. Seçenekler listesi 2+ eleman içermeli.
+    """
+    if not options or len(options) < 2:
+        return
+    if (post_id and story_id) or (not post_id and not story_id):
+        return
+
     try:
-        poll = sb.table("polls").insert({"post_id": post_id}).execute()
+        poll_data = {}
+        if post_id:
+            poll_data["post_id"] = post_id
+        if story_id:
+            poll_data["story_id"] = story_id
+
+        poll = sb.table("polls").insert(poll_data).execute()
         poll_id = poll.data[0]["id"]
         sb.table("poll_options").insert([
             {"poll_id": poll_id, "option_text": opt, "position": i}

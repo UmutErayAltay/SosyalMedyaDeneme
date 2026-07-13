@@ -13,6 +13,7 @@ from .supabase_client import get_sb, retry_on_connection_error
 from .storage_helper import upload_image, upload_video
 from .blocks import is_blocked_either_way
 from .messaging._common import _get_or_create_conversation, _notify_conversation
+from .polls import create_poll
 
 bp = Blueprint("stories", __name__)
 
@@ -39,6 +40,50 @@ def _cleanup_expired_stories(sb) -> None:
         sb.table("stories").delete().lt("expires_at", now).execute()
     except Exception:
         pass  # sql/migration_stories.sql henüz uygulanmamış olabilir
+
+
+def attach_story_poll(sb, story: dict, me: str) -> None:
+    """Tekil bir hikayeye anket verisini ekler (varsa).
+
+    story["poll"] = {"id": ..., "options": [...], "total_votes": ..., "my_vote": ...} benzeri.
+    """
+    story["poll"] = None
+    if not story.get("id"):
+        return
+
+    try:
+        poll = sb.table("polls").select("id").eq("story_id", story["id"]).execute().data
+        if not poll:
+            return
+        poll_id = poll[0]["id"]
+
+        options = sb.table("poll_options").select("id, option_text, position").eq(
+            "poll_id", poll_id
+        ).order("position").execute().data
+
+        votes = sb.table("poll_votes").select("poll_id, option_id, user_id").eq(
+            "poll_id", poll_id
+        ).execute().data
+
+        counts: dict = {}
+        my_vote = None
+        for v in votes:
+            counts[v["option_id"]] = counts.get(v["option_id"], 0) + 1
+            if v["user_id"] == me:
+                my_vote = v["option_id"]
+
+        total = sum(counts.values())
+        opt_list = [{
+            "id": o["id"], "text": o["option_text"],
+            "votes": counts.get(o["id"], 0),
+            "pct": round((counts.get(o["id"], 0) / total) * 100) if total else 0,
+        } for o in options]
+
+        story["poll"] = {
+            "id": poll_id, "options": opt_list, "total_votes": total, "my_vote": my_vote
+        }
+    except Exception:
+        pass
 
 
 def active_stories_bar(sb, me: str, blocked_ids: set) -> list[dict]:
@@ -101,7 +146,12 @@ def create_story():
     has_image = bool(image_file and image_file.filename)
     has_video = bool(video_file and video_file.filename)
 
-    if not caption and not has_image and not has_video:
+    # Anket seçenekleri (post'taki same pattern: poll_option_1 .. poll_option_4)
+    poll_options_raw = [request.form.get(f"poll_option_{i}", "").strip() for i in range(1, 5)]
+    poll_options = [o for o in poll_options_raw if o]
+    has_poll = len(poll_options) >= 2
+
+    if not caption and not has_image and not has_video and not has_poll:
         flash("Boş hikaye paylaşılamaz.", "error")
         return redirect(url_for("routes.feed"))
 
@@ -121,9 +171,14 @@ def create_story():
             return redirect(url_for("routes.feed"))
 
     try:
-        sb.table("stories").insert({
+        story_data = {
             "user_id": me, "image_url": image_url, "video_url": video_url, "caption": caption,
-        }).execute()
+        }
+        result = sb.table("stories").insert(story_data).execute()
+        story_id = result.data[0]["id"] if result.data else None
+
+        if story_id and has_poll:
+            create_poll(sb, poll_options, story_id=story_id)
     except Exception:
         flash("Hikaye paylaşılamadı (özellik henüz aktif değil).", "error")
         return redirect(url_for("routes.feed"))
@@ -138,7 +193,7 @@ def create_story():
 def user_stories(user_id):
     """Bir kullanıcının aktif hikayelerini JSON döner (hikaye görüntüleyici
     modalı için) — kendi hikayen DEĞİLSE görüntülenince story_views'e
-    işlenir (halka rengi için)."""
+    işlenir (halka rengi için). Her hikayeye (varsa) anket verisini ekler."""
     sb = get_sb()
     me = session["user"]["id"]
 
@@ -162,6 +217,10 @@ def user_stories(user_id):
             except Exception:
                 pass
 
+    # Her hikayeye anket verisini ekle
+    for story in rows:
+        attach_story_poll(sb, story, me)
+
     prof = sb.table("profiles").select("username, avatar_url").eq("id", user_id).execute().data
     prof = prof[0] if prof else {}
 
@@ -171,6 +230,51 @@ def user_stories(user_id):
         is_mine=(user_id == me),
         stories=rows,
     )
+
+
+@bp.route("/stories/<story_id>/react", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def react_to_story(story_id):
+    """Hikayeye emoji tepkisi — Instagram deseni: sadece hikaye sahibine hafif
+    bildirim gönderilir. Tepki transient'dir (hikaye 24 saatinde silinirse tepki
+    de kaybolur), bu yüzden ayrı bir tablo tutulmaz — sadece notify() ile
+    bildirim oluşturulur."""
+    sb = get_sb()
+    me = session["user"]["id"]
+    emoji = request.form.get("emoji", "").strip()
+
+    # İzin verilen emoji'ler (Instagram'ın hızlı tepki seti)
+    allowed_emojis = {"❤️", "😂", "😮", "😢", "🔥", "👏"}
+    if emoji not in allowed_emojis:
+        return jsonify(error="Geçersiz emoji."), 400
+
+    # Hikayeyi fetch et
+    story = sb.table("stories").select("user_id, expires_at").eq("id", story_id).execute().data
+    if not story:
+        return jsonify(error="Hikaye bulunamadı."), 404
+
+    owner_id = story[0]["user_id"]
+    expires_at = story[0]["expires_at"]
+
+    # Kendi hikayene tepki veremezsin
+    if owner_id == me:
+        return jsonify(error="Kendi hikayene tepki veremezsin."), 400
+
+    # Engelleme kontrolü: hangi yönde olursa olsun bir engelleme varsa tepki reddedilir
+    if is_blocked_either_way(sb, me, owner_id):
+        return jsonify(error="Bu kullanıcının hikayesine tepki veremezsin."), 403
+
+    # Süresi dolmuş hikaye kontrolü
+    now = datetime.now(timezone.utc).isoformat()
+    if expires_at < now:
+        return jsonify(error="Süresi dolmuş hikayeye tepki veremezsin."), 410
+
+    # Bildirim oluştur
+    from .notifications import notify
+    notify(sb, recipient_id=owner_id, actor_id=me, type_="story_reaction")
+
+    return jsonify(ok=True)
 
 
 @bp.route("/stories/<story_id>/reply", methods=["POST"])

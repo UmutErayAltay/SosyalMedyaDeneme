@@ -25,6 +25,7 @@ NOTIFICATION_TYPES = [
     ("message", "notify_message", "Mesajlar", "Sana mesaj geldiğinde"),
     ("mention", "notify_mention", "Etiketlenmeler", "Bir gönderide etiketlendiğinde"),
     ("hashtag_post", "notify_hashtag_post", "Takip edilen etiketler", "Takip ettiğin bir etikette yeni paylaşım olduğunda"),
+    ("story_reaction", "notify_story_reaction", "Hikaye tepkileri", "Hikayene biri emoji tepkisi verdiğinde"),
 ]
 _TYPE_TO_COLUMN = {t[0]: t[1] for t in NOTIFICATION_TYPES}
 
@@ -58,6 +59,7 @@ _TARGET_BUILDERS = {
     "mention": lambda n: (url_for("routes.post_detail", post_id=n["post_id"]) if n.get("post_id")
                            else url_for("messaging.conversation", conversation_id=n["conversation_id"])),
     "hashtag_post": lambda n: url_for("routes.post_detail", post_id=n["post_id"]),
+    "story_reaction": lambda n: url_for("routes.profile", username=n["actor"]["username"]),
 }
 
 _TEXT = {
@@ -72,6 +74,7 @@ _TEXT = {
     "message": "sana mesaj gönderdi",
     "mention": "seni bir gönderide etiketledi",
     "hashtag_post": "takip ettiğin bir etikette yeni post paylaştı",
+    "story_reaction": "hikayene tepki verdi",
 }
 
 
