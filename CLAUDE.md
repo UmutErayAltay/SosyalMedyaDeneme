@@ -19,5 +19,7 @@ Flask + Supabase (Postgres/Auth/Storage/Realtime) + Jinja2 + vanilla JS sosyal m
 # Compact instructions
 When compacting, preserve: code changes, test results, error messages, and decisions made. Discard: failed exploration attempts, redundant explanations, successful command outputs.
 
-# Subagent policy
-Use subagents only for research/analysis tasks with long or noisy output. Keep simple edits, git operations, and small fixes in the main session.
+# Çalışma modeli (2026-07-13)
+Ana oturum mimar/orkestratördür: geliştirme işini `.claude/agents/` altındaki ilgili ajana (backend/frontend/database/security/testing/performance/documentation) devret — kendisi SADECE küçük sorun/tek dosyalık eklemeyle bizzat ilgilenir. code-reviewer/security ajanları geliştirme SIRASINDA değil, "Proje tamamlandı" dendiğinde devreye girer. Commit yetkisi hiçbir ajanda yok, SADECE ana oturumda kalır.
+
+Bir geliştirme isteği gelince öneri sunmadan/koda başlamadan ÖNCE bunun zaten yapılıp yapılmadığını kontrol et: dosya dosya taramak yerine `notebooklm-research` skill'i ile sor (.context zaten NotebookLM'de kayıtlı, bedava ve daha az token). "Zaten var" çıkarsa kullanıcıya söyle, tekrar yapma; NotebookLM'in cevabı dondurulmuş olabilir, somut bir öneri sunmadan önce ilgili dosyayı/kodu doğrula.
