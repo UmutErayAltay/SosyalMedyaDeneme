@@ -151,6 +151,31 @@
         {% endif %}
     </header>
 
+    {# Sabitli mesajlar şeridi — en fazla 5 son sabitlenmiş mesaj, tıklanınca
+       DOM'da bulunuyorsa kaydırıp vurgular. #}
+    {% if pinned_messages %}
+    <div class="pinned-bar" id="pinned-bar">
+        {% for pm in pinned_messages %}
+        <button type="button" class="pinned-bar-item" data-quoted-id="{{ pm.id }}" aria-label="Sabitlenmiş mesaja git">
+            📌 <span class="pinned-bar-sender">{{ pm.profiles.username if pm.profiles else 'Bilinmeyen' }}:</span>
+            <span class="pinned-bar-content">
+                {%- if pm.content -%}
+                    {{ pm.content[:50] }}{% if pm.content|length > 50 %}…{% endif %}
+                {%- elif pm.image_url -%}
+                    📷 Görsel
+                {%- elif pm.audio_url -%}
+                    🎤 Sesli mesaj
+                {%- elif pm.sticker_id -%}
+                    Sticker
+                {%- else -%}
+                    (Boş mesaj)
+                {%- endif -%}
+            </span>
+        </button>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {# Sohbet içi mesaj arama — msg-search-toggle-btn ile açılır/kapanır
        (chat.js). Sonuç tıklanınca DOM'da açıksa kaydırıp vurgular, yoksa
        (henüz yüklenmemiş eski mesaj) tam geçmişi (?all=1) çeker. #}
@@ -255,6 +280,9 @@
 
             {# Yanıtla butonu (hover'da belirir, tüm mesajlarda görülebilir) #}
             <button class="msg-reply-btn" data-msg-id="{{ m.id }}" aria-label="Yanıtla" type="button">↩</button>
+
+            {# Sabitle butonu — sabitliyken görsel fark (opacity 1), yoksa hover-reveal #}
+            <button class="msg-pin-btn{% if m.pinned_at %} pinned{% endif %}" data-msg-id="{{ m.id }}" aria-label="{{ 'Sabitlemeyi kaldır' if m.pinned_at else 'Sabitle' }}" type="button">📌</button>
 
             {# İlet butonu (hover'da belirir, tüm mesajlarda görülebilir) #}
             <button class="msg-forward-btn" data-msg-id="{{ m.id }}" aria-label="İlet" type="button">📤</button>

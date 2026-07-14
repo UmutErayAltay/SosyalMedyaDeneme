@@ -144,16 +144,31 @@ def conversation(conversation_id):
                 continue
         return []
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    def _fetch_pinned():
+        # Bu konuşmanın sabitli mesajları (en fazla 5) — sabitleme zamanına
+        # göre azalan sırada. pinned_at migration'ı yoksa boş liste döner,
+        # sohbet render'ı kırılmaz.
+        try:
+            return sb.table("messages").select(
+                "id, content, image_url, audio_url, sticker_id, pinned_at, profiles!messages_sender_id_fkey(username)"
+            ).eq("conversation_id", conversation_id).not_.is_(
+                "pinned_at", "null"
+            ).order("pinned_at", desc=True).limit(5).execute().data
+        except Exception:
+            return []
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
         part_future = executor.submit(_check_participant)
         meta_future = executor.submit(_fetch_conv_meta)
         others_future = executor.submit(_fetch_others)
         messages_future = executor.submit(_fetch_messages)
+        pinned_future = executor.submit(_fetch_pinned)
 
         part = part_future.result()
         (is_group, group_name) = meta_future.result()
         other_profiles = others_future.result()
         messages = messages_future.result()
+        pinned_messages = pinned_future.result()
 
     # Kullanıcı bu konuşmada mı? (sonuç her şeyden önce denetlenir)
     if not part:
@@ -247,7 +262,11 @@ def conversation(conversation_id):
                group_name=group_name, group_members=other_profiles, member_map=member_map,
                conversation_id=conversation_id, me=session["user"],
                my_is_admin=my_is_admin if is_group else False,
-               has_older=has_older, valid_usernames=get_valid_usernames(sb))
+               # part zaten select() ile tüm kolonları çekiyor — is_muted
+               # kolonu migration'sız ortamda yoksa .get güvenli False döner
+               my_is_muted=bool(part[0].get("is_muted")),
+               has_older=has_older, valid_usernames=get_valid_usernames(sb),
+               pinned_messages=pinned_messages)
 
     if request.headers.get("X-Requested-With") == "fetch":
         return render_template("messages/_conversation_panel.html", **ctx)

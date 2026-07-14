@@ -19,6 +19,24 @@
         return '/messages/message/' + msgId + '/react';
     }
 
+    // IIFE kapsamında (initConversation İÇİNDE DEĞİL) — hem initConversation
+    // içindeki arama-sonucu tıklamaları hem de dışarıdaki document-level
+    // alıntı/sabitli-şerit handler'ları kullanır. Closure yerine canlı DOM
+    // okur, böylece AJAX panel geçişlerinden etkilenmez.
+    function jumpToMessage(msgId) {
+        var stream = document.getElementById('stream');
+        var target = stream ? stream.querySelector('[data-msg-id="' + msgId + '"]') : null;
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            target.classList.add('msg-jump-highlight');
+            setTimeout(function () { target.classList.remove('msg-jump-highlight'); }, 1700);
+        } else {
+            var panel = document.getElementById('conversation-panel');
+            var cid = panel ? panel.dataset.conversationId : null;
+            if (cid) window.location.href = '/messages/' + cid + '?all=1#msg-' + msgId;
+        }
+    }
+
     // Sunucu render'ındaki linkify_mentions (mentions.py) filtresinin JS
     // karşılığı — realtime/optimistic mesajlar Jinja'dan GEÇMEZ, bu yüzden
     // @etiketleme burada da uygulanmazsa gönderim ANINDA düz metin görünürdü
@@ -809,17 +827,6 @@
             var match = escapeHtml(text.slice(idx, idx + q.length));
             var after = escapeHtml(text.slice(idx + q.length));
             return before + '<mark>' + match + '</mark>' + after;
-        }
-
-        function jumpToMessage(msgId) {
-            var target = stream.querySelector('[data-msg-id="' + msgId + '"]');
-            if (target) {
-                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                target.classList.add('msg-jump-highlight');
-                setTimeout(function () { target.classList.remove('msg-jump-highlight'); }, 1700);
-            } else {
-                window.location.href = '/messages/' + conversationId + '?all=1#msg-' + msgId;
-            }
         }
 
         function closeSearch() {
@@ -1778,6 +1785,40 @@
             return;
         }
 
+        // 7. Sabitle butonu — toggle pin durumu
+        var pinBtn = e.target.closest('.msg-pin-btn');
+        if (pinBtn) {
+            e.preventDefault();
+            var pinMsgId = pinBtn.dataset.msgId;
+            if (!pinMsgId) return;
+
+            var csrfInput = document.querySelector('input[name="csrf_token"]');
+            fetch('/messages/message/' + pinMsgId + '/pin', {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': csrfInput ? csrfInput.value : '' }
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (!d.ok) {
+                    window.appAlert('Hata: ' + (d.error || 'Bilinmeyen hata'));
+                    return;
+                }
+                // Yanıt: d.pinned = true/false (toggle sonrası durum)
+                var isPinned = d.pinned;
+                if (isPinned) {
+                    pinBtn.classList.add('pinned');
+                    pinBtn.setAttribute('aria-label', 'Sabitlemeyi kaldır');
+                } else {
+                    pinBtn.classList.remove('pinned');
+                    pinBtn.setAttribute('aria-label', 'Sabitle');
+                }
+            })
+            .catch(function (err) {
+                window.appAlert('Hata: ' + err.message);
+            });
+            return;
+        }
+
         // Panel içinde ama picker/tetik dışında bir yere tıklandı — kapat
         closeAllReactPickers();
     });
@@ -1824,9 +1865,10 @@
         });
     });
 
-    // --- Alıntı bloğu tıklaması — kaynağa atla (jumpToMessage kullan) ---
+    // --- Alıntı/Sabitli mesaj tıklaması — kaynağa atla (jumpToMessage kullan) ---
     document.addEventListener('click', function (e) {
-        var quoteBlock = e.target.closest('.msg-quote[data-quoted-id]');
+        // Hem .msg-quote (mesaj yanıtı) hem .pinned-bar-item (sabitli şerit) tıklaması
+        var quoteBlock = e.target.closest('.msg-quote[data-quoted-id], .pinned-bar-item[data-quoted-id]');
         if (!quoteBlock) return;
         e.preventDefault();
         var quotedId = quoteBlock.dataset.quotedId;

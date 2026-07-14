@@ -322,6 +322,45 @@ def mute_conversation(conversation_id):
         return jsonify(error="unavailable"), 503
 
 
+@bp.route("/message/<message_id>/pin", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def pin_message(message_id):
+    """Mesajı sabitle / sabitlemeyi kaldır — toggle. Tüm katılımcılar yapabilir."""
+    from datetime import datetime, timezone
+    sb = get_sb()
+    me = session["user"]["id"]
+
+    # Mesajı çek
+    msg = sb.table("messages").select(
+        "id, conversation_id, pinned_at"
+    ).eq("id", message_id).execute()
+    if not msg.data:
+        return jsonify(error="not_found"), 404
+    msg_data = msg.data[0]
+    conversation_id = msg_data["conversation_id"]
+
+    # Bu konuşmada BEN katılımcı mıyım?
+    part = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id
+    ).eq("user_id", me).execute()
+    if not part.data:
+        abort(403)
+
+    # Toggle: pinned_at dulu mu?
+    currently_pinned = msg_data.get("pinned_at") is not None
+    new_pinned_at = None if currently_pinned else datetime.now(timezone.utc).isoformat()
+
+    try:
+        sb.table("messages").update(
+            {"pinned_at": new_pinned_at}
+        ).eq("id", message_id).execute()
+        return jsonify(ok=True, pinned=new_pinned_at is not None)
+    except Exception:
+        # pinned_at kolonu yoksa migration uygulanmamış
+        return jsonify(error="unavailable"), 503
+
+
 @bp.route("/forward-targets", methods=["GET"])
 @login_required
 @retry_on_connection_error
