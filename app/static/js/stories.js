@@ -11,6 +11,12 @@
         return meta ? meta.content : '';
     }
 
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
     // ============================================================
     // --- Hikaye ekleme modalı ---
     // ============================================================
@@ -131,15 +137,25 @@
         });
     }
 
+    // Oluşturma önizlemesi, GERÇEK paylaşılacak anket görünümüyle (bkz.
+    // _post_card.html poll_widget makrosu, .poll-widget/.poll-option CSS'i)
+    // birebir aynı markup'ı kullanır — kullanıcı isteği: "orada tam
+    // paylaşılacak hali gözüksün". Önceden düz metin/kutu (sahte önizleme)
+    // kullanılıyordu, gerçek anketle hiç benzemiyordu.
     function updateStoryPollPreview(options) {
         if (!storyPollPreviewWidget) return;
-        var previewHtml = '<div style="background:rgba(0,0,0,0.7);color:#fff;padding:8px 12px;border-radius:8px;font-size:12px;max-width:200px;">';
-        previewHtml += '<strong>Anket:</strong><br>';
-        (options || []).slice(0, 2).forEach(function (text) {
-            if (text.trim()) previewHtml += '• ' + text + '<br>';
+        var html = '<div class="poll-widget">';
+        (options || []).forEach(function (text) {
+            var trimmed = text.trim();
+            if (!trimmed) return;
+            html += '<div class="poll-option">' +
+                '<span class="poll-option-bar" style="width: 0%"></span>' +
+                '<span class="poll-option-label">' + escapeHtml(trimmed) + '</span>' +
+                '<span class="poll-option-pct">0%</span>' +
+                '</div>';
         });
-        previewHtml += '</div>';
-        storyPollPreviewWidget.innerHTML = previewHtml;
+        html += '<p class="muted poll-total">0 oy</p></div>';
+        storyPollPreviewWidget.innerHTML = html;
     }
 
     // Poll widget sürükleme: Pointer Events (mouse + touch)

@@ -1497,10 +1497,16 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     background: var(--border); color: var(--text); border-radius: 999px;
     padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
     /* #story-poll-toggle-btn bu class'ı bir <button>'a uyguluyor — <label>'ların
-       aksine <button> tarayıcı varsayılan border/font/appearance taşır, bunlar
-       resetlenmezse anket butonu diğer ikisinden (görsel/video <label>'ları)
-       farklı görünür (kullanıcı raporu). */
-    border: none; font-family: inherit; -webkit-appearance: none; appearance: none;
+       aksine <button> tarayıcı varsayılan border/font/appearance/line-height
+       taşır (kullanıcı raporu: anket butonu diğer ikisinden farklı görünüyor).
+       border/appearance/line-height resetlense DAHİ `<button>` bu satırda
+       (`.story-attach-row`, flex) hâlâ `<label>`lardan ~12px daha uzun
+       render ediliyordu (Chromium'un form kontrolü kutu modeli quirk'i,
+       auto height ile giderilemedi) — bu yüzden içerik bazlı auto height'a
+       güvenmek yerine SABİT height ile üçü de garantili eşitleniyor. */
+    border: none; font-family: inherit; line-height: inherit;
+    -webkit-appearance: none; appearance: none;
+    height: 37px; box-sizing: border-box;
 }
 .story-attach-label:hover { background: var(--muted); color: var(--card); }
 
@@ -1600,15 +1606,20 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     max-width: 900px;
 }
 
-/* Hikaye oluşturma modal layout — iki sütun: sol form kontrolleri, sağ medya önizlemesi */
+/* Hikaye oluşturma modal layout — üstte iki sütun (form + önizleme), altta
+   TAM GENİŞLİKTE buton şeridi (kullanıcı isteği: butonlar önizleme
+   yüksekliğine göre değil, modalın en altına sabit olsun). */
 .modal-body.story-modal-body {
+    display: flex; flex-direction: column; gap: 12px;
+}
+.story-form-columns {
     display: flex; flex-direction: row; gap: 16px; align-items: flex-start;
 }
 .story-form-left {
     flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;
 }
 .story-form-right {
-    flex: 0 0 auto; width: 280px;
+    flex: 0 0 auto;
 }
 
 /* Mobil responsive — 640px altında sütunlar alt alta düşer */
@@ -1616,19 +1627,25 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     #story-modal .modal {
         max-width: 100%;
     }
-    .modal-body.story-modal-body {
+    .story-form-columns {
         flex-direction: column;
     }
     .story-form-right {
-        width: 100%;
+        align-self: center;
     }
 }
 
-/* Hikaye oluşturma modalında anket widget'ı önizlemesi — medya önizleme konteyner'ında */
+/* Hikaye oluşturma modalında anket widget'ı önizlemesi — medya önizleme
+   konteyner'ında. Kullanıcı isteği: "normal hikaye boyutlarında, ayrı bir
+   kutu olsun" — sabit/küçük boyut (gerçek hikaye viewer'ıyla aynı 9:16 oran)
+   + belirgin çerçeve (border/arkaplan) ki boş/görünmez bir alan gibi
+   durmasın (önceki haliyle `--bg-secondary` hiç TANIMLI değildi, kutu
+   tamamen şeffaf kalıp arkasındaki modal karanlığıyla karışıyordu — gerçek
+   bug, bulunup `--card`'a düzeltildi). */
 .story-media-preview-wrap {
-    position: relative; width: 100%; aspect-ratio: 9 / 16;
-    background: var(--bg-secondary); border-radius: 8px; overflow: hidden;
-    margin: 0; display: flex; align-items: center; justify-content: center;
+    position: relative; width: 180px; aspect-ratio: 9 / 16;
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; margin: 0; display: flex; align-items: center; justify-content: center;
 }
 .story-poll-preview-widget {
     position: absolute; cursor: move; touch-action: none;
@@ -1639,7 +1656,7 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 /* Anket boyutu slider'ı */
 .story-poll-scale-control {
     display: flex; align-items: center; gap: 12px; margin: 8px 0; padding: 8px;
-    background: var(--bg-secondary); border-radius: 8px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
 }
 .story-poll-scale-control[hidden] { display: none; }
 .story-poll-scale-control label { flex: 1; font-size: 14px; color: var(--text); }

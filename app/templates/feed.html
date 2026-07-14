@@ -249,51 +249,53 @@
         <form action="{{ url_for('stories.create_story') }}" method="post" enctype="multipart/form-data" class="modal-body story-modal-body">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-            {# Sol sütun: form kontrolleri #}
-            <div class="story-form-left">
-                <textarea name="caption" id="story-caption-input" placeholder="Bir şey yaz (opsiyonel)..." rows="2" aria-label="Hikaye altyazısı"></textarea>
+            <div class="story-form-columns">
+                {# Sol sütun: form kontrolleri #}
+                <div class="story-form-left">
+                    <textarea name="caption" id="story-caption-input" placeholder="Bir şey yaz (opsiyonel)..." rows="2" aria-label="Hikaye altyazısı"></textarea>
 
-                <div id="story-poll-options-container" class="poll-options-container" hidden>
-                    <input type="text" name="poll_option_1" placeholder="Seçenek 1" maxlength="80">
-                    <input type="text" name="poll_option_2" placeholder="Seçenek 2" maxlength="80">
-                    <input type="text" name="poll_option_3" placeholder="Seçenek 3 (opsiyonel)" maxlength="80" hidden>
-                    <input type="text" name="poll_option_4" placeholder="Seçenek 4 (opsiyonel)" maxlength="80" hidden>
-                    {# Anket widget konumu ve boyutu (0-1 arası oran) #}
-                    <input type="hidden" name="poll_position_x" value="0.5">
-                    <input type="hidden" name="poll_position_y" value="0.5">
-                    <input type="hidden" name="poll_scale" value="1">
-                    <div class="poll-options-actions">
-                        <button type="button" class="btn btn-ghost small" id="story-poll-add-option-btn">+ Seçenek ekle</button>
-                        <button type="button" class="btn btn-ghost small" id="story-poll-cancel-btn">Anketi iptal et</button>
+                    <div id="story-poll-options-container" class="poll-options-container" hidden>
+                        <input type="text" name="poll_option_1" placeholder="Seçenek 1" maxlength="80">
+                        <input type="text" name="poll_option_2" placeholder="Seçenek 2" maxlength="80">
+                        <input type="text" name="poll_option_3" placeholder="Seçenek 3 (opsiyonel)" maxlength="80" hidden>
+                        <input type="text" name="poll_option_4" placeholder="Seçenek 4 (opsiyonel)" maxlength="80" hidden>
+                        {# Anket widget konumu ve boyutu (0-1 arası oran) #}
+                        <input type="hidden" name="poll_position_x" value="0.5">
+                        <input type="hidden" name="poll_position_y" value="0.5">
+                        <input type="hidden" name="poll_scale" value="1">
+                        <div class="poll-options-actions">
+                            <button type="button" class="btn btn-ghost small" id="story-poll-add-option-btn">+ Seçenek ekle</button>
+                            <button type="button" class="btn btn-ghost small" id="story-poll-cancel-btn">Anketi iptal et</button>
+                        </div>
+                    </div>
+
+                    {# Anket boyutlandırma slider'ı — anket toggle açılınca görünsün #}
+                    <div id="story-poll-scale-control" class="story-poll-scale-control" hidden>
+                        <label for="story-poll-scale-slider">Anket boyutu: <span id="story-poll-scale-display">100%</span></label>
+                        <input type="range" id="story-poll-scale-slider" name="poll_scale_slider"
+                               min="0.3" max="3" step="0.1" value="1">
                     </div>
                 </div>
 
-                {# Anket boyutlandırma slider'ı — anket toggle açılınca görünsün #}
-                <div id="story-poll-scale-control" class="story-poll-scale-control" hidden>
-                    <label for="story-poll-scale-slider">Anket boyutu: <span id="story-poll-scale-display">100%</span></label>
-                    <input type="range" id="story-poll-scale-slider" name="poll_scale_slider"
-                           min="0.3" max="3" step="0.1" value="1">
-                </div>
-
-                <div class="story-attach-row">
-                    <label class="story-attach-label" for="story-image-input">📷 Görsel</label>
-                    <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" hidden id="story-image-input">
-                    <label class="story-attach-label" for="story-video-input">🎥 Video</label>
-                    <input type="file" name="video" accept="video/mp4,video/webm,video/quicktime" hidden id="story-video-input">
-                    <button type="button" class="story-attach-label" id="story-poll-toggle-btn">📊 Anket</button>
-                </div>
-
-                <button type="submit" class="btn btn-primary btn-full">Paylaş</button>
-            </div>
-
-            {# Sağ sütun: medya önizlemesi #}
-            <div class="story-form-right">
-                <div class="story-media-preview-wrap">
-                    <div id="story-image-preview" class="image-preview-grid" aria-live="polite"></div>
-                    <video id="story-video-preview" class="post-video-preview" controls style="display:none"></video>
-                    <div id="story-poll-preview-widget" class="story-poll-preview-widget" hidden aria-live="polite"></div>
+                {# Sağ sütun: medya önizlemesi — normal hikaye oranında, ayrı çerçeveli kutu #}
+                <div class="story-form-right">
+                    <div class="story-media-preview-wrap">
+                        <div id="story-image-preview" class="image-preview-grid" aria-live="polite"></div>
+                        <video id="story-video-preview" class="post-video-preview" controls style="display:none"></video>
+                        <div id="story-poll-preview-widget" class="story-poll-preview-widget" hidden aria-live="polite"></div>
+                    </div>
                 </div>
             </div>
+
+            {# Butonlar en altta, tam genişlikte #}
+            <div class="story-attach-row">
+                <label class="story-attach-label" for="story-image-input">📷 Görsel</label>
+                <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" hidden id="story-image-input">
+                <label class="story-attach-label" for="story-video-input">🎥 Video</label>
+                <input type="file" name="video" accept="video/mp4,video/webm,video/quicktime" hidden id="story-video-input">
+                <button type="button" class="story-attach-label" id="story-poll-toggle-btn">📊 Anket</button>
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Paylaş</button>
         </form>
     </div>
 </div>
