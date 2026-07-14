@@ -1517,7 +1517,7 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 }
 .story-viewer-header .modal-close:hover, .story-delete-btn:hover, .story-highlight-btn:hover { background: var(--overlay-light-hint); color: var(--color-white); }
 .story-media-area {
-    flex: 1; position: relative; display: flex; align-items: center; justify-content: center;
+    flex: 1; position: relative; z-index: 1; display: flex; align-items: center; justify-content: center;
     background: var(--color-black); min-height: 0;
 }
 .story-media-area img, .story-media-area video {
@@ -1551,10 +1551,15 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 .story-paused-indicator[hidden] { display: none; }
 
 /* Hikayeye yanıt çubuğu — Instagram deseni, story-viewer'ın altında sabit
-   satır. Yanıt sahibine DM olarak gider (bkz. stories.js/reply_to_story). */
+   satır. Yanıt sahibine DM olarak gider (bkz. stories.js/reply_to_story).
+   Emoji reaction bar'ın parent olması için position: relative. z-index,
+   .story-media-area'nın nav-zone'larından (z-index:1) YUKARIDA kalmasını
+   garantiler — aksi halde reactions-bar'ın media-area üzerine taşan üst
+   kısmı bazen nav-zone'a tıklama olarak gidiyordu (gerçek bug, Playwright
+   ile mouse down/up event hedefleri karşılaştırılarak bulundu). */
 .story-reply-bar {
     display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-    background: var(--color-black); flex-shrink: 0;
+    background: var(--color-black); flex-shrink: 0; position: relative; z-index: 5;
 }
 .story-reply-bar[hidden] { display: none; }
 .story-reply-bar input {
@@ -1571,19 +1576,47 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 .story-reply-send-btn:hover { opacity: 0.85; }
 .story-reply-send-btn:disabled { opacity: 0.4; cursor: default; }
 
-/* Hikaye anket widget'ı — story-viewer içinde (varsa) */
+/* Hikaye anket widget'ı — story-viewer içinde (varsa) konumlandırılabilir */
 .story-poll-widget {
-    position: absolute; bottom: 60px; left: 16px; right: 16px;
-    max-width: 350px; margin: 0 auto; z-index: 10;
+    position: absolute; z-index: 10;
+    /* Konum ve boyut inline style'dan (JS) gelir */
 }
 .story-poll-widget[hidden] { display: none; }
 
-/* Hikaye emoji tepkisi butonu şeridi — Instagram tarzı hızlı tepkiler */
+/* Hikaye oluşturma modalında anket widget'ı önizlemesi — medya önizleme konteyner'ında */
+.story-media-preview-wrap {
+    position: relative; width: 100%; aspect-ratio: 1 / 1;
+    background: var(--bg-secondary); border-radius: 8px; overflow: hidden;
+    margin: 12px 0;
+}
+.story-poll-preview-widget {
+    position: absolute; cursor: move; touch-action: none;
+    /* Başlangıç konum JS'den gelir */
+}
+.story-poll-preview-widget[hidden] { display: none; }
+
+/* Anket boyutu slider'ı */
+.story-poll-scale-control {
+    display: flex; align-items: center; gap: 12px; margin: 8px 0; padding: 8px;
+    background: var(--bg-secondary); border-radius: 8px;
+}
+.story-poll-scale-control[hidden] { display: none; }
+.story-poll-scale-control label { flex: 1; font-size: 14px; color: var(--text); }
+#story-poll-scale-slider {
+    flex: 1; min-width: 100px; cursor: pointer;
+}
+
+/* Hikaye emoji tepkisi butonu şeridi — input focus'ta input üstünde çıkar */
 .story-reactions-bar {
     display: flex; justify-content: center; gap: 8px; padding: 8px 12px;
-    background: rgba(0, 0, 0, 0.7); border-radius: 24px;
-    position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%);
-    z-index: 11;
+    background: rgba(0, 0, 0, 0.85); border-radius: 24px;
+    position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+    margin-bottom: 10px; z-index: 12; white-space: nowrap;
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity 0.2s ease-out, visibility 0.2s ease-out;
+}
+.story-reactions-bar.visible {
+    opacity: 1; visibility: visible; pointer-events: auto;
 }
 .story-reactions-bar[hidden] { display: none; }
 .story-reaction-btn {

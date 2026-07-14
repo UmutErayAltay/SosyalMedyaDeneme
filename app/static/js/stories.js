@@ -86,17 +86,137 @@
         if (e.key === 'Escape' && storyModal && !storyModal.hidden) closeStoryModal();
     });
 
+    // Anket oluşturma modalında widget'ı sürüklenebilir ve boyutlandırılabilir yap
+    var storyPollPreviewWidget = document.getElementById('story-poll-preview-widget');
+    var storyMediaPreviewWrap = storyPollPreviewWidget ? storyPollPreviewWidget.closest('.story-media-preview-wrap') : null;
+    var storyPollScaleSlider = document.getElementById('story-poll-scale-slider');
+    var storyPollScaleDisplay = document.getElementById('story-poll-scale-display');
+    var storyPollScaleControl = document.getElementById('story-poll-scale-control');
+    var storyPollDragState = { dragging: false, startX: 0, startY: 0, offsetX: 0, offsetY: 0 };
+
+    function initStoryPollWidget() {
+        if (!storyPollPreviewWidget) return;
+        // Widget başlangıç: konteyner center'ında
+        storyPollPreviewWidget.style.left = '50%';
+        storyPollPreviewWidget.style.top = '50%';
+        storyPollPreviewWidget.style.transform = 'translate(-50%, -50%) scale(1)';
+        storyPollPreviewWidget.dataset.positionX = '0.5';
+        storyPollPreviewWidget.dataset.positionY = '0.5';
+        storyPollPreviewWidget.dataset.scale = '1';
+        if (storyPollScaleSlider) storyPollScaleSlider.value = '1';
+        if (storyPollScaleDisplay) storyPollScaleDisplay.textContent = '100%';
+    }
+
+    // Anket boyutu slider'ı
+    if (storyPollScaleSlider) {
+        storyPollScaleSlider.addEventListener('input', function (e) {
+            var scale = parseFloat(e.target.value);
+            if (storyPollPreviewWidget) {
+                storyPollPreviewWidget.style.transform = 'translate(-50%, -50%) scale(' + scale + ')';
+                storyPollPreviewWidget.dataset.scale = scale.toFixed(2);
+                var pollScaleInput = storyPollContainer ? storyPollContainer.querySelector('input[name="poll_scale"]') : null;
+                if (pollScaleInput) pollScaleInput.value = scale.toFixed(2);
+            }
+            if (storyPollScaleDisplay) {
+                storyPollScaleDisplay.textContent = Math.round(scale * 100) + '%';
+            }
+        });
+    }
+
+    function updateStoryPollPreview(options) {
+        if (!storyPollPreviewWidget) return;
+        var previewHtml = '<div style="background:rgba(0,0,0,0.7);color:#fff;padding:8px 12px;border-radius:8px;font-size:12px;max-width:200px;">';
+        previewHtml += '<strong>Anket:</strong><br>';
+        (options || []).slice(0, 2).forEach(function (text) {
+            if (text.trim()) previewHtml += '• ' + text + '<br>';
+        });
+        previewHtml += '</div>';
+        storyPollPreviewWidget.innerHTML = previewHtml;
+    }
+
+    // Poll widget sürükleme: Pointer Events (mouse + touch)
+    if (storyPollPreviewWidget) {
+        storyPollPreviewWidget.addEventListener('pointerdown', function (e) {
+            if (!storyMediaPreviewWrap) return;
+            e.preventDefault();
+            storyPollDragState.dragging = true;
+            storyPollDragState.startX = e.clientX;
+            storyPollDragState.startY = e.clientY;
+            var rect = storyPollPreviewWidget.getBoundingClientRect();
+            storyPollDragState.offsetX = rect.left - storyMediaPreviewWrap.getBoundingClientRect().left;
+            storyPollDragState.offsetY = rect.top - storyMediaPreviewWrap.getBoundingClientRect().top;
+        });
+    }
+
+    document.addEventListener('pointermove', function (e) {
+        if (!storyPollDragState.dragging || !storyMediaPreviewWrap || !storyPollPreviewWidget) return;
+        var deltaX = e.clientX - storyPollDragState.startX;
+        var deltaY = e.clientY - storyPollDragState.startY;
+        var newX = storyPollDragState.offsetX + deltaX;
+        var newY = storyPollDragState.offsetY + deltaY;
+
+        // Sınır kontrolü: konteyner içinde kal
+        var containerRect = storyMediaPreviewWrap.getBoundingClientRect();
+        var widgetRect = storyPollPreviewWidget.getBoundingClientRect();
+        var maxX = containerRect.width - (widgetRect.width || 150);
+        var maxY = containerRect.height - (widgetRect.height || 60);
+        newX = Math.max(0, Math.min(newX, maxX));
+        newY = Math.max(0, Math.min(newY, maxY));
+
+        storyPollPreviewWidget.style.left = newX + 'px';
+        storyPollPreviewWidget.style.top = newY + 'px';
+        storyPollPreviewWidget.style.transform = 'none';
+    });
+
+    document.addEventListener('pointerup', function (e) {
+        if (!storyPollDragState.dragging || !storyMediaPreviewWrap) return;
+        storyPollDragState.dragging = false;
+
+        // Konumu 0-1 arası oran'a çevir ve gizli input'lara yaz
+        var containerRect = storyMediaPreviewWrap.getBoundingClientRect();
+        var widgetRect = storyPollPreviewWidget.getBoundingClientRect();
+        var centerX = widgetRect.left - containerRect.left + (widgetRect.width || 150) / 2;
+        var centerY = widgetRect.top - containerRect.top + (widgetRect.height || 60) / 2;
+        var posX = Math.max(0, Math.min(1, centerX / containerRect.width));
+        var posY = Math.max(0, Math.min(1, centerY / containerRect.height));
+
+        storyPollPreviewWidget.dataset.positionX = posX.toFixed(2);
+        storyPollPreviewWidget.dataset.positionY = posY.toFixed(2);
+
+        // Gizli input'lara yaz
+        var pollPosXInput = storyPollContainer ? storyPollContainer.querySelector('input[name="poll_position_x"]') : null;
+        var pollPosYInput = storyPollContainer ? storyPollContainer.querySelector('input[name="poll_position_y"]') : null;
+        if (pollPosXInput) pollPosXInput.value = posX.toFixed(2);
+        if (pollPosYInput) pollPosYInput.value = posY.toFixed(2);
+    });
+
     // Hikaye formu: anket toggle ve seçenek ekleme
     if (storyPollToggleBtn) {
         storyPollToggleBtn.addEventListener('click', function (e) {
             e.preventDefault();
             if (storyPollContainer) {
-                var isHidden = storyPollContainer.hidden;
-                storyPollContainer.hidden = !isHidden;
-                if (!isHidden && storyImageInput) storyImageInput.value = '';
-                if (!isHidden && storyImagePreview) storyImagePreview.innerHTML = '';
-                if (!isHidden && storyVideoInput) storyVideoInput.value = '';
-                if (!isHidden && storyVideoPreview) storyVideoPreview.style.display = 'none';
+                var wasHidden = storyPollContainer.hidden;
+                storyPollContainer.hidden = !wasHidden;
+                var nowOpen = wasHidden; // wasHidden=true -> az önce açıldı (görünür oldu)
+                if (nowOpen) {
+                    if (storyImageInput) storyImageInput.value = '';
+                    if (storyImagePreview) storyImagePreview.innerHTML = '';
+                    if (storyVideoInput) storyVideoInput.value = '';
+                    if (storyVideoPreview) storyVideoPreview.style.display = 'none';
+                    // Poll widget'ı göster + init et
+                    if (storyPollPreviewWidget) {
+                        storyPollPreviewWidget.hidden = false;
+                        initStoryPollWidget();
+                        updateStoryPollPreview(['Seçenek 1', 'Seçenek 2']);
+                    }
+                    if (storyPollScaleControl) storyPollScaleControl.hidden = false;
+                } else {
+                    // Poll'u kapat: widget'ı gizle
+                    if (storyPollPreviewWidget) {
+                        storyPollPreviewWidget.hidden = true;
+                    }
+                    if (storyPollScaleControl) storyPollScaleControl.hidden = true;
+                }
             }
         });
     }
@@ -113,6 +233,20 @@
             if (hidden4 && hidden4.hidden) {
                 hidden4.hidden = false;
             }
+        });
+    }
+
+    // Anket seçenekleri değiştiğinde widget'ı güncelle
+    if (storyPollContainer) {
+        var pollInputs = storyPollContainer.querySelectorAll('input[type="text"][name^="poll_option_"]');
+        pollInputs.forEach(function (inp) {
+            inp.addEventListener('input', function () {
+                var options = [];
+                pollInputs.forEach(function (i) {
+                    if (i.value.trim()) options.push(i.value.trim());
+                });
+                if (options.length >= 2) updateStoryPollPreview(options);
+            });
         });
     }
 
@@ -273,6 +407,17 @@
         widget.appendChild(totalDiv);
 
         pollContainer.appendChild(widget);
+
+        // Anket widget'ını konumlandır (poll.position_x, position_y, scale)
+        if (pollWidget) {
+            var posX = (poll.position_x !== undefined) ? poll.position_x : 0.5;
+            var posY = (poll.position_y !== undefined) ? poll.position_y : 0.5;
+            var scale = (poll.scale !== undefined) ? poll.scale : 1;
+
+            pollWidget.style.left = (posX * 100) + '%';
+            pollWidget.style.top = (posY * 100) + '%';
+            pollWidget.style.transform = 'translate(-50%, -50%) scale(' + scale + ')';
+        }
     }
 
     function showStory(index) {
@@ -463,8 +608,19 @@
         });
     }
 
-    // Emoji tepkisi butonları — Instagram tarzı hızlı tepkiler
+    // Emoji tepkisi butonları — tıklanınca /react POST et + yanıt input'unda geri bildirim
     if (reactionsBar) {
+        // KRİTİK: mousedown'da preventDefault() — aksi halde tarayıcı odağı
+        // butona kaydırır, bu da #story-reply-input'un blur handler'ını
+        // SENKRON tetikler (reactionsBar'dan .visible kalkar, pointer-events:
+        // none ANINDA uygulanır — transition'ı beklemez). Sonuç: mousedown
+        // buton üzerinde başlasa da mouseup, artık tıklama-geçirmez hale gelen
+        // şeridin ALTINDAKİ elemana (hikaye önceki/sonraki nav-zone'u) düşüyor,
+        // click hiç ateşlenmiyor, tepki gönderilmiyordu. preventDefault ile
+        // buton hiç fokus almıyor, input fokusu/şerit görünürlüğü korunuyor.
+        reactionsBar.addEventListener('mousedown', function (e) {
+            if (e.target.closest('.story-reaction-btn')) e.preventDefault();
+        });
         reactionsBar.addEventListener('click', async function (e) {
             var btn = e.target.closest('.story-reaction-btn');
             if (!btn) return;
@@ -490,9 +646,17 @@
                 });
                 if (!res.ok) throw new Error('İstek başarısız');
 
-                // Görsel onay: buton patlama animasyonu (transform scale)
+                // Görsel onay: buton patlama + input placeholder feedback + şeridi kapat
                 btn.style.transform = 'scale(1.3)';
                 setTimeout(function () { btn.style.transform = 'scale(1)'; }, 200);
+
+                // Yanıt input'unda "Gönderildi ✓" onayı
+                if (replyInput) {
+                    var originalPlaceholder = replyInput.placeholder;
+                    replyInput.placeholder = 'Gönderildi ✓';
+                    replyInput.blur(); // Emoji şeridini kapat
+                    setTimeout(function () { replyInput.placeholder = originalPlaceholder; }, 2000);
+                }
             } catch (err) {
                 console.error('Tepki gönderilemedi:', err);
             } finally {
@@ -558,15 +722,15 @@
         else if (e.key === 'ArrowLeft') showStory(currentIndex - 1);
     });
 
-    // Yanıt kutusuna odaklanınca hikaye duraklat (Instagram deseni) — yazarken
-    // hikaye kayıp gitmesin. Yalnızca BU odaklanma duraklattıysa blur'da devam
-    // ettir (kullanıcı zaten manuel duraklatmışsa onu ezme).
+    // Yanıt kutusuna odaklanınca: hikaye duraklat + emoji şeridini göster
     if (replyInput) {
         replyInput.addEventListener('focus', function () {
             if (!isPaused) { replyAutoPaused = true; setPaused(true); }
+            if (reactionsBar) reactionsBar.classList.add('visible');
         });
         replyInput.addEventListener('blur', function () {
             if (replyAutoPaused) { replyAutoPaused = false; setPaused(false); }
+            if (reactionsBar) reactionsBar.classList.remove('visible');
         });
     }
 

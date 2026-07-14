@@ -250,18 +250,33 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <textarea name="caption" placeholder="Bir şey yaz (opsiyonel)..." rows="2" aria-label="Hikaye altyazısı"></textarea>
 
-            <div id="story-image-preview" class="image-preview-grid" aria-live="polite"></div>
-            <video id="story-video-preview" class="post-video-preview" controls style="display:none"></video>
+            {# Hikaye medya önizlemesi (resim/video) + anket widget önizlemesi aynı konteyner'da #}
+            <div class="story-media-preview-wrap">
+                <div id="story-image-preview" class="image-preview-grid" aria-live="polite"></div>
+                <video id="story-video-preview" class="post-video-preview" controls style="display:none"></video>
+                <div id="story-poll-preview-widget" class="story-poll-preview-widget" hidden aria-live="polite"></div>
+            </div>
 
             <div id="story-poll-options-container" class="poll-options-container" hidden>
                 <input type="text" name="poll_option_1" placeholder="Seçenek 1" maxlength="80">
                 <input type="text" name="poll_option_2" placeholder="Seçenek 2" maxlength="80">
                 <input type="text" name="poll_option_3" placeholder="Seçenek 3 (opsiyonel)" maxlength="80" hidden>
                 <input type="text" name="poll_option_4" placeholder="Seçenek 4 (opsiyonel)" maxlength="80" hidden>
+                {# Anket widget konumu ve boyutu (0-1 arası oran) #}
+                <input type="hidden" name="poll_position_x" value="0.5">
+                <input type="hidden" name="poll_position_y" value="0.5">
+                <input type="hidden" name="poll_scale" value="1">
                 <div class="poll-options-actions">
                     <button type="button" class="btn btn-ghost small" id="story-poll-add-option-btn">+ Seçenek ekle</button>
                     <button type="button" class="btn btn-ghost small" id="story-poll-cancel-btn">Anketi iptal et</button>
                 </div>
+            </div>
+
+            {# Anket boyutlandırma slider'ı — anket toggle açılınca görünsün #}
+            <div id="story-poll-scale-control" class="story-poll-scale-control" hidden>
+                <label for="story-poll-scale-slider">Anket boyutu: <span id="story-poll-scale-display">100%</span></label>
+                <input type="range" id="story-poll-scale-slider" name="poll_scale_slider"
+                       min="0.3" max="3" step="0.1" value="1">
             </div>
 
             <div class="story-attach-row">
@@ -306,20 +321,20 @@
             <div class="poll-widget" id="story-poll-container"></div>
         </div>
 
-        {# Emoji tepkisi butonu şeridi — Instagram tarzı hızlı tepkiler #}
-        <div class="story-reactions-bar" id="story-reactions-bar" hidden>
-            <button type="button" class="story-reaction-btn" data-emoji="❤️" aria-label="Beğen">❤️</button>
-            <button type="button" class="story-reaction-btn" data-emoji="😂" aria-label="Komik">😂</button>
-            <button type="button" class="story-reaction-btn" data-emoji="😮" aria-label="Şaşırt">😮</button>
-            <button type="button" class="story-reaction-btn" data-emoji="😢" aria-label="Üzül">😢</button>
-            <button type="button" class="story-reaction-btn" data-emoji="🔥" aria-label="Harika">🔥</button>
-            <button type="button" class="story-reaction-btn" data-emoji="👏" aria-label="Alkış">👏</button>
-        </div>
-
         {# Kendi hikayene yanıt verilemez (Instagram deseni) — stories.js
            openViewer() içinde data.is_mine'a göre hidden ayarlanır. Yanıt
-           sahibine DM olarak gider (bkz. app/stories.py reply_to_story). #}
+           sahibine DM olarak gider (bkz. app/stories.py reply_to_story).
+           Emoji tepkisi şeridi form içinde (input üstünde konum için). #}
         <form class="story-reply-bar" id="story-reply-form" hidden>
+            {# Emoji tepkisi butonu şeridi — input focus'ta görünsün, input üstünde #}
+            <div class="story-reactions-bar" id="story-reactions-bar">
+                <button type="button" class="story-reaction-btn" data-emoji="❤️" aria-label="Beğen">❤️</button>
+                <button type="button" class="story-reaction-btn" data-emoji="😂" aria-label="Komik">😂</button>
+                <button type="button" class="story-reaction-btn" data-emoji="😮" aria-label="Şaşırt">😮</button>
+                <button type="button" class="story-reaction-btn" data-emoji="😢" aria-label="Üzül">😢</button>
+                <button type="button" class="story-reaction-btn" data-emoji="🔥" aria-label="Harika">🔥</button>
+                <button type="button" class="story-reaction-btn" data-emoji="👏" aria-label="Alkış">👏</button>
+            </div>
             <input type="text" id="story-reply-input" placeholder="Yanıt gönder..." maxlength="500" aria-label="Hikayeye yanıt yaz" autocomplete="off">
             <button type="submit" class="story-reply-send-btn" aria-label="Yanıtı gönder">➤</button>
         </form>

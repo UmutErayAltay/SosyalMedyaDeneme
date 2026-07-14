@@ -45,17 +45,21 @@ def _cleanup_expired_stories(sb) -> None:
 def attach_story_poll(sb, story: dict, me: str) -> None:
     """Tekil bir hikayeye anket verisini ekler (varsa).
 
-    story["poll"] = {"id": ..., "options": [...], "total_votes": ..., "my_vote": ...} benzeri.
+    story["poll"] = {"id": ..., "options": [...], "total_votes": ..., "my_vote": ...,
+                     "position_x": ..., "position_y": ..., "scale": ...} benzeri.
     """
     story["poll"] = None
     if not story.get("id"):
         return
 
     try:
-        poll = sb.table("polls").select("id").eq("story_id", story["id"]).execute().data
+        poll = sb.table("polls").select("id, position_x, position_y, scale").eq("story_id", story["id"]).execute().data
         if not poll:
             return
         poll_id = poll[0]["id"]
+        position_x = poll[0].get("position_x", 0.5)
+        position_y = poll[0].get("position_y", 0.75)
+        scale = poll[0].get("scale", 1.0)
 
         options = sb.table("poll_options").select("id, option_text, position").eq(
             "poll_id", poll_id
@@ -80,7 +84,8 @@ def attach_story_poll(sb, story: dict, me: str) -> None:
         } for o in options]
 
         story["poll"] = {
-            "id": poll_id, "options": opt_list, "total_votes": total, "my_vote": my_vote
+            "id": poll_id, "options": opt_list, "total_votes": total, "my_vote": my_vote,
+            "position_x": position_x, "position_y": position_y, "scale": scale,
         }
     except Exception:
         pass
@@ -151,6 +156,35 @@ def create_story():
     poll_options = [o for o in poll_options_raw if o]
     has_poll = len(poll_options) >= 2
 
+    # Hikaye anketinin sürükle-bırak pozisyon ve boyut değerleri
+    poll_position_x = 0.5
+    poll_position_y = 0.75
+    poll_scale = 1.0
+    if has_poll:
+        try:
+            x_raw = request.form.get("poll_position_x", "0.5")
+            poll_position_x = float(x_raw)
+            if not (0 <= poll_position_x <= 1):
+                poll_position_x = 0.5
+        except ValueError:
+            poll_position_x = 0.5
+
+        try:
+            y_raw = request.form.get("poll_position_y", "0.75")
+            poll_position_y = float(y_raw)
+            if not (0 <= poll_position_y <= 1):
+                poll_position_y = 0.75
+        except ValueError:
+            poll_position_y = 0.75
+
+        try:
+            scale_raw = request.form.get("poll_scale", "1.0")
+            poll_scale = float(scale_raw)
+            if not (0.3 <= poll_scale <= 3):
+                poll_scale = 1.0
+        except ValueError:
+            poll_scale = 1.0
+
     if not caption and not has_image and not has_video and not has_poll:
         flash("Boş hikaye paylaşılamaz.", "error")
         return redirect(url_for("routes.feed"))
@@ -178,7 +212,8 @@ def create_story():
         story_id = result.data[0]["id"] if result.data else None
 
         if story_id and has_poll:
-            create_poll(sb, poll_options, story_id=story_id)
+            create_poll(sb, poll_options, story_id=story_id,
+                       position_x=poll_position_x, position_y=poll_position_y, scale=poll_scale)
     except Exception:
         flash("Hikaye paylaşılamadı (özellik henüz aktif değil).", "error")
         return redirect(url_for("routes.feed"))
