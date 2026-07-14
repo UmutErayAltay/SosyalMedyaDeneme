@@ -208,7 +208,6 @@ def login():
                 session["mfa_pending_email"] = res.user.email
                 session["mfa_pending_access_token"] = res.session.access_token
                 session["mfa_pending_refresh_token"] = res.session.refresh_token
-                flash("2FA kodu gir.", "info")
                 return redirect(url_for("auth.mfa_verify"))
 
             # 2FA yok — normal session kurulumu
