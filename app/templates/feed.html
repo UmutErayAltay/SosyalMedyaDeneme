@@ -277,12 +277,20 @@
                     </div>
                 </div>
 
-                {# Sağ sütun: medya önizlemesi — normal hikaye oranında, ayrı çerçeveli kutu #}
+                {# Sağ sütun: medya önizlemesi — normal hikaye oranında, ayrı çerçeveli kutu.
+                   `.story-media-preview-inner` gerçek görüntüleyici boyutunda (420×746,
+                   .story-viewer'ın max-width'iyle aynı) render edilip küçük kutuya
+                   ORANTILI olarak transform:scale ile küçültülür — aksi halde anket/
+                   yazı gibi SABİT px boyutlu içerikler küçük kutuda OLDUĞUNDAN BÜYÜK
+                   görünüp "tam paylaşılacağı boyutta gözükmüyor" yanılgısına yol açardı
+                   (kullanıcı raporu). #}
                 <div class="story-form-right">
                     <div class="story-media-preview-wrap">
-                        <div id="story-image-preview" class="image-preview-grid" aria-live="polite"></div>
-                        <video id="story-video-preview" class="post-video-preview" controls style="display:none"></video>
-                        <div id="story-poll-preview-widget" class="story-poll-preview-widget" hidden aria-live="polite"></div>
+                        <div class="story-media-preview-inner">
+                            <div id="story-image-preview" class="image-preview-grid" aria-live="polite"></div>
+                            <video id="story-video-preview" class="post-video-preview" controls style="display:none"></video>
+                            <div id="story-poll-preview-widget" class="story-poll-preview-widget" hidden aria-live="polite"></div>
+                        </div>
                     </div>
                 </div>
             </div>

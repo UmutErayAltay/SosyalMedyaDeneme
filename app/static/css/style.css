@@ -1645,7 +1645,18 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 .story-media-preview-wrap {
     position: relative; width: 180px; aspect-ratio: 9 / 16;
     background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-    overflow: hidden; margin: 0; display: flex; align-items: center; justify-content: center;
+    overflow: hidden; margin: 0;
+}
+/* İçerik GERÇEK görüntüleyici referans boyutunda (420×746.67 — .story-viewer'ın
+   max-width:420px'iyle aynı 9:16 kutu) inşa edilip görünür 180px kutuya
+   ORANTILI küçültülür (scale: 180/420 = 0.4286). Anket/yazı gibi SABİT px
+   boyutlu öğeler böylece gerçek boyutuna göre DOĞRU orantıda görünür —
+   önceden içerik hep aynı ham px'te render olup küçük kutuda OLDUĞUNDAN
+   BÜYÜK görünüyordu (kullanıcı raporu: "tam paylaşılacağı boyutta gözükmüyor"). */
+.story-media-preview-inner {
+    position: absolute; top: 0; left: 0; width: 420px; height: 746.67px;
+    transform: scale(0.4286); transform-origin: top left;
+    display: flex; align-items: center; justify-content: center;
 }
 .story-poll-preview-widget {
     position: absolute; cursor: move; touch-action: none;

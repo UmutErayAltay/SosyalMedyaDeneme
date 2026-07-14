@@ -106,7 +106,7 @@
     var storyPollScaleSlider = document.getElementById('story-poll-scale-slider');
     var storyPollScaleDisplay = document.getElementById('story-poll-scale-display');
     var storyPollScaleControl = document.getElementById('story-poll-scale-control');
-    var storyPollDragState = { dragging: false, startX: 0, startY: 0, offsetX: 0, offsetY: 0 };
+    var storyPollDragState = { dragging: false, startX: 0, startY: 0, startPosX: 0.5, startPosY: 0.5 };
 
     function initStoryPollWidget() {
         if (!storyPollPreviewWidget) return;
@@ -158,7 +158,13 @@
         storyPollPreviewWidget.innerHTML = html;
     }
 
-    // Poll widget sürükleme: Pointer Events (mouse + touch)
+    // Poll widget sürükleme: Pointer Events (mouse + touch). Konum HER ZAMAN
+    // yüzde bazlı left/top + translate(-50%,-50%) scale(s) olarak tutulur —
+    // gerçek görüntüleyicinin (renderStoryPoll) kullandığı AYNI temsil.
+    // Önceki sürümde sürükleme sırasında `transform: none` yazılıyordu, bu da
+    // scale() kısmını TAMAMEN siliyordu — "anketi küçültüp sürükleyince geri
+    // büyüyor" bug'ının kök nedeni buydu (scale sürükleme bitince asla geri
+    // uygulanmıyordu). Artık scale hiç dokunulmadan korunuyor.
     if (storyPollPreviewWidget) {
         storyPollPreviewWidget.addEventListener('pointerdown', function (e) {
             if (!storyMediaPreviewWrap) return;
@@ -166,52 +172,38 @@
             storyPollDragState.dragging = true;
             storyPollDragState.startX = e.clientX;
             storyPollDragState.startY = e.clientY;
-            var rect = storyPollPreviewWidget.getBoundingClientRect();
-            storyPollDragState.offsetX = rect.left - storyMediaPreviewWrap.getBoundingClientRect().left;
-            storyPollDragState.offsetY = rect.top - storyMediaPreviewWrap.getBoundingClientRect().top;
+            storyPollDragState.startPosX = parseFloat(storyPollPreviewWidget.dataset.positionX || '0.5');
+            storyPollDragState.startPosY = parseFloat(storyPollPreviewWidget.dataset.positionY || '0.5');
         });
     }
 
     document.addEventListener('pointermove', function (e) {
         if (!storyPollDragState.dragging || !storyMediaPreviewWrap || !storyPollPreviewWidget) return;
-        var deltaX = e.clientX - storyPollDragState.startX;
-        var deltaY = e.clientY - storyPollDragState.startY;
-        var newX = storyPollDragState.offsetX + deltaX;
-        var newY = storyPollDragState.offsetY + deltaY;
-
-        // Sınır kontrolü: konteyner içinde kal
         var containerRect = storyMediaPreviewWrap.getBoundingClientRect();
-        var widgetRect = storyPollPreviewWidget.getBoundingClientRect();
-        var maxX = containerRect.width - (widgetRect.width || 150);
-        var maxY = containerRect.height - (widgetRect.height || 60);
-        newX = Math.max(0, Math.min(newX, maxX));
-        newY = Math.max(0, Math.min(newY, maxY));
+        var deltaXPct = (e.clientX - storyPollDragState.startX) / containerRect.width;
+        var deltaYPct = (e.clientY - storyPollDragState.startY) / containerRect.height;
+        var posX = Math.max(0, Math.min(1, storyPollDragState.startPosX + deltaXPct));
+        var posY = Math.max(0, Math.min(1, storyPollDragState.startPosY + deltaYPct));
 
-        storyPollPreviewWidget.style.left = newX + 'px';
-        storyPollPreviewWidget.style.top = newY + 'px';
-        storyPollPreviewWidget.style.transform = 'none';
+        var scale = parseFloat(storyPollPreviewWidget.dataset.scale || '1');
+        storyPollPreviewWidget.style.left = (posX * 100) + '%';
+        storyPollPreviewWidget.style.top = (posY * 100) + '%';
+        storyPollPreviewWidget.style.transform = 'translate(-50%, -50%) scale(' + scale + ')';
+        storyPollPreviewWidget.dataset.positionX = posX.toFixed(2);
+        storyPollPreviewWidget.dataset.positionY = posY.toFixed(2);
     });
 
     document.addEventListener('pointerup', function (e) {
-        if (!storyPollDragState.dragging || !storyMediaPreviewWrap) return;
+        if (!storyPollDragState.dragging) return;
         storyPollDragState.dragging = false;
 
-        // Konumu 0-1 arası oran'a çevir ve gizli input'lara yaz
-        var containerRect = storyMediaPreviewWrap.getBoundingClientRect();
-        var widgetRect = storyPollPreviewWidget.getBoundingClientRect();
-        var centerX = widgetRect.left - containerRect.left + (widgetRect.width || 150) / 2;
-        var centerY = widgetRect.top - containerRect.top + (widgetRect.height || 60) / 2;
-        var posX = Math.max(0, Math.min(1, centerX / containerRect.width));
-        var posY = Math.max(0, Math.min(1, centerY / containerRect.height));
-
-        storyPollPreviewWidget.dataset.positionX = posX.toFixed(2);
-        storyPollPreviewWidget.dataset.positionY = posY.toFixed(2);
-
-        // Gizli input'lara yaz
+        // Konum zaten pointermove'da % + dataset'e yazıldı — gizli input'lara aktar
+        var posX = storyPollPreviewWidget.dataset.positionX || '0.50';
+        var posY = storyPollPreviewWidget.dataset.positionY || '0.50';
         var pollPosXInput = storyPollContainer ? storyPollContainer.querySelector('input[name="poll_position_x"]') : null;
         var pollPosYInput = storyPollContainer ? storyPollContainer.querySelector('input[name="poll_position_y"]') : null;
-        if (pollPosXInput) pollPosXInput.value = posX.toFixed(2);
-        if (pollPosYInput) pollPosYInput.value = posY.toFixed(2);
+        if (pollPosXInput) pollPosXInput.value = posX;
+        if (pollPosYInput) pollPosYInput.value = posY;
     });
 
     // Hikaye formu: anket toggle ve seçenek ekleme
@@ -691,7 +683,13 @@
     // Anket oy verme — document-level delegation (AJAX'ta yenilenen anket için)
     document.addEventListener('click', async function (e) {
         var btn = e.target.closest('.poll-option[data-poll-id][data-option-id]');
-        if (!btn || !reactionsBar || reactionsBar.hidden) return;  // Sadece hikaye görüntüleyicide
+        // Sadece hikaye görüntüleyicide çalışsın — `reactionsBar.hidden` DEĞİL
+        // `viewerModal.hidden` ile kontrol edilir: reactionsBar kendi
+        // hikayende BİLEREK gizli (kendi hikayene tepki/yanıt verilemez),
+        // ama anket oylaması buna bağlı OLMAMALI — önceki kod reactionsBar'ı
+        // guard olarak kullandığı için KENDİ hikayenin anketine hiç oy
+        // verilemiyordu (gerçek bug, kullanıcı raporu).
+        if (!btn || !viewerModal || viewerModal.hidden) return;
         e.preventDefault();
         if (btn.dataset.busy === '1') return;
         btn.dataset.busy = '1';

@@ -271,10 +271,12 @@ def user_stories(user_id):
 @login_required
 @retry_on_connection_error
 def react_to_story(story_id):
-    """Hikayeye emoji tepkisi — Instagram deseni: sadece hikaye sahibine hafif
-    bildirim gönderilir. Tepki transient'dir (hikaye 24 saatinde silinirse tepki
-    de kaybolur), bu yüzden ayrı bir tablo tutulmaz — sadece notify() ile
-    bildirim oluşturulur."""
+    """Hikayeye emoji tepkisi — Instagram deseni: hikaye sahibine hem hafif
+    bir bildirim (zil, kullanıcı ayarından kapatılabilir) HEM DE tepkinin
+    kendisi hikayenin görseliyle birlikte DM olarak gider (reply_to_story ile
+    AYNI desen) — kullanıcı isteği: "hikayeye verilen tepkiler sohbete
+    gelsin, instagramdaki gibi". Tepki ayrıca bir tabloda TUTULMAZ (hikaye
+    24 saatte silinirse tepki de kaybolur), DM mesajı kalıcı iz bırakır."""
     sb = get_sb()
     me = session["user"]["id"]
     emoji = request.form.get("emoji", "").strip()
@@ -285,7 +287,7 @@ def react_to_story(story_id):
         return jsonify(error="Geçersiz emoji."), 400
 
     # Hikayeyi fetch et
-    story = sb.table("stories").select("user_id, expires_at").eq("id", story_id).execute().data
+    story = sb.table("stories").select("user_id, expires_at, image_url").eq("id", story_id).execute().data
     if not story:
         return jsonify(error="Hikaye bulunamadı."), 404
 
@@ -305,11 +307,22 @@ def react_to_story(story_id):
     if expires_at < now:
         return jsonify(error="Süresi dolmuş hikayeye tepki veremezsin."), 410
 
-    # Bildirim oluştur
+    # Bildirim oluştur (zil — ayrı bir ayar/toggle'ı var, dokunulmadı)
     from .notifications import notify
     notify(sb, recipient_id=owner_id, actor_id=me, type_="story_reaction")
 
-    return jsonify(ok=True)
+    # Tepkiyi DM'e düşür — reply_to_story ile aynı desen (hikaye görseli
+    # bağlam için mesaja iliştirilir)
+    conv_id = _get_or_create_conversation(me, owner_id)
+    sb.table("messages").insert({
+        "conversation_id": conv_id,
+        "sender_id": me,
+        "content": f"{emoji} Hikayene tepki verdi",
+        "image_url": story[0].get("image_url"),
+    }).execute()
+    _notify_conversation(sb, conv_id, me)
+
+    return jsonify(ok=True, conversation_id=conv_id)
 
 
 @bp.route("/stories/<story_id>/reply", methods=["POST"])

@@ -9,6 +9,13 @@
     document.addEventListener('click', async function (e) {
         var btn = e.target.closest('.poll-option');
         if (!btn) return;
+        // Hikaye anketlerinin KENDİ handler'ı var (stories.js, data-vote-url
+        // set etmez, /poll/<id>/vote'u pollId'den kurar) — bu handler onu
+        // ele almaya çalışırsa fetch(undefined) 404'e düşer VE dataset.busy'yi
+        // '1' yapıp stories.js'in doğru handler'ının çalışmasını ENGELLER
+        // (aynı buton elemanı, iki document-level listener sırayla senkron
+        // çalışıyor). Gerçek bug: "hikayelerde oy kullanılamıyordu".
+        if (!btn.dataset.voteUrl) return;
         e.preventDefault();
         if (btn.dataset.busy === '1') return;
         btn.dataset.busy = '1';
