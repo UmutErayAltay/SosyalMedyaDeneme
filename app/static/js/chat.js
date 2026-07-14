@@ -376,12 +376,22 @@
                 var pres = document.getElementById('conv-presence');
                 if (!pres || !d) return;
                 var here = d.here || 0;
+                var grp = liveP.dataset.isGroup === '1';
                 if (here > 0) {
-                    var grp = liveP.dataset.isGroup === '1';
                     pres.textContent = grp ? here + ' kişi şu anda burada' : 'şu anda burada';
                     pres.hidden = false;
-                } else {
+                } else if (grp) {
+                    // Grup sohbetinde hiç kimse online değilse gizle
                     pres.hidden = true;
+                } else {
+                    // 1:1 sohbetinde: fallback text varsa (son görülme) göster
+                    var fallback = pres.dataset.fallbackText;
+                    if (fallback) {
+                        pres.textContent = fallback;
+                        pres.hidden = false;
+                    } else {
+                        pres.hidden = true;
+                    }
                 }
             }).catch(function () {});
         }
@@ -483,6 +493,18 @@
             input.style.height = Math.min(input.scrollHeight, 120) + 'px';
         });
 
+        // --- Reply preview bar cancel butonu ---
+        var replyPreviewBar = document.getElementById('reply-preview-bar');
+        var replyPreviewCancelBtn = document.getElementById('reply-preview-cancel');
+        if (replyPreviewCancelBtn && replyPreviewBar) {
+            replyPreviewCancelBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                var replyIdInput = form.querySelector('input[name="reply_to_id"]');
+                if (replyIdInput) replyIdInput.value = '';
+                replyPreviewBar.hidden = true;
+            });
+        }
+
         // --- Görsel seçimi ---
         if (imageInput && imageName) {
             imageInput.addEventListener('change', function () {
@@ -495,6 +517,19 @@
         // --- Sürükle-bırak görsel yükleme (tıklanabilir dosya seçici zaten var — WCAG
         // 2.5.7 tek-imleçli alternatif olarak korunuyor, sürükleme sadece ek kolaylık) ---
         var dropHint = document.getElementById('drop-hint');
+
+        function attachImageFile(file) {
+            if (!file.type.startsWith('image/')) {
+                if (dropHint) dropHint.textContent = 'Sadece görsel dosyaları desteklenir.';
+                return;
+            }
+            var dt = new DataTransfer();
+            dt.items.add(file);
+            imageInput.files = dt.files;
+            imageInput.dispatchEvent(new Event('change'));
+            if (dropHint) dropHint.textContent = file.name + ' eklendi.';
+        }
+
         if (imageInput) {
             ['dragover', 'dragenter'].forEach(function (evt) {
                 panel.addEventListener(evt, function (e) {
@@ -513,15 +548,24 @@
                 var files = e.dataTransfer && e.dataTransfer.files;
                 if (!files || !files.length) return;
                 var file = files[0];
-                if (!file.type.startsWith('image/')) {
-                    if (dropHint) dropHint.textContent = 'Sadece görsel dosyaları desteklenir.';
-                    return;
+                attachImageFile(file);
+            });
+
+            // --- Clipboard yapıştırmada görsel yükleme ---
+            input.addEventListener('paste', function (e) {
+                var items = e.clipboardData && e.clipboardData.items;
+                if (!items) return;
+                for (var i = 0; i < items.length; i++) {
+                    var item = items[i];
+                    if (item.type && item.type.startsWith('image/')) {
+                        var file = item.getAsFile();
+                        if (file) {
+                            e.preventDefault();
+                            attachImageFile(file);
+                            break;
+                        }
+                    }
                 }
-                var dt = new DataTransfer();
-                dt.items.add(file);
-                imageInput.files = dt.files;
-                imageInput.dispatchEvent(new Event('change'));
-                if (dropHint) dropHint.textContent = file.name + ' eklendi.';
             });
         }
 
@@ -1030,6 +1074,11 @@
                 delete stickerIdInput.dataset.imageUrl;
             }
             if (gifUrlInput) gifUrlInput.value = '';
+            // Reply_to_id temizle ve preview bar'ı gizle
+            var replyIdInput = form.querySelector('input[name="reply_to_id"]');
+            if (replyIdInput) replyIdInput.value = '';
+            var replyPreviewBar = document.getElementById('reply-preview-bar');
+            if (replyPreviewBar) replyPreviewBar.hidden = true;
             input.focus();
 
             form._sendChain = (form._sendChain || Promise.resolve()).then(async function () {
@@ -1571,7 +1620,56 @@
             return;
         }
 
-        // 4. Mesaj silme (sadece kendi mesajım, sunucu tarafında da kontrol edilir)
+        // 4. Yanıtla butonu — reply preview bar'ı göster, quoteID input'unu doldur
+        var replyBtn = e.target.closest('.msg-reply-btn');
+        if (replyBtn) {
+            e.preventDefault();
+            var replyMsgEl = replyBtn.closest('.msg');
+            var replyMsgId = replyBtn.dataset.msgId;
+            if (!replyMsgEl || !replyMsgId) return;
+
+            // Yanıta yanıt verilen mesajın özetini oluştur
+            var quotedSender = replyMsgEl.querySelector('.msg-sender');
+            var quotedContent = replyMsgEl.querySelector('p');
+            var quotedImage = replyMsgEl.querySelector('.msg-image, .sticker-rendered');
+
+            var senderName = quotedSender ? quotedSender.textContent : '';
+            if (!senderName && replyMsgEl.classList.contains('mine')) {
+                senderName = 'Sen';
+            } else if (!senderName) {
+                senderName = panel.dataset.otherUsername || 'Kullanıcı';
+            }
+
+            var contentPreview = '';
+            if (quotedContent) {
+                contentPreview = quotedContent.textContent.slice(0, 50);
+                if (quotedContent.textContent.length > 50) contentPreview += '…';
+            } else if (quotedImage) {
+                contentPreview = '📷 Görsel';
+            } else {
+                contentPreview = '(Boş mesaj)';
+            }
+
+            // Reply input'unu ve preview bar'ını güncelle — bu handler initConversation()'ın
+            // DIŞINDaki kalıcı document-level delegation'da yaşıyor, bu yüzden initConversation
+            // içindeki `form`/`input` closure'ları burada YOK; DOM'dan taze okunur.
+            var replyForm = document.getElementById('msg-form');
+            var replyIdInput = replyForm ? replyForm.querySelector('input[name="reply_to_id"]') : null;
+            if (replyIdInput) replyIdInput.value = replyMsgId;
+
+            var replyPreviewBar = document.getElementById('reply-preview-bar');
+            var replyPreviewText = document.getElementById('reply-preview-text');
+            if (replyPreviewBar && replyPreviewText) {
+                replyPreviewText.textContent = senderName + ': ' + contentPreview;
+                replyPreviewBar.hidden = false;
+            }
+
+            var replyInputEl = document.getElementById('msg-input');
+            if (replyInputEl) replyInputEl.focus();
+            return;
+        }
+
+        // 5. Mesaj silme (sadece kendi mesajım, sunucu tarafında da kontrol edilir)
         var deleteBtn = e.target.closest('.msg-delete-btn');
         if (deleteBtn) {
             e.preventDefault();
@@ -1609,6 +1707,15 @@
 
         // Panel içinde ama picker/tetik dışında bir yere tıklandı — kapat
         closeAllReactPickers();
+    });
+
+    // --- Alıntı bloğu tıklaması — kaynağa atla (jumpToMessage kullan) ---
+    document.addEventListener('click', function (e) {
+        var quoteBlock = e.target.closest('.msg-quote[data-quoted-id]');
+        if (!quoteBlock) return;
+        e.preventDefault();
+        var quotedId = quoteBlock.dataset.quotedId;
+        if (quotedId) jumpToMessage(quotedId);
     });
 
     // Escape tuşu — açık tepki picker'larını kapat

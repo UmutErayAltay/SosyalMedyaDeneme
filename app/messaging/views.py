@@ -94,7 +94,7 @@ def conversation(conversation_id):
         for attempt in (0, 1):
             try:
                 others = sb.table("conversation_participants").select(
-                    "user_id, is_admin, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
+                    "user_id, is_admin, profiles!conversation_participants_user_id_fkey(id, username, avatar_url, last_seen_at)"
                 ).neq("user_id", me).eq("conversation_id", conversation_id).execute().data
                 other_profiles = []
                 for o in others:
@@ -118,6 +118,16 @@ def conversation(conversation_id):
         # select herhangi bir sebeple patlarsa sade select'e düşülür —
         # sohbet render'ı ASLA embed yüzünden kırılmaz (tepki/sticker o
         # durumda boş görünür, mesajlar görünmeye devam eder).
+        #
+        # NOT: reply_to (alıntı) BİLEREK embed edilmiyor — messages tablosunun
+        # kendine referansı (self-join) PostgREST'te yön belirsizliği yaratıyor:
+        # `messages!reply_to_id` hint'i canlıda test edildiğinde "bana cevap
+        # veren mesajlar" (ters yön) döndürdü, "cevap verdiğim mesaj" değil —
+        # yani her zaman boş/yanlış veri dönerdi (sessizce, hata vermeden).
+        # Doğru yön için gereken `!messages_reply_to_id_fkey` constraint-hint'i
+        # de PostgREST schema cache'i migration sonrası yenilenmediği için 400
+        # verdi. Bu yüzden reply_to AŞAĞIDA ayrı, tek toplu (IN) sorgu ile
+        # çözülüyor (bkz. _fetch_messages sonrası post-processing).
         base = "*, profiles!messages_sender_id_fkey(username, avatar_url)"
         selects = (base + ", sticker:stickers(id, image_url), message_reactions(reaction, user_id)",
                    base)
@@ -186,6 +196,23 @@ def conversation(conversation_id):
     if not is_prefetch:
         _write_pool.submit(_write_reads)
 
+    # Alıntı (reply_to) verisi: self-join embed yerine TEK toplu IN sorgusu
+    # (bkz. _fetch_messages yorumu — embed yön belirsizliği yaratıyordu).
+    # Patlarsa (migration henüz yoksa/Supabase hatası) sohbet render'ı ASLA
+    # kırılmaz — reply_to sadece boş görünür.
+    reply_lookup = {}
+    try:
+        reply_ids = list({m["reply_to_id"] for m in messages if m.get("reply_to_id")})
+        if reply_ids:
+            quoted = sb.table("messages").select(
+                "id, content, image_url, sender_id, profiles!messages_sender_id_fkey(username)"
+            ).in_("id", reply_ids).execute().data
+            reply_lookup = {q["id"]: q for q in quoted}
+    except Exception:
+        reply_lookup = {}
+    for m in messages:
+        m["reply_to"] = reply_lookup.get(m.get("reply_to_id"))
+
     # Embed'den gelen tepkileri şablonun beklediği şekle çevir; embed'siz
     # fallback yolunda anahtarlar hiç yoktur — boş/None varsayılır
     for m in messages:
@@ -201,6 +228,10 @@ def conversation(conversation_id):
             m["sticker"] = None
 
     other_user = None if is_group else (other_profiles[0] if other_profiles else None)
+    # 1:1 sohbette diğer kullanıcının çevrimiçi durumunu ekle
+    if other_user and not is_group:
+        from ..presence import is_online
+        other_user["is_online"] = is_online(other_user["id"])
     # Supabase Realtime INSERT payload'ı sadece ham satırı verir (join yok) —
     # grup sohbetinde yeni mesajın kimden geldiğini göstermek için client-side
     # bir id→username haritası gerekiyor (bkz. chat.js, data-member-map).

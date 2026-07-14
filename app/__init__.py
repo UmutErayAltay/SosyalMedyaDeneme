@@ -28,6 +28,52 @@ def local_time(value, fmt="%Y-%m-%d %H:%M"):
         return value[:16].replace("T", " ")  # eski davranışa (ham UTC) düş
 
 
+def relative_time(value):
+    """UTC ISO timestamp'i göreceli zamana (Türkçe) çevirir: 'az önce', 'N dakika önce', vs.
+    Çevrimiçi durumu göstermek için (last_seen_at) — 1:1 sohbetlerde fallback olur."""
+    if not value:
+        return ""
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+
+        # Yerel saate çevir (UTC+3)
+        local_dt = dt.astimezone(_LOCAL_TZ)
+        now = datetime.now(_LOCAL_TZ)
+        delta = now - local_dt
+
+        total_seconds = int(delta.total_seconds())
+
+        # Gelecekte varsa "şimdi" olarak göster
+        if total_seconds < 0:
+            return "şu anda"
+
+        # Az önce (1 dakikadan az)
+        if total_seconds < 60:
+            return "az önce"
+
+        # Dakika
+        minutes = total_seconds // 60
+        if minutes < 60:
+            return f"{minutes} dakika önce"
+
+        # Saat
+        hours = total_seconds // 3600
+        if hours < 24:
+            return f"{hours} saat önce"
+
+        # Gün
+        days = total_seconds // 86400
+        if days < 7:
+            return f"{days} gün önce"
+
+        # Çok eski — tarih olarak göster
+        return local_dt.strftime("%d.%m.%Y")
+    except Exception:
+        return ""
+
+
 def _csrf_token() -> str:
     """Session'a bağlı CSRF token'ı döndürür (yoksa üretir)."""
     if "_csrf_token" not in session:
@@ -171,6 +217,8 @@ def create_app() -> Flask:
     app.jinja_env.filters["linkify_mentions"] = linkify_mentions
     # Ham UTC timestamp'leri yerel saate (Europe/Istanbul) çevirir
     app.jinja_env.filters["local_time"] = local_time
+    # Ham UTC timestamp'leri göreceli zamana (Türkçe) çevirir: az önce, N dakika önce, vs.
+    app.jinja_env.filters["relative_time"] = relative_time
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(routes_bp)

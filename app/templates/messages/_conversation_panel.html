@@ -93,8 +93,13 @@
                     Bilinmeyen
                 {% endif %}
             </h2>
-            {# Çevrimiçi göstergesi — chat.js /active ping yanıtıyla doldurur #}
-            <span id="conv-presence" class="conv-presence" hidden></span>
+            {# Çevrimiçi göstergesi — chat.js /active ping yanıtıyla "şu anda burada"ya
+               günceller; ilk render'da (ve /active isteği başarısız olursa) sunucu
+               tarafında doldurulan bu metin (çevrimiçi/son görülme) kalıcı fallback olur. #}
+            {% set presence_fallback = 'çevrimiçi' if (other_user and other_user.is_online) else ('son görülme: ' ~ other_user.last_seen_at|relative_time if (other_user and other_user.last_seen_at) else '') %}
+            <span id="conv-presence" class="conv-presence"
+                  {% if presence_fallback %}data-fallback-text="{{ presence_fallback }}"{% endif %}
+                  {% if not presence_fallback %}hidden{% endif %}>{{ presence_fallback }}</span>
             <div class="conv-call-buttons">
                 <button type="button" class="conv-call-btn" id="msg-search-toggle-btn"
                         aria-label="Sohbette ara" title="Sohbette ara" aria-expanded="false">
@@ -164,6 +169,21 @@
         <div class="unread-divider" id="first-unread-msg"><span>Yeni mesajlar</span></div>
         {% endif %}
         <div class="msg {{ 'mine' if m.sender_id == me.id else 'theirs' }}" data-msg-id="{{ m.id }}" data-user-id="{{ me.id }}" data-react-url="{{ url_for('messaging.react_message', message_id=m.id) }}">
+            {# Alıntı bloğu — varsa orijinal mesaj özeti (gönderen + kısa içerik) #}
+            {% if m.reply_to %}
+            <div class="msg-quote" data-quoted-id="{{ m.reply_to.id }}">
+                <span class="quote-sender">{{ m.reply_to.profiles.username if m.reply_to.profiles else 'Bilinmeyen' }}</span>
+                <span class="quote-content">
+                    {%- if m.reply_to.content -%}
+                        {{ m.reply_to.content[:60] }}{% if m.reply_to.content|length > 60 %}…{% endif %}
+                    {%- elif m.reply_to.image_url -%}
+                        📷 Görsel
+                    {%- else -%}
+                        (Boş mesaj)
+                    {%- endif -%}
+                </span>
+            </div>
+            {% endif %}
             {% if is_group and m.sender_id != me.id %}
                 <span class="msg-sender">{{ m.profiles.username if m.profiles else 'Bilinmeyen' }}</span>
             {% endif %}
@@ -200,7 +220,7 @@
                 {% endif %}
             </span>
 
-            {# Tepkiler + tetik + sil TEK flex satırda — tetik butonu chip
+            {# Tepkiler + yanıtla + tetik + sil TEK flex satırda — tetik butonu chip
                eklendikçe alt satıra düşmesin (kullanıcı raporu) #}
             <div class="msg-react-row">
             {# Mesaj tepkileri — reactions arrayı varsa render et #}
@@ -217,6 +237,9 @@
                 {% endfor %}
             </div>
             {% endif %}
+
+            {# Yanıtla butonu (hover'da belirir, tüm mesajlarda görülebilir) #}
+            <button class="msg-reply-btn" data-msg-id="{{ m.id }}" aria-label="Yanıtla" type="button">↩</button>
 
             {# Emoji tepkisi tetik butonu (baloncuk hover'ında belirir) + picker #}
             <button class="msg-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>
@@ -247,10 +270,17 @@
     {# "Yazıyor..." göstergesi — aria-live=polite, sadece durum değişince duyurulur (typing.js) #}
     <p class="typing-indicator" id="typing-indicator" aria-live="polite" hidden></p>
 
+    {# Yanıta yanıt veriliyor göstergesi — yanıtla butonu tıklanınca form üstünde görünür #}
+    <div id="reply-preview-bar" class="reply-preview-bar" hidden aria-live="polite">
+        <span id="reply-preview-text"></span>
+        <button type="button" id="reply-preview-cancel" class="reply-preview-cancel" aria-label="Yanıtı iptal et">×</button>
+    </div>
+
     <form id="msg-form" class="composer-msg" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="sticker_id" value="">
         <input type="hidden" name="gif_url" value="">
+        <input type="hidden" name="reply_to_id" value="">
 
         {# Ekleme menüsü — + butonu tıklanınca dropdown açılır, burada mevcut 4 eylemi içerir #}
         <div class="attach-menu-wrap msg-attach-wrap">

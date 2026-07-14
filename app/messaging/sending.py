@@ -97,6 +97,15 @@ def send_message(conversation_id):
     if gif_url and not image_url:
         image_url = gif_url
 
+    # Alıntı mesajı: aynı konuşmada olan bir mesaja reply veriliyorsa
+    # vali et. Geçersiz/farklı konuşmadansa reply'siz gönder (sessiz).
+    reply_to_id = request.form.get("reply_to_id", "").strip()
+    if reply_to_id:
+        reply_msg = sb.table("messages").select("id").eq("id", reply_to_id).eq(
+            "conversation_id", conversation_id).execute().data
+        if not reply_msg:
+            reply_to_id = None
+
     insert_data = {
         "conversation_id": conversation_id,
         "sender_id": me,
@@ -104,13 +113,15 @@ def send_message(conversation_id):
         "image_url": image_url,
     }
     try:
-        # Opsiyonel kolonlar: audio_url, sticker_id
+        # Opsiyonel kolonlar: audio_url, sticker_id, reply_to_id
         # Henüz migration uygulanmamışsa bunlar yok — kolonsuz insert'e düş
         data = dict(insert_data)
         if audio_url:
             data["audio_url"] = audio_url
         if sticker_id:
             data["sticker_id"] = sticker_id
+        if reply_to_id:
+            data["reply_to_id"] = reply_to_id
         inserted = sb.table("messages").insert(data).execute()
     except Exception:
         inserted = sb.table("messages").insert(insert_data).execute()
