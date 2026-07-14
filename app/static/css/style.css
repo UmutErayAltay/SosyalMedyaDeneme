@@ -1251,6 +1251,10 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 .post-video-preview {
     width: 100%; border-radius: 8px; margin-top: 8px; max-height: 300px; background: var(--color-black);
 }
+.story-media-preview-wrap .post-video-preview {
+    width: 100%; height: 100%; margin: 0; max-height: none; border-radius: 8px;
+    object-fit: contain;
+}
 
 /* Post kartı — metin/boşluk alanına tıklayınca detay sayfasına gider (postClick.js) */
 .card.post[data-post-url] { cursor: pointer; }
@@ -1421,6 +1425,9 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 .modal-close:hover { background: var(--border); color: var(--text); }
 .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
 .modal-body textarea { min-height: 100px; }
+/* Hikaye altyazısı: içeriğe göre otomatik büyür/küçülür (comments.js/chat.js
+   ile aynı desen) — manuel resize tutamacı KALDIRILDI (kullanıcı isteği). */
+#story-caption-input { min-height: 44px; max-height: 160px; resize: none; overflow-y: auto; }
 
 /* Sohbet medya galerisi — msg-media-toggle-btn ile açılır (kullanıcı isteği:
    eski paylaşılan görsel/sesli mesajlara tek yerden hızlı erişim). */
@@ -1489,6 +1496,11 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     display: inline-flex; align-items: center; gap: 6px;
     background: var(--border); color: var(--text); border-radius: 999px;
     padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+    /* #story-poll-toggle-btn bu class'ı bir <button>'a uyguluyor — <label>'ların
+       aksine <button> tarayıcı varsayılan border/font/appearance taşır, bunlar
+       resetlenmezse anket butonu diğer ikisinden (görsel/video <label>'ları)
+       farklı görünür (kullanıcı raporu). */
+    border: none; font-family: inherit; -webkit-appearance: none; appearance: none;
 }
 .story-attach-label:hover { background: var(--muted); color: var(--card); }
 
@@ -1583,11 +1595,40 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 }
 .story-poll-widget[hidden] { display: none; }
 
+/* Hikaye oluşturma modalı — genişletilmiş max-width iki sütunlu layout için */
+#story-modal .modal {
+    max-width: 900px;
+}
+
+/* Hikaye oluşturma modal layout — iki sütun: sol form kontrolleri, sağ medya önizlemesi */
+.modal-body.story-modal-body {
+    display: flex; flex-direction: row; gap: 16px; align-items: flex-start;
+}
+.story-form-left {
+    flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;
+}
+.story-form-right {
+    flex: 0 0 auto; width: 280px;
+}
+
+/* Mobil responsive — 640px altında sütunlar alt alta düşer */
+@media (max-width: 640px) {
+    #story-modal .modal {
+        max-width: 100%;
+    }
+    .modal-body.story-modal-body {
+        flex-direction: column;
+    }
+    .story-form-right {
+        width: 100%;
+    }
+}
+
 /* Hikaye oluşturma modalında anket widget'ı önizlemesi — medya önizleme konteyner'ında */
 .story-media-preview-wrap {
-    position: relative; width: 100%; aspect-ratio: 1 / 1;
+    position: relative; width: 100%; aspect-ratio: 9 / 16;
     background: var(--bg-secondary); border-radius: 8px; overflow: hidden;
-    margin: 12px 0;
+    margin: 0; display: flex; align-items: center; justify-content: center;
 }
 .story-poll-preview-widget {
     position: absolute; cursor: move; touch-action: none;
@@ -1661,14 +1702,30 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
 
-/* Çoklu görsel önizleme grid */
-.image-preview-grid {    
-    display: grid;    
-    grid-template-columns: repeat(2, 1fr);    
+/* Çoklu görsel önizleme grid — post oluşturma modalıyla PAYLAŞILAN class
+   (`#post-image-preview` de bunu kullanır), o yüzden burada DEĞİL, hikayeye
+   özel override'lar aşağıda `.story-media-preview-wrap` ile SCOPE'lanmış
+   ayrı bir kuralda (bir önceki turda bu paylaşılan kural doğrudan
+   değiştirilmiş, post modalının çoklu-görsel grid'ini de bozmuştu). */
+.image-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
     gap: 8px;
 }
 .image-preview-item img {
     width: 100%; aspect-ratio: 1; object-fit: cover;
+    border-radius: 8px;
+}
+
+/* Hikaye önizlemesi: TEK medyalı (bkz. app/stories.py), gerçek hikaye
+   görüntüleyiciyle (.story-media-area img/video, object-fit:contain)
+   TUTARLI göstermek için post'un çoklu-grid kuralını burada override eder
+   — "anket kayması" düzeltmesinin bir parçası (bkz. .story-media-preview-wrap). */
+.story-media-preview-wrap .image-preview-grid {
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+}
+.story-media-preview-wrap .image-preview-item img {
+    width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain;
     border-radius: 8px;
 }
 

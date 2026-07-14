@@ -86,6 +86,14 @@
         if (e.key === 'Escape' && storyModal && !storyModal.hidden) closeStoryModal();
     });
 
+    // Hikaye altyazısı: içeriğe göre otomatik büyür/küçülür — comments.js/chat.js
+    // ile AYNI desen (manuel resize tutamacı yerine, kullanıcı isteği).
+    document.addEventListener('input', function (e) {
+        if (e.target.id !== 'story-caption-input') return;
+        e.target.style.height = 'auto';
+        e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
+    });
+
     // Anket oluşturma modalında widget'ı sürüklenebilir ve boyutlandırılabilir yap
     var storyPollPreviewWidget = document.getElementById('story-poll-preview-widget');
     var storyMediaPreviewWrap = storyPollPreviewWidget ? storyPollPreviewWidget.closest('.story-media-preview-wrap') : null;
@@ -199,11 +207,10 @@
                 storyPollContainer.hidden = !wasHidden;
                 var nowOpen = wasHidden; // wasHidden=true -> az önce açıldı (görünür oldu)
                 if (nowOpen) {
-                    if (storyImageInput) storyImageInput.value = '';
-                    if (storyImagePreview) storyImagePreview.innerHTML = '';
-                    if (storyVideoInput) storyVideoInput.value = '';
-                    if (storyVideoPreview) storyVideoPreview.style.display = 'none';
-                    // Poll widget'ı göster + init et
+                    // Görsel/video ile anket ARTIK birlikte var olabilir (kullanıcı
+                    // isteği) — önceden burada image/video input'u temizleniyordu,
+                    // "görsel eklendikten sonra anket ekleyince görsel kayboluyor"
+                    // hatasına yol açıyordu. Poll widget'ı göster + init et
                     if (storyPollPreviewWidget) {
                         storyPollPreviewWidget.hidden = false;
                         initStoryPollWidget();
