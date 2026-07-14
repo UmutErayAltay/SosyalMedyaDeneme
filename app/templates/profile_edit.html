@@ -28,6 +28,22 @@
         <label>Biyografi
             <textarea name="bio" rows="3" placeholder="Kendinden bahset...">{{ profile.bio or '' }}</textarea>
         </label>
+
+        <hr style="margin: 24px 0;">
+
+        <h2 style="font-size: 16px; margin-bottom: 12px;">🔒 Gizlilik</h2>
+        <label class="checkbox-label">
+            <input type="checkbox" name="is_private" {% if profile.is_private %}checked{% endif %}>
+            Gizli hesap
+        </label>
+        <p class="muted" style="margin-bottom: 16px;">Profilini ve gönderilerini sadece onayladığın takipçiler görür.</p>
+
+        <label class="checkbox-label">
+            <input type="checkbox" name="hide_last_seen" {% if profile.hide_last_seen %}checked{% endif %}>
+            Son görülme bilgimi gizle
+        </label>
+        <p class="muted" style="margin-bottom: 16px;">Sohbetlerde çevrimiçi/son görülme durumun kimseye gösterilmez.</p>
+
         <button type="submit" class="btn btn-primary">Kaydet</button>
         <a href="{{ url_for('routes.profile', username=profile.username) }}" class="btn btn-ghost">İptal</a>
     </form>

@@ -1159,6 +1159,28 @@
             if (window._chatPollTimer) { clearInterval(window._chatPollTimer); window._chatPollTimer = null; }
         }
 
+        // --- Sohbet sessize alma butonu ---
+        var muteToggleBtn = document.getElementById('msg-mute-toggle-btn');
+        if (muteToggleBtn) {
+            muteToggleBtn.addEventListener('click', function () {
+                var csrfAct = panel ? panel.querySelector('input[name="csrf_token"]') : null;
+                fetch('/messages/' + conversationId + '/mute', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfAct ? csrfAct.value : '' }
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (!d.ok) return;
+                    var isMuted = d.muted;
+                    muteToggleBtn.dataset.muted = isMuted ? '1' : '0';
+                    muteToggleBtn.textContent = isMuted ? '🔕' : '🔔';
+                    muteToggleBtn.setAttribute('aria-label', isMuted ? 'Sohbete dön' : 'Sessize al');
+                    muteToggleBtn.setAttribute('title', isMuted ? 'Sohbete dön' : 'Sessize al');
+                })
+                .catch(function (err) { console.error('Sessize alma başarısız:', err); });
+            });
+        }
+
         // --- Supabase Realtime: önceki kanalı kapat, yeni konuşmaya abone ol ---
         if (activeChannel && window.supabaseClient) {
             try { window.supabaseClient.removeChannel(activeChannel); } catch (err) { /* yut */ }
@@ -1705,8 +1727,101 @@
             return;
         }
 
+        // 6. İlet butonu — modal aç ve hedef konuşmaları çek
+        var forwardBtn = e.target.closest('.msg-forward-btn');
+        if (forwardBtn) {
+            e.preventDefault();
+            var forwardMsgEl = forwardBtn.closest('.msg');
+            var forwardMsgId = forwardBtn.dataset.msgId;
+            if (!forwardMsgId) return;
+            // MsgId'yi kaydet — target seçim handler'ı onu okuyacak
+            window._forwardingMessageId = forwardMsgId;
+
+            var forwardModal = document.getElementById('forward-modal');
+            var forwardTargetsList = document.getElementById('forward-targets-list');
+            var forwardLoading = document.getElementById('forward-loading');
+            var forwardError = document.getElementById('forward-error');
+            if (!forwardModal || !forwardTargetsList) return;
+
+            // Modal aç, hedefleri yükle
+            forwardModal.hidden = false;
+            forwardTargetsList.innerHTML = '';
+            forwardError.textContent = '';
+            forwardError.hidden = true;
+            forwardLoading.hidden = false;
+
+            fetch('/messages/forward-targets')
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    forwardLoading.hidden = true;
+                    if (!Array.isArray(data)) {
+                        forwardError.textContent = 'Konuşmalar yüklenemedi.';
+                        forwardError.hidden = false;
+                        return;
+                    }
+                    forwardTargetsList.innerHTML = data.map(function (target) {
+                        // Mevcut konuşmayı listeden filtrele (data-conversation-id ile karşılaştır)
+                        var livePanel = document.getElementById('conversation-panel');
+                        var currentConvId = livePanel ? livePanel.dataset.conversationId : null;
+                        var isCurrentConv = target.id === currentConvId;
+                        return '<button type="button" class="forward-target-btn" data-target-conv-id="' + target.id + '"' +
+                            (isCurrentConv ? ' disabled' : '') + ' role="option">' +
+                            escapeHtml(target.name) +
+                            '</button>';
+                    }).join('');
+                })
+                .catch(function (err) {
+                    forwardLoading.hidden = true;
+                    forwardError.textContent = 'Hata: ' + err.message;
+                    forwardError.hidden = false;
+                });
+            return;
+        }
+
         // Panel içinde ama picker/tetik dışında bir yere tıklandı — kapat
         closeAllReactPickers();
+    });
+
+    // --- Forward modal target seçimi (document-level: modal panel swap'larında
+    // yeniden gelir, doğrudan addEventListener stale kalırdı). İletilecek mesajın
+    // id'si .msg-forward-btn handler'ında window._forwardingMessageId'ye yazılır.
+    document.addEventListener('click', function (e) {
+        var targetBtn = e.target.closest('.forward-target-btn');
+        if (!targetBtn || targetBtn.disabled) return;
+        e.preventDefault();
+
+        var msgId = window._forwardingMessageId;
+        var targetConvId = targetBtn.dataset.targetConvId;
+        if (!msgId || !targetConvId) return;
+
+        targetBtn.disabled = true;
+        var csrfInput = document.querySelector('input[name="csrf_token"]');
+        fetch('/messages/message/' + msgId + '/forward', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfInput ? csrfInput.value : ''
+            },
+            body: JSON.stringify({ target_conversation_id: targetConvId })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok) {
+                window.appAlert('İletme başarısız: ' + (d.error || 'Bilinmeyen hata'));
+                targetBtn.disabled = false;
+                return;
+            }
+            // Başarı — butonda kısa onay göster, SONRA modalı kapat (onay
+            // görünür kalsın; liste her açılışta yeniden kurulduğu için
+            // buton metnini geri almak gerekmez)
+            targetBtn.textContent = '✓ İletildi';
+            window._forwardingMessageId = null;
+            setTimeout(closeForwardModal, 800);
+        })
+        .catch(function (err) {
+            window.appAlert('Hata: ' + err.message);
+            targetBtn.disabled = false;
+        });
     });
 
     // --- Alıntı bloğu tıklaması — kaynağa atla (jumpToMessage kullan) ---
@@ -1718,9 +1833,33 @@
         if (quotedId) jumpToMessage(quotedId);
     });
 
-    // Escape tuşu — açık tepki picker'larını kapat
+    // --- Forward modal açma/kapama ---
+    function closeForwardModal() {
+        var forwardModal = document.getElementById('forward-modal');
+        if (forwardModal) forwardModal.hidden = true;
+        window._forwardingMessageId = null;
+    }
+
+    // Kapat butonu + overlay: İKİSİ DE document-level delegation — modal
+    // panel'le birlikte AJAX'la yeniden geldiği için doğrudan addEventListener
+    // stale kalır (bkz. .claude/rules/frontend.md).
+    document.addEventListener('click', function (e) {
+        if (e.target.closest('#close-forward-modal')) {
+            closeForwardModal();
+            return;
+        }
+        var forwardModal = document.getElementById('forward-modal');
+        if (forwardModal && !forwardModal.hidden && e.target === forwardModal) {
+            closeForwardModal();
+        }
+    });
+
+    // Escape tuşu — açık forward modal'ı ve tepki picker'larını kapat
     document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') closeAllReactPickers();
+        if (e.key === 'Escape') {
+            closeForwardModal();
+            closeAllReactPickers();
+        }
     });
 
     // İlk sayfa yüklemesinde çalıştır (AJAX geçişlerinde messagesPanel.js çağırır)

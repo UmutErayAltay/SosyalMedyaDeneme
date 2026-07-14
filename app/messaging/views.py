@@ -94,7 +94,7 @@ def conversation(conversation_id):
         for attempt in (0, 1):
             try:
                 others = sb.table("conversation_participants").select(
-                    "user_id, is_admin, profiles!conversation_participants_user_id_fkey(id, username, avatar_url, last_seen_at)"
+                    "user_id, is_admin, profiles!conversation_participants_user_id_fkey(id, username, avatar_url, last_seen_at, hide_last_seen)"
                 ).neq("user_id", me).eq("conversation_id", conversation_id).execute().data
                 other_profiles = []
                 for o in others:
@@ -231,7 +231,12 @@ def conversation(conversation_id):
     # 1:1 sohbette diğer kullanıcının çevrimiçi durumunu ekle
     if other_user and not is_group:
         from ..presence import is_online
-        other_user["is_online"] = is_online(other_user["id"])
+        # hide_last_seen aktifse son görüldü bilgisini gizle
+        if other_user.get("hide_last_seen"):
+            other_user["is_online"] = False
+            other_user["last_seen_at"] = None
+        else:
+            other_user["is_online"] = is_online(other_user["id"])
     # Supabase Realtime INSERT payload'ı sadece ham satırı verir (join yok) —
     # grup sohbetinde yeni mesajın kimden geldiğini göstermek için client-side
     # bir id→username haritası gerekiyor (bkz. chat.js, data-member-map).
@@ -295,14 +300,24 @@ def mark_conversation_active(conversation_id):
     me = session["user"]["id"]
     # TÜM katılımcılar tek sorguda: hem benim üyelik doğrulamam hem
     # diğerlerinin aktiflik sayımı için (çevrimiçi göstergesi — chat.js
-    # yanıttaki `here` ile başlıkta "şu anda burada" gösterir)
-    parts = sb.table("conversation_participants").select("user_id").eq(
-        "conversation_id", conversation_id).execute().data
+    # yanıttaki `here` ile başlıkta "şu anda burada" gösterir).
+    # hide_last_seen olanları sayımdan çıkar. Embed patlarsa (kolon/cache
+    # yoksa) sade select'e düş — presence nabzı ASLA embed yüzünden kırılmaz.
+    try:
+        parts = sb.table("conversation_participants").select(
+            "user_id, profiles!conversation_participants_user_id_fkey(hide_last_seen)"
+        ).eq("conversation_id", conversation_id).execute().data
+    except Exception:
+        parts = sb.table("conversation_participants").select("user_id").eq(
+            "conversation_id", conversation_id).execute().data
     ids = [p["user_id"] for p in parts]
     if me not in ids:
         abort(404)
     mark_active(me, conversation_id)
-    here = sum(1 for uid in ids if uid != me and is_active_in(uid, conversation_id))
+    # hide_last_seen=true olanları sayımdan çıkar
+    profiles_map = {p["user_id"]: p.get("profiles") or {} for p in parts}
+    here = sum(1 for uid in ids if uid != me and is_active_in(uid, conversation_id)
+               and not profiles_map.get(uid, {}).get("hide_last_seen"))
     return jsonify(ok=True, here=here)
 
 

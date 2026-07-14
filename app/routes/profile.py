@@ -414,7 +414,10 @@ def profile_edit():
                 return redirect(url_for("routes.profile_edit"))
 
         # Güncellenecek alanlar
-        update_data = {"full_name": full_name or None, "bio": bio or None, "username": username}
+        is_private = request.form.get("is_private") == "on"
+        hide_last_seen = request.form.get("hide_last_seen") == "on"
+        update_data = {"full_name": full_name or None, "bio": bio or None, "username": username,
+                       "is_private": is_private, "hide_last_seen": hide_last_seen}
 
         # Avatar yüklendiyse
         if avatar_file and avatar_file.filename:
@@ -425,8 +428,16 @@ def profile_edit():
                 flash("Avatar yüklenemedi (geçersiz format veya 5MB'tan büyük).", "error")
                 return redirect(url_for("routes.profile_edit"))
 
-        # Profili güncelle
-        sb.table("profiles").update(update_data).eq("id", me).execute()
+        # Profili güncelle — is_private/hide_last_seen kolonları yoksa olmadan tekrar dene
+        try:
+            sb.table("profiles").update(update_data).eq("id", me).execute()
+        except Exception:
+            # Migration henüz uygulanmamışsa iki gizlilik alanını çıkart, eski alanlarla dene
+            core_data = {"full_name": update_data["full_name"], "bio": update_data["bio"],
+                         "username": update_data["username"]}
+            if "avatar_url" in update_data:
+                core_data["avatar_url"] = update_data["avatar_url"]
+            sb.table("profiles").update(core_data).eq("id", me).execute()
         from ..cache import invalidate
         invalidate("valid_usernames")
 

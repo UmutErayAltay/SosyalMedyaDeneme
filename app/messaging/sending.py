@@ -291,3 +291,142 @@ def share_post_multiple(post_id):
         sent_count += 1
 
     return jsonify({"sent": sent_count})
+
+
+@bp.route("/<conversation_id>/mute", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def mute_conversation(conversation_id):
+    """Konuşmayı sessize al / açıl toggle — bildirimleri bastır ama okunmamış
+    mesaj sayacı devam eder."""
+    sb = get_sb()
+    me = session["user"]["id"]
+
+    part = sb.table("conversation_participants").select("is_muted").eq(
+        "conversation_id", conversation_id
+    ).eq("user_id", me).execute()
+    if not part.data:
+        abort(403)
+
+    # is_muted tersine çevir
+    current_muted = bool(part.data[0].get("is_muted"))
+    new_muted = not current_muted
+
+    try:
+        sb.table("conversation_participants").update(
+            {"is_muted": new_muted}
+        ).eq("conversation_id", conversation_id).eq("user_id", me).execute()
+        return jsonify(ok=True, muted=new_muted)
+    except Exception:
+        # is_muted kolonu yoksa migration uygulanmamış
+        return jsonify(error="unavailable"), 503
+
+
+@bp.route("/forward-targets", methods=["GET"])
+@login_required
+@retry_on_connection_error
+def forward_targets():
+    """Kullanıcının konuşma listesi — mesaj iletme için hedef seçimi."""
+    from ._common import _build_convos
+    sb = get_sb()
+    me = session["user"]["id"]
+
+    convos = _build_convos(sb, me)
+    targets = [
+        {
+            "id": c["id"],
+            "name": c["name"] if c["is_group"] else (
+                c["other_user"].get("username") if c["other_user"] else "Bilinmeyen"
+            )
+        }
+        for c in convos
+    ]
+    return jsonify(targets)
+
+
+@bp.route("/message/<message_id>/forward", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def forward_message(message_id):
+    """Mesajı başka bir konuşmaya ilet. POST body: {"target_conversation_id": "..."}
+    veya form: target_conversation_id."""
+    sb = get_sb()
+    me = session["user"]["id"]
+
+    # Hedef konuşma ID'si
+    data = request.get_json(silent=True) or {}
+    target_cid = data.get("target_conversation_id") or request.form.get("target_conversation_id", "").strip()
+    if not target_cid:
+        return jsonify(error="target_conversation_id required"), 400
+
+    # (a) Kaynağı çek ve sahibi doğrula
+    src_msg = sb.table("messages").select(
+        "id, conversation_id, sender_id, content, image_url, audio_url, sticker_id"
+    ).eq("id", message_id).execute()
+    if not src_msg.data:
+        return jsonify(error="Message not found"), 404
+    msg = src_msg.data[0]
+
+    # (b) Kendi konuşmamda katılımcı mıyım?
+    part_src = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", msg["conversation_id"]
+    ).eq("user_id", me).execute()
+    if not part_src.data:
+        abort(403)  # Başkasının sohbetindeki mesaj iletilemez
+
+    # (c) Hedef konuşmada katılımcı mıyım?
+    part_tgt = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", target_cid
+    ).eq("user_id", me).execute()
+    if not part_tgt.data:
+        abort(403)
+
+    # (d) Hedef konuşmadaki diğer katılımcılarla aramda engel var mı?
+    others = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", target_cid
+    ).neq("user_id", me).execute().data
+    if any(is_blocked_either_way(sb, me, o["user_id"]) for o in others):
+        return jsonify(error="blocked"), 403
+
+    # (e) Rate limit (send_message ile aynı)
+    if is_rate_limited(f"send_message:{me}", 30, 60):
+        return jsonify(error="rate_limited"), 429
+
+    # (f) İlet: yeni mesaj insert et
+    insert_data = {
+        "conversation_id": target_cid,
+        "sender_id": me,
+        "content": msg.get("content", ""),
+        "image_url": msg.get("image_url"),
+        "is_forwarded": True,
+    }
+    try:
+        # Opsiyonel kolonlar: audio_url, sticker_id, is_forwarded
+        full_data = dict(insert_data)
+        if msg.get("audio_url"):
+            full_data["audio_url"] = msg["audio_url"]
+        if msg.get("sticker_id"):
+            full_data["sticker_id"] = msg["sticker_id"]
+        inserted = sb.table("messages").insert(full_data).execute()
+    except Exception:
+        # is_forwarded kolonu yoksa olmadan dene
+        insert_data.pop("is_forwarded", None)
+        if msg.get("audio_url"):
+            insert_data["audio_url"] = msg["audio_url"]
+        if msg.get("sticker_id"):
+            insert_data["sticker_id"] = msg["sticker_id"]
+        inserted = sb.table("messages").insert(insert_data).execute()
+
+    # (g) Bildir
+    app = current_app._get_current_object()
+
+    def _bg_notify():
+        try:
+            with app.test_request_context():
+                _notify_conversation(sb, target_cid, me)
+        except Exception:
+            pass
+
+    _write_pool.submit(_bg_notify)
+
+    return jsonify(ok=True, conversation_id=target_cid)

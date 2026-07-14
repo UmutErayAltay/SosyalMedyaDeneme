@@ -3133,3 +3133,85 @@ header[role="banner"] {
     margin-left: 4px;
     vertical-align: middle;
 }
+
+/* === Mesajlaşma Cilası: Gizlilik, Sessize Alma, İlet === */
+
+/* Profil düzenleme — checkbox etiketleri */
+.checkbox-label {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 8px; cursor: pointer; font-weight: 500;
+}
+.checkbox-label input[type="checkbox"] {
+    width: 18px; height: 18px; margin: 0; accent-color: var(--primary);
+    flex-shrink: 0;
+}
+
+/* Sessize alma butonu — mute toggle (conv header'ında) */
+.msg-mute-toggle-btn {
+    font-size: 16px; opacity: 0.8; transition: opacity 0.15s;
+}
+.msg-mute-toggle-btn:hover { opacity: 1; }
+
+/* Mesaj iletme butonu — msg-reply-btn ile aynı hover deseni */
+.msg-forward-btn {
+    opacity: 0; font-size: 13px; background: none; border: none;
+    cursor: pointer; color: var(--text); padding: 0;
+    margin-left: 4px; transition: opacity 0.15s;
+    font-family: var(--font-body);
+    vertical-align: middle;
+}
+.msg:hover .msg-forward-btn { opacity: 0.7; }
+.msg-forward-btn:hover { opacity: 1; }
+
+/* İletildi etiketi — mesaj içeriğinin üstünde */
+.msg-forwarded-tag {
+    display: inline-block; font-size: 11px; color: var(--muted);
+    opacity: 0.7; margin-bottom: 4px;
+}
+
+/* Inbox'ta sessize alınmış göstergesi */
+.muted-indicator {
+    margin-left: 4px; opacity: 0.8;
+}
+
+/* İlet modalı — forward-modal */
+#forward-modal[hidden] { display: none; }
+
+/* Hedef konuşma listesi */
+.forward-targets-list {
+    display: flex; flex-direction: column; gap: 8px;
+    max-height: 300px; overflow-y: auto;
+}
+.forward-targets-list:empty::after {
+    content: "Konuşma bulunamadı"; color: var(--muted);
+    text-align: center; padding: 16px;
+}
+
+/* Hedef konuşma butonu */
+.forward-target-btn {
+    display: block; width: 100%; text-align: left;
+    padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius-md); background: var(--card);
+    color: var(--text); cursor: pointer; font-size: 14px;
+    transition: background 0.15s, border-color 0.15s;
+}
+.forward-target-btn:hover:not(:disabled) {
+    background: var(--border); border-color: var(--primary);
+}
+.forward-target-btn:disabled {
+    opacity: 0.5; cursor: default;
+}
+
+/* Yükleniyor mesajı */
+#forward-loading {
+    display: none; text-align: center; padding: 16px;
+}
+#forward-loading:not([hidden]) { display: block; }
+
+/* Hata mesajı */
+#forward-error {
+    display: none; text-align: center; padding: 12px;
+    background: var(--danger-bg); color: var(--danger);
+    border-radius: var(--radius-md);
+}
+#forward-error:not([hidden]) { display: block; }

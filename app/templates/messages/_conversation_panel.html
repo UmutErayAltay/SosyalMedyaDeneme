@@ -49,6 +49,12 @@
                 {% endif %}
             </button>
             <div class="conv-call-buttons">
+                <button type="button" class="conv-call-btn" id="msg-mute-toggle-btn"
+                        data-muted="{{ '1' if my_is_muted else '0' }}"
+                        aria-label="{% if my_is_muted %}Sohbete dön{% else %}Sessize al{% endif %}"
+                        title="{% if my_is_muted %}Sohbete dön{% else %}Sessize al{% endif %}">
+                    {% if my_is_muted %}🔕{% else %}🔔{% endif %}
+                </button>
                 <button type="button" class="conv-call-btn" id="msg-search-toggle-btn"
                         aria-label="Sohbette ara" title="Sohbette ara" aria-expanded="false">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -101,6 +107,12 @@
                   {% if presence_fallback %}data-fallback-text="{{ presence_fallback }}"{% endif %}
                   {% if not presence_fallback %}hidden{% endif %}>{{ presence_fallback }}</span>
             <div class="conv-call-buttons">
+                <button type="button" class="conv-call-btn" id="msg-mute-toggle-btn"
+                        data-muted="{{ '1' if my_is_muted else '0' }}"
+                        aria-label="{% if my_is_muted %}Sohbete dön{% else %}Sessize al{% endif %}"
+                        title="{% if my_is_muted %}Sohbete dön{% else %}Sessize al{% endif %}">
+                    {% if my_is_muted %}🔕{% else %}🔔{% endif %}
+                </button>
                 <button type="button" class="conv-call-btn" id="msg-search-toggle-btn"
                         aria-label="Sohbette ara" title="Sohbette ara" aria-expanded="false">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -187,6 +199,9 @@
             {% if is_group and m.sender_id != me.id %}
                 <span class="msg-sender">{{ m.profiles.username if m.profiles else 'Bilinmeyen' }}</span>
             {% endif %}
+            {% if m.is_forwarded %}
+                <span class="msg-forwarded-tag">📤 İletildi</span>
+            {% endif %}
             {% if m.sticker %}
                 <div class="sticker-wrap">
                     <img src="{{ m.sticker.image_url }}" class="sticker-rendered msg-sticker" data-sticker-id="{{ m.sticker.id }}" alt="Sticker" loading="lazy">
@@ -240,6 +255,9 @@
 
             {# Yanıtla butonu (hover'da belirir, tüm mesajlarda görülebilir) #}
             <button class="msg-reply-btn" data-msg-id="{{ m.id }}" aria-label="Yanıtla" type="button">↩</button>
+
+            {# İlet butonu (hover'da belirir, tüm mesajlarda görülebilir) #}
+            <button class="msg-forward-btn" data-msg-id="{{ m.id }}" aria-label="İlet" type="button">📤</button>
 
             {# Emoji tepkisi tetik butonu (baloncuk hover'ında belirir) + picker #}
             <button class="msg-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>
@@ -384,6 +402,22 @@
             <div id="msg-media-images" class="msg-media-grid" role="tabpanel"></div>
             <div id="msg-media-audios" class="msg-media-audio-list" role="tabpanel" hidden></div>
             <p id="msg-media-empty" class="muted center" hidden>Henüz paylaşılan medya yok.</p>
+        </div>
+    </div>
+</div>
+
+{# İlet modalı — .msg-forward-btn tıklaması açar (chat.js) #}
+<div class="modal-overlay" id="forward-modal" role="dialog" aria-modal="true"
+     aria-labelledby="forward-modal-title" hidden>
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="forward-modal-title">Mesajı İlet</h2>
+            <button type="button" class="modal-close" id="close-forward-modal" aria-label="Kapat">×</button>
+        </div>
+        <div class="modal-body">
+            <div id="forward-targets-list" class="forward-targets-list" role="list"></div>
+            <p id="forward-loading" class="muted center" hidden>Yükleniyor...</p>
+            <p id="forward-error" class="error center" hidden></p>
         </div>
     </div>
 </div>

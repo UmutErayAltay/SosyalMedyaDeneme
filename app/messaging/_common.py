@@ -115,8 +115,9 @@ def _notify_conversation(sb, conversation_id: str, sender_id: str) -> None:
 
     Alıcı o an bu sohbeti AÇIK tutuyorsa (presence) bildirim/push
     ÜRETİLMEZ — zaten okuyor, bildirime gerek yok (kullanıcı isteği).
+    is_muted=true ise de bildirim gönderilmez ama okunmamış sayacı güncellenir.
     """
-    others = sb.table("conversation_participants").select("user_id").eq(
+    others = sb.table("conversation_participants").select("user_id, is_muted").eq(
         "conversation_id", conversation_id
     ).neq("user_id", sender_id).execute().data
     from ..cache import invalidate
@@ -124,7 +125,9 @@ def _notify_conversation(sb, conversation_id: str, sender_id: str) -> None:
         # Alıcının navbar rozet cache'i taze mesajı hemen görsün (bildirim
         # bastırılsa bile mesaj okunmamış — presence kontrolünden ÖNCE düşür)
         invalidate(f"unread_msgs:{o['user_id']}")
-        if is_active_in(o["user_id"], conversation_id):
+        # Sesli olanları hariç tut (is_muted=true veya sohbet açık)
+        is_muted = bool(o.get("is_muted"))
+        if is_active_in(o["user_id"], conversation_id) or is_muted:
             continue
         notify(sb, recipient_id=o["user_id"], actor_id=sender_id,
                type_="message", conversation_id=conversation_id)
@@ -248,16 +251,28 @@ def _build_convos(sb, me: str) -> list[dict]:
             except Exception:
                 return set()
 
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        def _fetch_my_participants():
+            # Me'nin tüm katılımcı satırları — is_muted bilgisi için
+            try:
+                rows = sb.table("conversation_participants").select(
+                    "conversation_id, is_muted"
+                ).eq("user_id", me).in_("conversation_id", cids).execute().data
+                return {r["conversation_id"]: r for r in rows}
+            except Exception:
+                return {}
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
             meta_future = executor.submit(_fetch_conv_meta)
             others_future = executor.submit(_fetch_others)
             messages_future = executor.submit(_fetch_messages)
             unread_future = executor.submit(_fetch_unread)
+            my_parts_future = executor.submit(_fetch_my_participants)
 
             conv_meta = meta_future.result()
             others_by_cid = others_future.result()
             last_by_cid = messages_future.result()
             unread_cids = unread_future.result()
+            my_parts = my_parts_future.result()
 
         # Online status'leri hesapla (1:1 sohbetlerde diğer taraf için)
         from ..presence import is_online
@@ -274,6 +289,7 @@ def _build_convos(sb, me: str) -> list[dict]:
             if other_user and not is_group:
                 is_online_status = is_online(other_user["id"])
 
+            is_muted = bool(my_parts.get(cid, {}).get("is_muted"))
             convos.append({
                 "id": cid,
                 "last_message": last_by_cid.get(cid),
@@ -286,6 +302,7 @@ def _build_convos(sb, me: str) -> list[dict]:
                 # kalırdı — bilerek dışlanır (rozetle aynı gerekçe, bkz.
                 # unread_message_count docstring'i)
                 "unread": (not is_group) and cid in unread_cids,
+                "is_muted": is_muted,
             })
 
     convos.sort(key=lambda c: c["last_message"]["created_at"]

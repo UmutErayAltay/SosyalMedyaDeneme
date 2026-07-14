@@ -21,7 +21,7 @@
             {% endif %}
             {% if not c.is_group and c.is_online %}<span class="online-dot" title="Aktif" aria-label="Aktif"></span>{% endif %}
             <div>
-                <strong>{{ c.name if c.is_group else (c.other_user.username if c.other_user else 'Bilinmeyen') }}</strong>
+                <strong>{{ c.name if c.is_group else (c.other_user.username if c.other_user else 'Bilinmeyen') }}{% if c.is_muted %} <span class="muted-indicator" aria-label="Sessize alındı">🔕</span>{% endif %}</strong>
                 {% if c.is_group %}<span class="muted"> · {{ c.member_count }} kişi</span>{% endif %}
                 {% if c.last_message %}
                 <p class="muted preview">{{ c.last_message.content[:40] }}</p>
