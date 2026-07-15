@@ -7,8 +7,12 @@ Supabase Auth kullanır. Kayıt akışı:
 
 Arkadaşlar arası test için email confirmation BYPASS ediliyor.
 """
+import re
+import secrets as _secrets
 import time
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app
+from urllib.parse import quote
+from flask import (Blueprint, render_template, request, redirect, url_for,
+                   session, flash, current_app, jsonify)
 from supabase import create_client
 from .supabase_client import get_sb, get_auth, call_with_ssl_retry
 from .rate_limit import is_rate_limited
@@ -232,6 +236,131 @@ def login():
             return redirect(url_for("auth.login"))
 
     return render_template("auth/login.html")
+
+
+# --- Google ile giriş (OAuth) ---
+# Akış: /auth/google → Supabase'in authorize URL'i → Google onayı → Supabase
+# → /auth/google/callback. Tokenlar URL FRAGMENT'ında (#access_token=...)
+# döner — fragment sunucuya hiç ulaşmaz, o yüzden callback sayfasındaki
+# küçük JS fragment'ı okuyup /auth/google/complete'e POST'lar; sunucu token'ı
+# Supabase'e DOĞRULATIP (get_user) session'ı kurar. İstemciden gelen token'a
+# asla doğrulamadan güvenilmez.
+
+
+def _unique_username(sb, email: str) -> str:
+    """İlk Google girişinde profiles için benzersiz kullanıcı adı türetir.
+
+    Önce e-posta prefix'i (temizlenmiş), çakışırsa rastgele sonek; hepsi
+    dolarsa rastgele hex. Register'daki 3-karakter minimumuna uyar.
+    """
+    base = (email or "").split("@")[0]
+    base = re.sub(r"[^a-zA-Z0-9_.-]", "", base)[:20]
+    if len(base) < 3:
+        base = "kullanici"
+    candidates = [base] + [f"{base}{_secrets.randbelow(9000) + 1000}" for _ in range(4)]
+    for cand in candidates:
+        try:
+            taken = sb.table("profiles").select("id").eq("username", cand).execute().data
+            if not taken:
+                return cand
+        except Exception:
+            break
+    return f"u_{_secrets.token_hex(4)}"
+
+
+def _has_verified_totp(access_token: str, refresh_token: str | None) -> bool:
+    """Kullanıcının doğrulanmış TOTP factor'u var mı (login()'deki desenle aynı).
+
+    Kontrol başarısızsa False — 2FA yok sayılır, normal giriş devam eder
+    (login()'deki mevcut davranışın aynısı).
+    """
+    try:
+        tmp = create_client(
+            current_app.config["SUPABASE_URL"],
+            current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+        )
+        tmp.auth.set_session(access_token, refresh_token)
+        factors = tmp.auth.mfa.list_factors()
+        return any(
+            f.factor_type == "totp" and f.status == "verified"
+            for f in (factors.totp or [])
+        )
+    except Exception:
+        return False
+
+
+@bp.route("/auth/google")
+def google_login():
+    """Kullanıcıyı Supabase'in Google authorize URL'ine yönlendirir."""
+    redirect_to = url_for("auth.google_callback", _external=True)
+    authorize_url = (
+        current_app.config["SUPABASE_URL"]
+        + "/auth/v1/authorize?provider=google&redirect_to="
+        + quote(redirect_to, safe="")
+    )
+    return redirect(authorize_url)
+
+
+@bp.route("/auth/google/callback")
+def google_callback():
+    """Tokenları fragment'tan okuyup complete'e POST'layan köprü sayfası."""
+    return render_template("auth/google_callback.html")
+
+
+@bp.route("/auth/google/complete", methods=["POST"])
+def google_complete():
+    """Google dönüşünde istemcinin gönderdiği token'ı doğrulayıp session kurar."""
+    # Şifreli girişle aynı IP bazlı sınır — token deneme taşkınını yavaşlatır
+    if is_rate_limited(f"login:{request.remote_addr or 'unknown'}", 10, 300):
+        return jsonify(error="rate_limited"), 429
+
+    data = request.get_json(silent=True) or {}
+    access_token = (data.get("access_token") or "").strip()
+    refresh_token = (data.get("refresh_token") or "").strip() or None
+    if not access_token:
+        return jsonify(error="missing_token"), 400
+
+    try:
+        user_res = call_with_ssl_retry(lambda: get_auth().auth.get_user(access_token))
+        user = getattr(user_res, "user", None)
+    except Exception:
+        user = None
+    if not user:
+        return jsonify(error="invalid_token"), 401
+
+    if _check_banned(user.id):
+        return jsonify(error="banned"), 403
+
+    # İlk Google girişi: profiles satırı yoksa oluştur (register'daki
+    # "trigger'a güvenme, kendin garantiye al" deseninin aynısı)
+    sb = get_sb()
+    try:
+        prof = sb.table("profiles").select("id").eq("id", user.id).execute().data
+    except Exception:
+        prof = [{"id": user.id}]  # kontrol edilemedi — insert deneyip çakışırsa upsert zaten no-op
+    if not prof:
+        meta = getattr(user, "user_metadata", None) or {}
+        sb.table("profiles").upsert({
+            "id": user.id,
+            "username": _unique_username(sb, user.email),
+            "email": user.email,
+            "full_name": meta.get("full_name") or meta.get("name"),
+            "avatar_url": meta.get("avatar_url") or meta.get("picture"),
+        }, on_conflict="id").execute()
+        from .cache import invalidate
+        invalidate("valid_usernames")
+
+    # 2FA paritesi: TOTP kurmuş kullanıcı Google ile girse de kod sorulur —
+    # aksi hâlde Google girişi 2FA'yı tamamen bypass ederdi
+    if _has_verified_totp(access_token, refresh_token):
+        session["mfa_pending_user_id"] = user.id
+        session["mfa_pending_email"] = user.email
+        session["mfa_pending_access_token"] = access_token
+        session["mfa_pending_refresh_token"] = refresh_token
+        return jsonify(ok=True, redirect=url_for("auth.mfa_verify"))
+
+    _finalize_login(user.id, user.email, access_token, refresh_token)
+    return jsonify(ok=True, redirect=url_for("routes.feed"))
 
 
 @bp.route("/logout")

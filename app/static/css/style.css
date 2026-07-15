@@ -3435,3 +3435,18 @@ header[role="banner"] {
 /* Diğer button variantları için [hidden] belirtimi */
 .btn-primary[hidden] { display: none; }
 .btn-ghost[hidden] { display: none; }
+
+/* Google ile giriş — login/register sayfaları */
+.auth-divider {
+    display: flex; align-items: center; gap: 12px;
+    margin: 16px 0; color: var(--muted); font-size: 13px;
+}
+.auth-divider::before, .auth-divider::after {
+    content: ""; flex: 1; height: 1px; background: var(--border);
+}
+.google-login-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 10px; text-decoration: none;
+    border: 1px solid var(--border);
+}
+.google-login-btn:hover { background: var(--card-hover); }

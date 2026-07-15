@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Google ile giriş{% endblock %}
+{% block content %}
+<div class="auth-card">
+    <h1>Giriş yapılıyor…</h1>
+    <p class="muted" id="g-status">Google hesabın doğrulanıyor, lütfen bekle.</p>
+    <p id="g-error" class="error" hidden></p>
+</div>
+<script>
+// Supabase, tokenları URL fragment'ında (#access_token=...) döndürür —
+// fragment sunucuya ulaşmaz, burada okunup complete'e POST'lanır.
+(function () {
+    var params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    var statusEl = document.getElementById('g-status');
+    var errEl = document.getElementById('g-error');
+
+    function fail(msg) {
+        statusEl.hidden = true;
+        errEl.textContent = msg + ' ';
+        var a = document.createElement('a');
+        a.href = '{{ url_for("auth.login") }}';
+        a.textContent = 'Giriş sayfasına dön';
+        errEl.appendChild(a);
+        errEl.hidden = false;
+    }
+
+    var err = params.get('error_description') || params.get('error');
+    if (err) { fail('Google girişi başarısız: ' + err + '.'); return; }
+
+    var access = params.get('access_token');
+    var refresh = params.get('refresh_token');
+    if (!access) { fail('Google yanıtında oturum bilgisi bulunamadı.'); return; }
+
+    // Token adres çubuğunda/geçmişte kalmasın
+    history.replaceState(null, '', window.location.pathname);
+
+    fetch('{{ url_for("auth.google_complete") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': '{{ csrf_token() }}'
+        },
+        body: JSON.stringify({ access_token: access, refresh_token: refresh })
+    })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+        if (res.ok && res.d.ok) { window.location.href = res.d.redirect || '/'; return; }
+        if (res.d && res.d.error === 'banned') { fail('Hesabın askıya alınmış. Bir yöneticiyle iletişime geç.'); }
+        else if (res.d && res.d.error === 'rate_limited') { fail('Çok fazla deneme yapıldı, biraz sonra tekrar dene.'); }
+        else { fail('Giriş tamamlanamadı, tekrar dene.'); }
+    })
+    .catch(function () { fail('Sunucuya ulaşılamadı.'); });
+})();
+</script>
+{% endblock %}
