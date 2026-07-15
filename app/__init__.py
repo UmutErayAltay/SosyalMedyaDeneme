@@ -267,11 +267,10 @@ def create_app() -> Flask:
     def _debug_headers():
         from flask import jsonify
         return jsonify(
-            x_forwarded_proto=request.headers.get("X-Forwarded-Proto"),
-            x_forwarded_host=request.headers.get("X-Forwarded-Host"),
-            x_forwarded_for=request.headers.get("X-Forwarded-For"),
+            all_headers=dict(request.headers),
             resolved_scheme=request.scheme,
             resolved_host=request.host,
+            wsgi_url_scheme=request.environ.get("wsgi.url_scheme"),
         )
 
     return app
