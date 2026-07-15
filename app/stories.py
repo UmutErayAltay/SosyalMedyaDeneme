@@ -7,6 +7,7 @@ var, hikayeyi ayrı bir "hafif ve hızlı" özellik olarak tutmak için kapsam
 dışı bırakıldı.
 """
 from datetime import datetime, timezone
+import re
 from flask import Blueprint, request, redirect, url_for, session, flash, jsonify
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
@@ -91,6 +92,43 @@ def attach_story_poll(sb, story: dict, me: str) -> None:
         pass
 
 
+def _visible_story_filter(sb, me: str, rows: list[dict]) -> list[dict]:
+    """Close_friends hikayelerini eler: sahibi ben DEĞİLSEM ve sahibinin yakın
+    arkadaş listesinde DEĞİLSEM görünmez. Tek toplu sorgu (N+1 yasak):
+    listedeki close_friends hikaye sahiplerinden hangileri beni yakın arkadaş
+    yapmış — close_friends tablosunda owner_id IN (...) AND friend_id = me."""
+    if not rows:
+        return rows
+
+    # visibility alanı yoksa (eski hikayeler) veya public ise her zaman geçer
+    visible_rows = [r for r in rows if r.get("visibility") != "close_friends" or r.get("user_id") == me]
+    close_friends_rows = [r for r in rows if r.get("visibility") == "close_friends" and r.get("user_id") != me]
+
+    if not close_friends_rows:
+        return visible_rows
+
+    # close_friends hikayesine sahip kişilerin listesi
+    owners = list(set(r["user_id"] for r in close_friends_rows))
+
+    # Hangi owners'lar beni yakın arkadaş yapmış — tek sorgu
+    my_close_friend_owners = set()
+    try:
+        results = sb.table("close_friends").select("owner_id").in_("owner_id", owners).eq(
+            "friend_id", me
+        ).execute().data
+        my_close_friend_owners = {r["owner_id"] for r in results}
+    except Exception:
+        # Tablo yoksa close_friends hikayeleri GİZLİ kalır (fail-closed — gizlilik)
+        return visible_rows
+
+    # Close_friends hikayeleri: sahibi beni yakın arkadaş yapmışsa ekle
+    for r in close_friends_rows:
+        if r["user_id"] in my_close_friend_owners:
+            visible_rows.append(r)
+
+    return visible_rows
+
+
 def active_stories_bar(sb, me: str, blocked_ids: set) -> list[dict]:
     """Feed'in üstündeki hikaye çubuğu için aktif hikayeleri kullanıcıya göre
     gruplar. Her grup: en yeni hikaye zamanı + "hepsi görüldü mü" bayrağı
@@ -100,12 +138,13 @@ def active_stories_bar(sb, me: str, blocked_ids: set) -> list[dict]:
     try:
         now = datetime.now(timezone.utc).isoformat()
         rows = sb.table("stories").select(
-            "id, user_id, created_at, profiles!stories_user_id_fkey(username, avatar_url)"
+            "id, user_id, created_at, visibility, profiles!stories_user_id_fkey(username, avatar_url)"
         ).gt("expires_at", now).order("created_at", desc=True).execute().data
     except Exception:
         return []  # migration henüz uygulanmamışsa çubuk boş görünür, feed kırılmaz
 
     rows = [r for r in rows if r["user_id"] not in blocked_ids]
+    rows = _visible_story_filter(sb, me, rows)
     if not rows:
         return []
 
@@ -204,19 +243,47 @@ def create_story():
             flash("Video yüklenemedi (geçersiz format veya 25MB'tan büyük).", "error")
             return redirect(url_for("routes.feed"))
 
-    try:
-        story_data = {
-            "user_id": me, "image_url": image_url, "video_url": video_url, "caption": caption,
-        }
-        result = sb.table("stories").insert(story_data).execute()
-        story_id = result.data[0]["id"] if result.data else None
+    # background_color ve visibility alanlarını oku
+    background_color = request.form.get("background_color", "").strip()
+    # Salt-metin hikaye için: background_color hex validasyonu (#XYZ veya #XYZABC)
+    if background_color and not re.fullmatch(r"#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?", background_color):
+        background_color = None
+    # Medya varsa background_color'ı yok say (renk sadece salt-metin için)
+    if has_image or has_video:
+        background_color = None
 
-        if story_id and has_poll:
-            create_poll(sb, poll_options, story_id=story_id,
-                       position_x=poll_position_x, position_y=poll_position_y, scale=poll_scale)
+    visibility = request.form.get("visibility", "public")
+    if visibility not in ("public", "close_friends"):
+        visibility = "public"
+
+    # Insert ve anket AYRI try bloklarında — önceki tek blokta, insert
+    # BAŞARILI olup anket patlarsa fallback hikayeyi İKİNCİ kez insert
+    # ederdi (duplikat). Fallback sadece insert'in kendisi patlarsa
+    # (migration'sız ortam: background_color/visibility kolonu yok) çalışır.
+    story_data = {
+        "user_id": me, "image_url": image_url, "video_url": video_url, "caption": caption,
+        "background_color": background_color, "visibility": visibility,
+    }
+    try:
+        result = sb.table("stories").insert(story_data).execute()
     except Exception:
-        flash("Hikaye paylaşılamadı (özellik henüz aktif değil).", "error")
-        return redirect(url_for("routes.feed"))
+        try:
+            story_data_legacy = {
+                "user_id": me, "image_url": image_url, "video_url": video_url, "caption": caption,
+            }
+            result = sb.table("stories").insert(story_data_legacy).execute()
+        except Exception:
+            flash("Hikaye paylaşılamadı (özellik henüz aktif değil).", "error")
+            return redirect(url_for("routes.feed"))
+
+    story_id = result.data[0]["id"] if result.data else None
+    if story_id and has_poll:
+        try:
+            create_poll(sb, poll_options, story_id=story_id,
+                        position_x=poll_position_x, position_y=poll_position_y, scale=poll_scale)
+        except Exception:
+            flash("Hikaye paylaşıldı ama anket eklenemedi.", "error")
+            return redirect(url_for("routes.feed"))
 
     flash("Hikaye paylaşıldı.", "success")
     return redirect(url_for("routes.feed"))
@@ -239,11 +306,18 @@ def user_stories(user_id):
     now = datetime.now(timezone.utc).isoformat()
 
     try:
+        # user_id select'te ŞART: _visible_story_filter r["user_id"] okur —
+        # eksikse close_friends hikayesinde KeyError (500) + sahibi kendi
+        # hikayesini göremezdi
         rows = sb.table("stories").select(
-            "id, image_url, video_url, caption, created_at"
+            "id, user_id, image_url, video_url, caption, created_at, visibility, background_color"
         ).eq("user_id", user_id).gt("expires_at", now).order("created_at").execute().data
     except Exception:
         rows = []
+
+    # Görünürlük filtresi — close_friends hikayeleri: ben sahibi değilsem ve
+    # sahibinin yakın arkadaş listesinde değilsem gizle
+    rows = _visible_story_filter(sb, me, rows)
 
     if user_id != me:
         for r in rows:

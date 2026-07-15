@@ -31,6 +31,15 @@
     var storyPollAddOptionBtn = document.getElementById('story-poll-add-option-btn');
     var storyPollCancelBtn = document.getElementById('story-poll-cancel-btn');
     var storyPollContainer = document.getElementById('story-poll-options-container');
+    var storyBgToggleBtn = document.getElementById('story-bg-toggle-btn');
+    var storyBgPalette = document.getElementById('story-bg-palette');
+    var storyBgInput = document.getElementById('story-bg-input');
+    var storyTextPreview = document.getElementById('story-text-preview');
+    var storyCaptionInput = document.getElementById('story-caption-input');
+    var storyMediaPreviewInner = document.querySelector('.story-media-preview-inner');
+    var storyVisibilityCheckbox = document.getElementById('story-visibility-cf');
+    var storyVisibilityInput = document.getElementById('story-visibility-input');
+    var storyForm = storyModal ? storyModal.querySelector('form') : null;
 
     function openStoryModal() {
         if (!storyModal) return;
@@ -49,6 +58,19 @@
         if (storyImagePreview) storyImagePreview.innerHTML = '';
         if (storyVideoPreview) { storyVideoPreview.style.display = 'none'; storyVideoPreview.removeAttribute('src'); }
         if (storyPollContainer) storyPollContainer.hidden = true;
+        // Renk seçicisini gizle ve reset et
+        if (storyBgPalette) storyBgPalette.hidden = true;
+        if (storyBgInput) storyBgInput.value = '';
+        if (storyTextPreview) storyTextPreview.hidden = true;
+        if (storyMediaPreviewInner) storyMediaPreviewInner.style.backgroundColor = '';
+        // Swatch'ları deselect et
+        if (storyBgPalette) {
+            storyBgPalette.querySelectorAll('.story-bg-swatch').forEach(function (sw) {
+                sw.classList.remove('selected');
+            });
+        }
+        if (storyVisibilityCheckbox) storyVisibilityCheckbox.checked = false;
+        if (storyVisibilityInput) storyVisibilityInput.value = 'public';
     }
 
     if (addStoryBtn) addStoryBtn.addEventListener('click', openStoryModal);
@@ -98,6 +120,10 @@
         if (e.target.id !== 'story-caption-input') return;
         e.target.style.height = 'auto';
         e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
+        // Salt-metin hikaye preview'ıyla senkronla
+        if (storyTextPreview && !storyTextPreview.hidden) {
+            storyTextPreview.textContent = e.target.value || '(Hikaye altyazısı)';
+        }
     });
 
     // Anket oluşturma modalında widget'ı sürüklenebilir ve boyutlandırılabilir yap
@@ -236,6 +262,56 @@
         });
     }
 
+    // Renk seçici toggle
+    if (storyBgToggleBtn) {
+        storyBgToggleBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            if (storyBgPalette) {
+                storyBgPalette.hidden = !storyBgPalette.hidden;
+            }
+        });
+    }
+
+    // Renk swatch'ları — document delegation ile (storyBgPalette'in içinde)
+    document.addEventListener('click', function (e) {
+        var swatch = e.target.closest('.story-bg-swatch');
+        if (!swatch || !storyBgPalette || storyBgPalette.hidden) return;
+        e.preventDefault();
+
+        var color = swatch.dataset.color;
+        if (!color) return;
+
+        // Tüm swatch'ları deselect et
+        storyBgPalette.querySelectorAll('.story-bg-swatch').forEach(function (sw) {
+            sw.classList.remove('selected');
+        });
+        // Bu swatch'ı seçili yap
+        swatch.classList.add('selected');
+
+        // Gizli input'a rengi yaz
+        if (storyBgInput) storyBgInput.value = color;
+
+        // Medya preview'ı güncelle: rengi uygula, medya varsa gizle
+        if (storyMediaPreviewInner) {
+            var hasMedia = storyImagePreview && storyImagePreview.innerHTML.trim() !== '' ||
+                          storyVideoPreview && storyVideoPreview.style.display !== 'none';
+            if (hasMedia) {
+                // Medya varsa renk uygulanmaz (yok sayılır)
+                storyMediaPreviewInner.style.backgroundColor = '';
+                if (storyTextPreview) storyTextPreview.hidden = true;
+            } else {
+                // Medya yoksa rengi uygula ve text preview'ı göster
+                storyMediaPreviewInner.style.backgroundColor = color;
+                if (storyTextPreview) storyTextPreview.hidden = false;
+                // Caption text'ini senkronla
+                if (storyCaptionInput && storyTextPreview) {
+                    storyTextPreview.textContent = storyCaptionInput.value || '(Hikaye altyazısı)';
+                }
+            }
+        }
+    });
+
+
     if (storyPollAddOptionBtn) {
         storyPollAddOptionBtn.addEventListener('click', function (e) {
             e.preventDefault();
@@ -278,6 +354,19 @@
                 }
                 var inputs = storyPollContainer.querySelectorAll('input[type="text"]');
                 inputs.forEach(function (inp) { inp.value = ''; });
+            }
+        });
+    }
+
+    // Hikaye formu submit: visibility checkbox'ını kontrol et ve gizli input'u güncelle
+    if (storyForm) {
+        storyForm.addEventListener('submit', function (e) {
+            if (storyVisibilityCheckbox && storyVisibilityCheckbox.checked) {
+                // Checkbox işaretliyse visibility="close_friends" yap
+                if (storyVisibilityInput) storyVisibilityInput.value = 'close_friends';
+            } else {
+                // Checkbox işaretsizse visibility="public" yap
+                if (storyVisibilityInput) storyVisibilityInput.value = 'public';
             }
         });
     }
@@ -469,6 +558,11 @@
         viewerVideo.removeAttribute('src');
         viewerImage.hidden = true;
         viewerImage.removeAttribute('src');
+        // Önceki hikayenin salt-metin slide'ı varsa KALDIR — kaldırılmazsa
+        // renkli slide sonraki görsel/video hikayenin üzerinde/arkasında
+        // ekranda kalıyordu (medya reset'inin parçası)
+        var staleTextSlide = document.querySelector('#story-media-area .story-text-slide');
+        if (staleTextSlide) staleTextSlide.remove();
 
         // Anket render'ı (varsa)
         if (pollWidget && pollContainer) {
@@ -481,7 +575,30 @@
             }
         }
 
-        if (s.video_url) {
+        // Salt-metin hikaye render: medya yoksa ve background_color varsa
+        if (!s.video_url && !s.image_url && s.background_color) {
+            // Metin zaten slide'ın içinde büyük gösteriliyor — alttaki
+            // altyazı bandı gizlenir, yoksa caption ÇİFT görünürdü
+            viewerCaption.hidden = true;
+            var mediaArea = document.getElementById('story-media-area');
+            if (mediaArea) {
+                var textSlide = document.createElement('div');
+                textSlide.className = 'story-text-slide';
+                textSlide.style.backgroundColor = s.background_color;
+                var p = document.createElement('p');
+                p.textContent = s.caption || '';
+                textSlide.appendChild(p);
+                mediaArea.insertBefore(textSlide, mediaArea.firstChild);
+            }
+
+            // İlerleme çubuğu
+            var fill = segs[index].querySelector('.story-progress-fill');
+            requestAnimationFrame(function () {
+                fill.style.transition = 'width ' + IMAGE_DURATION_MS + 'ms linear';
+                fill.style.width = '100%';
+            });
+            progressTimer = setTimeout(function () { showStory(currentIndex + 1); }, IMAGE_DURATION_MS);
+        } else if (s.video_url) {
             viewerVideo.src = s.video_url;
             viewerVideo.hidden = false;
             viewerVideo.currentTime = 0;
@@ -509,6 +626,22 @@
             lastFocused = document.activeElement;
             currentStories = data.stories;
             viewerUsername.textContent = data.is_mine ? 'Sen' : data.username;
+
+            // CF rozeti: birden fazla hikaye CF durumundaysa göster
+            var hasCFStory = data.stories.some(function (st) { return st.visibility === 'close_friends'; });
+            var cfBadgeEl = viewerUsername.querySelector('.story-cf-badge');
+            if (hasCFStory) {
+                if (!cfBadgeEl) {
+                    cfBadgeEl = document.createElement('span');
+                    cfBadgeEl.className = 'story-cf-badge';
+                    cfBadgeEl.textContent = '💚';
+                    cfBadgeEl.setAttribute('title', 'Yakın arkadaşlar hikayesi');
+                    viewerUsername.appendChild(cfBadgeEl);
+                }
+            } else if (cfBadgeEl) {
+                cfBadgeEl.remove();
+            }
+
             if (data.avatar_url) { viewerAvatar.src = data.avatar_url; viewerAvatar.hidden = false; }
             else { viewerAvatar.hidden = true; }
             deleteBtn.hidden = !data.is_mine;

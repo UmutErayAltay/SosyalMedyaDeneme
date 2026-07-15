@@ -275,6 +275,22 @@
                         <input type="range" id="story-poll-scale-slider" name="poll_scale_slider"
                                min="0.3" max="3" step="0.1" value="1">
                     </div>
+
+                    {# Renk seçici paleti — salt-metin hikaye için #}
+                    <div id="story-bg-palette" class="story-bg-palette" hidden>
+                        <button type="button" class="story-bg-swatch" data-color="#7c5cbf" title="#7c5cbf"></button>
+                        <button type="button" class="story-bg-swatch" data-color="#e74c3c" title="#e74c3c"></button>
+                        <button type="button" class="story-bg-swatch" data-color="#27ae60" title="#27ae60"></button>
+                        <button type="button" class="story-bg-swatch" data-color="#2980b9" title="#2980b9"></button>
+                        <button type="button" class="story-bg-swatch" data-color="#f39c12" title="#f39c12"></button>
+                        <button type="button" class="story-bg-swatch" data-color="#1a1a2e" title="#1a1a2e"></button>
+                    </div>
+
+                    {# Görünürlük: yakın arkadaşlar toggle'ı #}
+                    <label class="story-visibility-toggle">
+                        <input type="checkbox" name="visibility_cf" id="story-visibility-cf">
+                        💚 Sadece yakın arkadaşlar
+                    </label>
                 </div>
 
                 {# Sağ sütun: medya önizlemesi — normal hikaye oranında, ayrı çerçeveli kutu.
@@ -287,6 +303,7 @@
                 <div class="story-form-right">
                     <div class="story-media-preview-wrap">
                         <div class="story-media-preview-inner">
+                            <div id="story-text-preview" hidden></div>
                             <div id="story-image-preview" class="image-preview-grid" aria-live="polite"></div>
                             <video id="story-video-preview" class="post-video-preview" controls style="display:none"></video>
                             <div id="story-poll-preview-widget" class="story-poll-preview-widget" hidden aria-live="polite"></div>
@@ -295,6 +312,10 @@
                 </div>
             </div>
 
+            {# Gizli input'lar: background_color ve visibility #}
+            <input type="hidden" name="background_color" id="story-bg-input" value="">
+            <input type="hidden" name="visibility" id="story-visibility-input" value="public">
+
             {# Butonlar en altta, tam genişlikte #}
             <div class="story-attach-row">
                 <label class="story-attach-label" for="story-image-input">📷 Görsel</label>
@@ -302,6 +323,7 @@
                 <label class="story-attach-label" for="story-video-input">🎥 Video</label>
                 <input type="file" name="video" accept="video/mp4,video/webm,video/quicktime" hidden id="story-video-input">
                 <button type="button" class="story-attach-label" id="story-poll-toggle-btn">📊 Anket</button>
+                <button type="button" class="story-attach-label" id="story-bg-toggle-btn">🎨 Renk</button>
             </div>
             <button type="submit" class="btn btn-primary btn-full">Paylaş</button>
         </form>
