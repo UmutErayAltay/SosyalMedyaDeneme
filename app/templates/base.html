@@ -139,6 +139,20 @@
         </div>
     </div>
 
+    {# --- YENİ EKLENEN KISIM: Repost Modalı --- #}
+    <div class="modal-overlay" id="repost-modal" role="dialog" aria-modal="true" aria-labelledby="repost-modal-title" hidden>
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="repost-modal-title">Yeniden Paylaş</h2>
+                <button type="button" class="modal-close" id="close-repost-modal" aria-label="Kapat">×</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="repost-content-input" placeholder="Alıntına bir şeyler ekle (isteğe bağlı)" rows="3" aria-label="Alıntı metni"></textarea>
+                <button type="button" id="repost-submit-btn" class="btn btn-primary btn-full">🔁 Yeniden Paylaş</button>
+            </div>
+        </div>
+    </div>
+
     {# --- Bildirim slide-in paneli (zil tıklanınca AJAX ile doldurulur) --- #}
     <div class="notif-panel-backdrop" id="notif-panel-backdrop" hidden></div>
     <div class="notif-panel" id="notif-panel" role="dialog" aria-modal="true"
@@ -172,6 +186,7 @@
 
     {# --- YENİ EKLENEN KISIM: Share JS --- #}
     <script src="{{ url_for('static', filename='js/shareModal.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/repost.js') }}"></script>
     <script src="{{ url_for('static', filename='js/lightbox.js') }}"></script>
     <script src="{{ url_for('static', filename='js/postClick.js') }}"></script>
     {% if me %}<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>{% endif %}

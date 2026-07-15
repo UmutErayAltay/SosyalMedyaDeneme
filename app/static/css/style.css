@@ -3256,3 +3256,71 @@ header[role="banner"] {
     border-radius: var(--radius-md);
 }
 #forward-error:not([hidden]) { display: block; }
+
+/* === REPOST/ALINTI PAYLAŞIM === */
+
+/* Repost etiket — kart başlığında, post başlığı altında */
+.repost-label {
+    font-size: 12px; margin-bottom: 8px; display: block;
+    color: var(--muted);
+}
+
+/* Gömülü orijinal post kartı */
+.repost-embed {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    margin: 12px 0;
+    background: var(--card);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.repost-embed:hover {
+    background: var(--card-hover);
+    border-color: var(--primary);
+}
+
+/* Repost embed header — avatar + isim + tarih */
+.repost-embed-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+.repost-embed-header .avatar {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+}
+.repost-embed-header .username {
+    font-weight: 600;
+    color: var(--text);
+}
+.repost-embed-header .time {
+    font-size: 12px;
+    color: var(--muted);
+    margin-left: auto;
+}
+
+/* Repost embed content metni */
+.repost-embed-content {
+    font-size: 13px;
+    color: var(--text);
+    margin-bottom: 8px;
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+/* Repost embed görseli */
+.repost-embed-image {
+    width: 100%;
+    max-height: 240px;
+    object-fit: cover;
+    border-radius: var(--radius-md);
+    display: block;
+}
+
+/* Repost modal ayarlarını shareModal ile tutarlı tutmak için:
+   Modal overlay ve modal yapısı zaten base CSS'de tanımlandı.
+   Modal input/textarea/button stilleri global modal class'ları kullanıyor. */

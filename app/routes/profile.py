@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from flask import render_template, request, redirect, url_for, session, abort, flash
 from . import bp
-from ._common import _my_id, _profile, _attach_post_metrics
+from ._common import _my_id, _profile, _attach_post_metrics, attach_repost_of
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..storage_helper import upload_image
@@ -67,10 +67,14 @@ def profile(username):
         bookmark_collections = collections_fut.result()
 
     if data is not None:
-        # RPC yolundan veri geldi
+        # RPC yolundan veri geldi — sayaçlar/anket hazır, sadece repost
+        # orijinalleri eklenir (bkz. _common.attach_repost_of docstring'i)
         posts = data.get("posts", [])
         liked_posts = data.get("liked_posts", [])
         bookmarked_posts = data.get("bookmarked_posts", [])
+        attach_repost_of(sb, posts)
+        attach_repost_of(sb, liked_posts)
+        attach_repost_of(sb, bookmarked_posts)
         followers_count = data.get("followers_count", 0)
         following_count = data.get("following_count", 0)
         is_following = False if is_self else data.get("is_following", False)

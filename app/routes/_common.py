@@ -228,16 +228,43 @@ def _can_view_post(sb, post: dict, me: str) -> bool:
     return True
 
 
+def attach_repost_of(sb, posts: list) -> None:
+    """Repost olan postlara `repost_of` (orijinal postun özeti + yazar profili)
+    ekler — TEK toplu IN sorgusu (N+1 önlenir).
+
+    _attach_post_metrics içinden çağrılır; feed/keşfet RPC yolları gibi
+    metrikleri RPC'den hazır alan (dolayısıyla _attach_post_metrics
+    ÇAĞIRMAMASI gereken — çağırırsa like_count/comment_count'ı olmayan
+    `likes` embed'inden yeniden hesaplayıp SIFIRLAR) yerlerden de tek başına
+    çağrılabilir.
+    """
+    repost_ids = list({p.get("repost_of_id") for p in posts if p.get("repost_of_id")})
+    repost_lookup: dict = {}
+    if repost_ids:
+        try:
+            originals = sb.table("posts").select(
+                "id, content, image_url, image_urls, video_url, created_at, user_id, "
+                "profiles!posts_user_id_fkey(username, avatar_url)"
+            ).in_("id", repost_ids).execute().data
+            repost_lookup = {o["id"]: o for o in originals}
+        except Exception:
+            pass  # migration henüz uygulanmamış veya başka hata
+    for p in posts:
+        p["repost_of"] = repost_lookup.get(p.get("repost_of_id"))
+
+
 def _attach_post_metrics(sb, posts: list, me: str) -> None:
     """Postlara like_count / comment_count / liked_by_me / my_reaction /
-    bookmarked_by_me ekler.
+    bookmarked_by_me / repost_of ekler.
 
-    Sayılar embedded count ile tek sorguda gelir; kullanıcıya özel alanlar için
-    tüm postlar üzerinden tek birer IN sorgusu yapılır (N+1 önlenir).
+    Sayılar embedded count ile tek sorguda gelir; kullanıcıya özel alanlar ve
+    repost orijinalleri için tüm postlar üzerinden tek birer IN sorgusu
+    yapılır (N+1 önlenir).
     """
     post_ids = [p["id"] for p in posts]
     my_reactions: dict = {}
     my_bookmarks: set = set()
+
     if post_ids:
         my_reactions = {
             l["post_id"]: l.get("reaction_type") or "like"
@@ -251,6 +278,9 @@ def _attach_post_metrics(sb, posts: list, me: str) -> None:
             }
         except Exception:
             pass  # sql/migration_bookmarks.sql henüz uygulanmamışsa sessizce atla
+
+    attach_repost_of(sb, posts)
+
     for p in posts:
         p["like_count"] = p["likes"][0]["count"] if p.get("likes") else 0
         p["comment_count"] = p["comments"][0]["count"] if p.get("comments") else 0

@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from flask import render_template, request, session, redirect, url_for
 from . import bp
-from ._common import _my_id, _attach_post_metrics, fetch_sidebar_context
+from ._common import _my_id, _attach_post_metrics, attach_repost_of, fetch_sidebar_context
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..mentions import get_valid_usernames
@@ -156,7 +156,12 @@ def discover():
 
     posts = _fetch_discover_rpc()
 
-    if posts is None:
+    if posts is not None:
+        # RPC başarılı — sayaçlar/anket RPC'den HAZIR gelir, _attach_post_metrics
+        # ÇAĞRILMAZ (olmayan `likes` embed'inden yeniden hesaplayıp sayıları
+        # sıfırlardı). Sadece repost orijinalleri eklenir.
+        attach_repost_of(sb, posts)
+    else:
         # Fallback: eski çok-sorgulu yol (davranış birebir aynı) — migration
         # henüz uygulanmamışsa veya RPC başarısızsa çalışır
         exclude_ids = followed_and_self_ids(sb, me)

@@ -2,9 +2,10 @@
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 import time as _time
-from flask import render_template, request, redirect, url_for, session, abort, flash, make_response
+from flask import render_template, request, redirect, url_for, session, abort, flash, make_response, jsonify
 from . import bp
-from ._common import _my_id, _attach_post_metrics, fetch_sidebar_context, fetch_stats_and_bio, PAGE_SIZE, _can_view_post
+from ._common import (_my_id, _attach_post_metrics, attach_repost_of, fetch_sidebar_context,
+                      fetch_stats_and_bio, PAGE_SIZE, _can_view_post)
 from ..decorators import login_required
 from ..supabase_client import get_sb, retry_on_connection_error
 from ..storage_helper import upload_images, upload_video
@@ -18,6 +19,7 @@ from ..polls import create_poll, attach_polls
 from ..memories import get_memories
 from ..post_views import record_view, get_view_count
 from ..cache import invalidate
+from ..notifications import notify
 
 # Planlanmış post yayıncısı: 60sn throttle (çok sık çalışmaz, fakat zamanı gelenleri yapar)
 _last_sched_publish = 0
@@ -122,6 +124,8 @@ def feed():
     else:
         has_next = len(posts) > PAGE_SIZE
         posts = posts[:PAGE_SIZE]
+        # RPC yolu: sayaçlar/anket RPC'den hazır, sadece repost orijinali eklenir
+        attach_repost_of(sb, posts)
 
     if request.headers.get("X-Requested-With") == "fetch":
         html = render_template("_feed_posts.html", posts=posts, me=session.get("user"),
@@ -253,6 +257,9 @@ def feed():
     if page == 1 and len(posts) < 5:
         try:
             explore_suggestions = sb.rpc("discover_page_posts", {"p_me": me, "p_limit": 5}).execute().data or []
+            # Sayaçlar/anket RPC'den HAZIR gelir — _attach_post_metrics ÇAĞRILMAZ
+            # (sayıları sıfırlardı, bkz. attach_repost_of docstring'i)
+            attach_repost_of(sb, explore_suggestions)
         except Exception:
             explore_suggestions = []
 
@@ -557,6 +564,101 @@ def delete_post(post_id):
     ).execute()
     flash("Post silindi.", "success")
     return redirect(url_for("routes.feed"))
+
+
+@bp.route("/post/<post_id>/repost", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def create_repost(post_id):
+    """Bir postu yeniden paylaşır (repost/alıntı). İçeriksiz repost=boost,
+    içerikli repost=alıntılı yorum. Zincir düzleştirme: repost'un repost'u
+    orijinale işaret eder (Twitter davranışı)."""
+    sb = get_sb()
+    me = _my_id()
+    content = request.form.get("content", "").strip()
+
+    # 1) Orijinal postu çek
+    original = sb.table("posts").select(
+        "id, user_id, visibility, is_draft, is_archived, repost_of_id, content"
+    ).eq("id", post_id).execute().data
+    if not original:
+        abort(404)
+    original = original[0]
+
+    # 2) Repost kısıtlarını kontrol et
+    if original.get("visibility") != "public":
+        return jsonify(error="not_public"), 403
+
+    if original.get("is_draft") or original.get("is_archived"):
+        return jsonify(error="not_available"), 400
+
+    # Yazarın profili gizli mi kontrol et
+    try:
+        author_profile = sb.table("profiles").select("is_private").eq(
+            "id", original.get("user_id")
+        ).execute().data
+        if author_profile and author_profile[0].get("is_private"):
+            return jsonify(error="private_account"), 403
+    except Exception:
+        pass
+
+    # İki yönlü engel kontrolü
+    if is_blocked_either_way(sb, me, original.get("user_id")):
+        return jsonify(error="blocked"), 403
+
+    # 3) Zincir düzleştirme: hedef post kendisi içeriksiz repost ise
+    # orijinale işaret et — bildirim de GERÇEK orijinalin yazarına gider
+    # (aradaki repost'çuya değil)
+    repost_target_id = original.get("id")
+    notify_author_id = original.get("user_id")
+    if original.get("repost_of_id") and not original.get("content"):
+        # İçeriksiz repost'un repost'u — orijinaline git
+        repost_target_id = original.get("repost_of_id")
+        try:
+            true_original = sb.table("posts").select("user_id").eq(
+                "id", repost_target_id).execute().data
+            if true_original:
+                notify_author_id = true_original[0]["user_id"]
+        except Exception:
+            pass
+
+    # 4) Aynı kullanıcının aynı orijinali içeriksiz olarak 2 kez
+    # repost etmesini engelle (içerikli alıntılar tekrarlanabilir)
+    if not content:
+        existing = sb.table("posts").select("id").eq(
+            "user_id", me
+        ).eq("repost_of_id", repost_target_id).eq("content", "").execute().data
+        if existing:
+            return jsonify(error="already_reposted"), 409
+
+    # 5) Repost'u oluştur
+    try:
+        insert_data = {
+            "user_id": me,
+            "content": content,
+            "repost_of_id": repost_target_id,
+            "visibility": "public",
+        }
+        inserted = sb.table("posts").insert(insert_data).execute()
+    except Exception:
+        return jsonify(error="unavailable"), 503
+
+    if not inserted.data:
+        return jsonify(error="unavailable"), 503
+
+    new_post_id = inserted.data[0]["id"]
+
+    # 6) Bildirim gönder (orijinal yazarım değilsem)
+    if notify_author_id != me:
+        notify(
+            sb,
+            recipient_id=notify_author_id,
+            actor_id=me,
+            type_="repost",
+            post_id=repost_target_id,
+        )
+
+    return jsonify(ok=True, post_id=new_post_id)
 
 
 @bp.route("/post/<post_id>/archive", methods=["POST"])

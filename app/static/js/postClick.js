@@ -8,6 +8,22 @@
 
 (function () {
     document.addEventListener('click', function (e) {
+        // Repost gömülü kartı: İÇ kart tıklaması ORİJİNAL postun detayına
+        // gider (dış karta bubbling yapıp repost'un detayına gitmesin) —
+        // selector .card.post olmadığı için aşağıdaki karta yakalanmaz,
+        // burada ayrıca ele alınır. Link/buton istisnası aynı.
+        var embed = e.target.closest('.repost-embed[data-post-url]');
+        if (embed) {
+            if (e.target.closest('a, button, form, input, textarea, label')) return;
+            var embedUrl = embed.dataset.postUrl;
+            if (e.metaKey || e.ctrlKey || e.button === 1) {
+                window.open(embedUrl, '_blank');
+            } else {
+                window.location.href = embedUrl;
+            }
+            return;
+        }
+
         var card = e.target.closest('.card.post[data-post-url]');
         if (!card) return;
 
