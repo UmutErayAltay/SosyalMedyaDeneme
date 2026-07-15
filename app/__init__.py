@@ -260,4 +260,18 @@ def create_app() -> Flask:
     app.register_blueprint(stickers_bp)
     app.register_blueprint(push_bp)
 
+    # GEÇİCİ teşhis endpoint'i — Render/Cloudflare proxy zincirinin gerçek
+    # X-Forwarded-* başlıklarını görmek için (ProxyFix hop sayısı ayarı).
+    # Google OAuth redirect_to şeması sorunu çözülünce KALDIRILACAK.
+    @app.route("/_debug_headers")
+    def _debug_headers():
+        from flask import jsonify
+        return jsonify(
+            x_forwarded_proto=request.headers.get("X-Forwarded-Proto"),
+            x_forwarded_host=request.headers.get("X-Forwarded-Host"),
+            x_forwarded_for=request.headers.get("X-Forwarded-For"),
+            resolved_scheme=request.scheme,
+            resolved_host=request.host,
+        )
+
     return app
