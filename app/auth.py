@@ -154,6 +154,7 @@ def register():
                     "id": user.id,
                     "username": username,
                     "email": email,
+                    "is_private": True,  # yeni hesaplar varsayılan gizli (ürün kararı)
                 }, on_conflict="id").execute()
             except Exception:
                 pass  # trigger zaten oluşturmuş olabilir
@@ -373,6 +374,7 @@ def google_complete():
             "email": user.email,
             "full_name": meta.get("full_name") or meta.get("name"),
             "avatar_url": meta.get("avatar_url") or meta.get("picture"),
+            "is_private": True,  # yeni hesaplar varsayılan gizli (ürün kararı) — sadece ilk Google girişi, var olanları etkilemez
         }, on_conflict="id").execute()
         from .cache import invalidate
         invalidate("valid_usernames")

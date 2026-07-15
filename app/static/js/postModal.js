@@ -39,6 +39,10 @@
     var locationLatInput = document.getElementById('location-lat-input');
     var locationLngInput = document.getElementById('location-lng-input');
     var locationNameInput = document.getElementById('location-name-input');
+    var postVisibilityBtn = document.getElementById('post-visibility-btn');
+    var postVisibilityMenu = document.getElementById('post-visibility-menu');
+    var postVisibilityBtnContent = document.getElementById('post-visibility-btn-content');
+    var postVisibilityInput = document.getElementById('post-visibility-input');
     if (!modal || !openBtn) return;
 
     var lastFocused = null;
@@ -70,6 +74,60 @@
         closeAttachMenu();
         resetScheduleUI();
         resetGifPanel();
+        resetPostVisibilityUI();
+    }
+
+    // --- Görünürlük dropdown'ı — native <select>'in emoji option'ları SVG
+    // ikona hiç çevrilemediği için (kullanıcı raporu) attach-menu ile AYNI
+    // özel dropdown deseni. Varsayılan "followers" (kullanıcı isteği: "ilk
+    // başta herkese açık yerine sadece takipçilerim seçeneği olsun"). ---
+    function closePostVisibilityMenu() {
+        if (!postVisibilityMenu || postVisibilityMenu.hidden) return;
+        postVisibilityMenu.hidden = true;
+        if (postVisibilityBtn) postVisibilityBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    function resetPostVisibilityUI() {
+        if (!postVisibilityMenu) return;
+        var defaultItem = postVisibilityMenu.querySelector('.post-visibility-item[data-value="followers"]');
+        if (defaultItem && postVisibilityBtnContent) postVisibilityBtnContent.innerHTML = defaultItem.innerHTML;
+        postVisibilityMenu.querySelectorAll('.post-visibility-item').forEach(function (i) {
+            i.classList.toggle('selected', i.dataset.value === 'followers');
+        });
+        if (postVisibilityInput) postVisibilityInput.value = 'followers';
+        closePostVisibilityMenu();
+    }
+
+    if (postVisibilityBtn && postVisibilityMenu) {
+        postVisibilityBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var willOpen = postVisibilityMenu.hidden;
+            postVisibilityMenu.hidden = !willOpen;
+            postVisibilityBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        });
+
+        document.addEventListener('click', function (e) {
+            var item = e.target.closest('.post-visibility-item');
+            if (item && !postVisibilityMenu.hidden) {
+                e.preventDefault();
+                if (postVisibilityInput) postVisibilityInput.value = item.dataset.value;
+                if (postVisibilityBtnContent) postVisibilityBtnContent.innerHTML = item.innerHTML;
+                postVisibilityMenu.querySelectorAll('.post-visibility-item').forEach(function (i) {
+                    i.classList.remove('selected');
+                });
+                item.classList.add('selected');
+                closePostVisibilityMenu();
+                return;
+            }
+            if (!postVisibilityMenu.hidden && !postVisibilityMenu.contains(e.target) && e.target !== postVisibilityBtn) {
+                closePostVisibilityMenu();
+            }
+        });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !postVisibilityMenu.hidden) closePostVisibilityMenu();
+        });
     }
 
     // Sadece satırı gizler — onaylanmış planı SİLMEZ (onay sonrası çağrılır)

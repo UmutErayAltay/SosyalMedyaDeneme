@@ -15,6 +15,7 @@ from .storage_helper import upload_image, upload_video
 from .blocks import is_blocked_either_way
 from .messaging._common import _get_or_create_conversation, _notify_conversation
 from .polls import create_poll
+from .visibility import followed_and_self_ids
 
 bp = Blueprint("stories", __name__)
 
@@ -93,38 +94,50 @@ def attach_story_poll(sb, story: dict, me: str) -> None:
 
 
 def _visible_story_filter(sb, me: str, rows: list[dict]) -> list[dict]:
-    """Close_friends hikayelerini eler: sahibi ben DEĞİLSEM ve sahibinin yakın
-    arkadaş listesinde DEĞİLSEM görünmez. Tek toplu sorgu (N+1 yasak):
-    listedeki close_friends hikaye sahiplerinden hangileri beni yakın arkadaş
-    yapmış — close_friends tablosunda owner_id IN (...) AND friend_id = me."""
+    """Close_friends VE followers hikayelerini eler. Tek toplu sorgu (N+1 yasak):
+    - close_friends: sahibi ben DEĞİLSEM ve sahibinin yakın arkadaş listesinde
+      DEĞİLSEM görünmez (owner_id IN (...) AND friend_id = me sorgusuyla).
+    - followers: sahibi ben DEĞİLSEM ve ben sahibini takip ETMİYORSAM görünmez
+      (viewer merkezli — followed_and_self_ids(sb, me) zaten "ben kimi takip
+      ediyorum + kendim" kümesini tek sorguda döner, ayrı ters sorguya gerek yok)."""
     if not rows:
         return rows
 
     # visibility alanı yoksa (eski hikayeler) veya public ise her zaman geçer
-    visible_rows = [r for r in rows if r.get("visibility") != "close_friends" or r.get("user_id") == me]
+    visible_rows = [
+        r for r in rows
+        if r.get("visibility") not in ("close_friends", "followers") or r.get("user_id") == me
+    ]
     close_friends_rows = [r for r in rows if r.get("visibility") == "close_friends" and r.get("user_id") != me]
+    followers_rows = [r for r in rows if r.get("visibility") == "followers" and r.get("user_id") != me]
 
-    if not close_friends_rows:
-        return visible_rows
+    if close_friends_rows:
+        # close_friends hikayesine sahip kişilerin listesi
+        owners = list(set(r["user_id"] for r in close_friends_rows))
 
-    # close_friends hikayesine sahip kişilerin listesi
-    owners = list(set(r["user_id"] for r in close_friends_rows))
+        # Hangi owners'lar beni yakın arkadaş yapmış — tek sorgu
+        my_close_friend_owners = set()
+        try:
+            results = sb.table("close_friends").select("owner_id").in_("owner_id", owners).eq(
+                "friend_id", me
+            ).execute().data
+            my_close_friend_owners = {r["owner_id"] for r in results}
+        except Exception:
+            # Tablo yoksa close_friends hikayeleri GİZLİ kalır (fail-closed — gizlilik)
+            my_close_friend_owners = set()
 
-    # Hangi owners'lar beni yakın arkadaş yapmış — tek sorgu
-    my_close_friend_owners = set()
-    try:
-        results = sb.table("close_friends").select("owner_id").in_("owner_id", owners).eq(
-            "friend_id", me
-        ).execute().data
-        my_close_friend_owners = {r["owner_id"] for r in results}
-    except Exception:
-        # Tablo yoksa close_friends hikayeleri GİZLİ kalır (fail-closed — gizlilik)
-        return visible_rows
+        # Close_friends hikayeleri: sahibi beni yakın arkadaş yapmışsa ekle
+        for r in close_friends_rows:
+            if r["user_id"] in my_close_friend_owners:
+                visible_rows.append(r)
 
-    # Close_friends hikayeleri: sahibi beni yakın arkadaş yapmışsa ekle
-    for r in close_friends_rows:
-        if r["user_id"] in my_close_friend_owners:
-            visible_rows.append(r)
+    if followers_rows:
+        # Ben kimi takip ediyorum (+ kendim) — followers hikayesi görünürlüğü
+        # viewer merkezli soruya bakar: "BEN bu sahibi takip ediyor muyum"
+        my_followed = followed_and_self_ids(sb, me)
+        for r in followers_rows:
+            if r["user_id"] in my_followed:
+                visible_rows.append(r)
 
     return visible_rows
 
@@ -224,6 +237,26 @@ def create_story():
         except ValueError:
             poll_scale = 1.0
 
+    # Hikaye altyazısının sürükle-bırak pozisyonu (anket ile AYNI desen) —
+    # has_poll'a bağlı DEĞİL, altyazı her hikayede sürüklenebilir olmalı
+    caption_position_x = 0.5
+    try:
+        cpx_raw = request.form.get("caption_position_x", "0.5")
+        caption_position_x = float(cpx_raw)
+        if not (0 <= caption_position_x <= 1):
+            caption_position_x = 0.5
+    except ValueError:
+        caption_position_x = 0.5
+
+    caption_position_y = 0.75
+    try:
+        cpy_raw = request.form.get("caption_position_y", "0.75")
+        caption_position_y = float(cpy_raw)
+        if not (0 <= caption_position_y <= 1):
+            caption_position_y = 0.75
+    except ValueError:
+        caption_position_y = 0.75
+
     if not caption and not has_image and not has_video and not has_poll:
         flash("Boş hikaye paylaşılamaz.", "error")
         return redirect(url_for("routes.feed"))
@@ -253,7 +286,7 @@ def create_story():
         background_color = None
 
     visibility = request.form.get("visibility", "public")
-    if visibility not in ("public", "close_friends"):
+    if visibility not in ("public", "followers", "close_friends"):
         visibility = "public"
 
     # Insert ve anket AYRI try bloklarında — önceki tek blokta, insert
@@ -263,6 +296,7 @@ def create_story():
     story_data = {
         "user_id": me, "image_url": image_url, "video_url": video_url, "caption": caption,
         "background_color": background_color, "visibility": visibility,
+        "caption_position_x": caption_position_x, "caption_position_y": caption_position_y,
     }
     try:
         result = sb.table("stories").insert(story_data).execute()
@@ -310,7 +344,7 @@ def user_stories(user_id):
         # eksikse close_friends hikayesinde KeyError (500) + sahibi kendi
         # hikayesini göremezdi
         rows = sb.table("stories").select(
-            "id, user_id, image_url, video_url, caption, created_at, visibility, background_color"
+            "id, user_id, image_url, video_url, caption, created_at, visibility, background_color, caption_position_x, caption_position_y"
         ).eq("user_id", user_id).gt("expires_at", now).order("created_at").execute().data
     except Exception:
         rows = []

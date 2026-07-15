@@ -35,11 +35,13 @@
     var storyBgPalette = document.getElementById('story-bg-palette');
     var storyBgInput = document.getElementById('story-bg-input');
     var storyTextPreview = document.getElementById('story-text-preview');
-    var storyCaptionInput = document.getElementById('story-caption-input');
     var storyMediaPreviewInner = document.querySelector('.story-media-preview-inner');
-    var storyVisibilityCheckbox = document.getElementById('story-visibility-cf');
     var storyVisibilityInput = document.getElementById('story-visibility-input');
-    var storyForm = storyModal ? storyModal.querySelector('form') : null;
+    var storyVisibilityBtn = document.getElementById('story-visibility-btn');
+    var storyVisibilityMenu = document.getElementById('story-visibility-menu');
+    var storyVisibilityBtnContent = document.getElementById('story-visibility-btn-content');
+    var storyCaptionPosXInput = document.getElementById('story-caption-position-x-input');
+    var storyCaptionPosYInput = document.getElementById('story-caption-position-y-input');
 
     function openStoryModal() {
         if (!storyModal) return;
@@ -61,7 +63,14 @@
         // Renk seçicisini gizle ve reset et
         if (storyBgPalette) storyBgPalette.hidden = true;
         if (storyBgInput) storyBgInput.value = '';
-        if (storyTextPreview) storyTextPreview.hidden = true;
+        if (storyTextPreview) {
+            storyTextPreview.hidden = true;
+            storyTextPreview.removeAttribute('style');
+            delete storyTextPreview.dataset.positionX;
+            delete storyTextPreview.dataset.positionY;
+        }
+        if (storyCaptionPosXInput) storyCaptionPosXInput.value = '0.5';
+        if (storyCaptionPosYInput) storyCaptionPosYInput.value = '0.75';
         if (storyMediaPreviewInner) storyMediaPreviewInner.style.backgroundColor = '';
         // Swatch'ları deselect et
         if (storyBgPalette) {
@@ -69,7 +78,16 @@
                 sw.classList.remove('selected');
             });
         }
-        if (storyVisibilityCheckbox) storyVisibilityCheckbox.checked = false;
+        // Görünürlük dropdown'ını varsayılana ("public"/Herkese açık) döndür
+        if (storyVisibilityMenu) {
+            var defaultItem = storyVisibilityMenu.querySelector('.story-visibility-item[data-value="public"]');
+            if (defaultItem && storyVisibilityBtnContent) storyVisibilityBtnContent.innerHTML = defaultItem.innerHTML;
+            storyVisibilityMenu.querySelectorAll('.story-visibility-item').forEach(function (i) {
+                i.classList.toggle('selected', i.dataset.value === 'public');
+            });
+            storyVisibilityMenu.hidden = true;
+        }
+        if (storyVisibilityBtn) storyVisibilityBtn.setAttribute('aria-expanded', 'false');
         if (storyVisibilityInput) storyVisibilityInput.value = 'public';
     }
 
@@ -120,9 +138,20 @@
         if (e.target.id !== 'story-caption-input') return;
         e.target.style.height = 'auto';
         e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
-        // Salt-metin hikaye preview'ıyla senkronla
-        if (storyTextPreview && !storyTextPreview.hidden) {
-            storyTextPreview.textContent = e.target.value || '(Hikaye altyazısı)';
+
+        // Altyazı sürükleme widget'ı: medya olsun olmasın FARK ETMEKSİZİN
+        // yazı VARSA görünür + sürüklenebilir (önceden SADECE medyasız
+        // salt-metin modunda çalışıyordu — kullanıcı isteği: "görsel
+        // ekleyince de yazdığımız yazı hikayenin üstünde gözüksün").
+        if (storyTextPreview) {
+            var hasText = !!e.target.value.trim();
+            var wasHidden = storyTextPreview.hidden;
+            storyTextPreview.textContent = e.target.value;
+            storyTextPreview.hidden = !hasText;
+            // Boştan yazıya geçişte konumu varsayılana sıfırla — anket
+            // widget'ının her toggle-open'da initStoryPollWidget() çağırdığı
+            // AYNI mantık.
+            if (hasText && wasHidden) initStoryCaptionWidget();
         }
     });
 
@@ -232,6 +261,60 @@
         if (pollPosYInput) pollPosYInput.value = posY;
     });
 
+    // Altyazı widget'ı sürükleme — anket widget'ıyla (storyPollDragState,
+    // yukarıdaki üç pointer handler) BİREBİR AYNI desen, scale YOK (sadece
+    // konum — kullanıcı isteği: "text olarak yazımız sağda ön izlemede
+    // gözüküyor onu da anket gibi yerini seçebilelim").
+    var storyCaptionDragState = { dragging: false, startX: 0, startY: 0, startPosX: 0.5, startPosY: 0.75 };
+
+    function initStoryCaptionWidget() {
+        if (!storyTextPreview) return;
+        // Widget başlangıç: konteynerin alt-orta bölgesinde (gizli input'ların
+        // varsayılan 0.5/0.75 değeriyle AYNI)
+        storyTextPreview.style.left = '50%';
+        storyTextPreview.style.top = '75%';
+        storyTextPreview.style.transform = 'translate(-50%, -50%)';
+        storyTextPreview.dataset.positionX = '0.5';
+        storyTextPreview.dataset.positionY = '0.75';
+    }
+
+    if (storyTextPreview) {
+        storyTextPreview.addEventListener('pointerdown', function (e) {
+            if (!storyMediaPreviewWrap) return;
+            e.preventDefault();
+            storyCaptionDragState.dragging = true;
+            storyCaptionDragState.startX = e.clientX;
+            storyCaptionDragState.startY = e.clientY;
+            storyCaptionDragState.startPosX = parseFloat(storyTextPreview.dataset.positionX || '0.5');
+            storyCaptionDragState.startPosY = parseFloat(storyTextPreview.dataset.positionY || '0.75');
+        });
+    }
+
+    document.addEventListener('pointermove', function (e) {
+        if (!storyCaptionDragState.dragging || !storyMediaPreviewWrap || !storyTextPreview) return;
+        var containerRect = storyMediaPreviewWrap.getBoundingClientRect();
+        var deltaXPct = (e.clientX - storyCaptionDragState.startX) / containerRect.width;
+        var deltaYPct = (e.clientY - storyCaptionDragState.startY) / containerRect.height;
+        var posX = Math.max(0, Math.min(1, storyCaptionDragState.startPosX + deltaXPct));
+        var posY = Math.max(0, Math.min(1, storyCaptionDragState.startPosY + deltaYPct));
+
+        storyTextPreview.style.left = (posX * 100) + '%';
+        storyTextPreview.style.top = (posY * 100) + '%';
+        storyTextPreview.style.transform = 'translate(-50%, -50%)';
+        storyTextPreview.dataset.positionX = posX.toFixed(2);
+        storyTextPreview.dataset.positionY = posY.toFixed(2);
+    });
+
+    document.addEventListener('pointerup', function (e) {
+        if (!storyCaptionDragState.dragging) return;
+        storyCaptionDragState.dragging = false;
+
+        var posX = storyTextPreview.dataset.positionX || '0.50';
+        var posY = storyTextPreview.dataset.positionY || '0.75';
+        if (storyCaptionPosXInput) storyCaptionPosXInput.value = posX;
+        if (storyCaptionPosYInput) storyCaptionPosYInput.value = posY;
+    });
+
     // Hikaye formu: anket toggle ve seçenek ekleme
     if (storyPollToggleBtn) {
         storyPollToggleBtn.addEventListener('click', function (e) {
@@ -291,22 +374,18 @@
         // Gizli input'a rengi yaz
         if (storyBgInput) storyBgInput.value = color;
 
-        // Medya preview'ı güncelle: rengi uygula, medya varsa gizle
+        // Medya preview'ı güncelle: rengi uygula, medya varsa yok say.
+        // NOT: storyTextPreview'ın (altyazı widget'ı) görünürlüğü artık
+        // BURADAN değil, sadece caption input listener'ından yönetiliyor
+        // (medya var/yok fark etmeksizin caption VARSA widget görünür).
         if (storyMediaPreviewInner) {
             var hasMedia = storyImagePreview && storyImagePreview.innerHTML.trim() !== '' ||
                           storyVideoPreview && storyVideoPreview.style.display !== 'none';
             if (hasMedia) {
                 // Medya varsa renk uygulanmaz (yok sayılır)
                 storyMediaPreviewInner.style.backgroundColor = '';
-                if (storyTextPreview) storyTextPreview.hidden = true;
             } else {
-                // Medya yoksa rengi uygula ve text preview'ı göster
                 storyMediaPreviewInner.style.backgroundColor = color;
-                if (storyTextPreview) storyTextPreview.hidden = false;
-                // Caption text'ini senkronla
-                if (storyCaptionInput && storyTextPreview) {
-                    storyTextPreview.textContent = storyCaptionInput.value || '(Hikaye altyazısı)';
-                }
             }
         }
     });
@@ -358,18 +437,48 @@
         });
     }
 
-    // Hikaye formu submit: visibility checkbox'ını kontrol et ve gizli input'u güncelle
-    if (storyForm) {
-        storyForm.addEventListener('submit', function (e) {
-            if (storyVisibilityCheckbox && storyVisibilityCheckbox.checked) {
-                // Checkbox işaretliyse visibility="close_friends" yap
-                if (storyVisibilityInput) storyVisibilityInput.value = 'close_friends';
-            } else {
-                // Checkbox işaretsizse visibility="public" yap
-                if (storyVisibilityInput) storyVisibilityInput.value = 'public';
-            }
+    // Görünürlük dropdown'ı — eski checkbox yerine post-visibility-* ile AYNI
+    // özel dropdown deseni (attach-menu/post-more-wrap deseninin devamı).
+    // Seçim anında hidden input'u zaten güncellediği için submit'te ayrıca
+    // bir dönüşüm gerekmiyor (eski checkbox yaklaşımının aksine).
+    function closeStoryVisibilityMenu() {
+        if (!storyVisibilityMenu || storyVisibilityMenu.hidden) return;
+        storyVisibilityMenu.hidden = true;
+        if (storyVisibilityBtn) storyVisibilityBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    if (storyVisibilityBtn && storyVisibilityMenu) {
+        storyVisibilityBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var willOpen = storyVisibilityMenu.hidden;
+            storyVisibilityMenu.hidden = !willOpen;
+            storyVisibilityBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
         });
     }
+
+    document.addEventListener('click', function (e) {
+        var item = e.target.closest('.story-visibility-item');
+        if (item && storyVisibilityMenu && !storyVisibilityMenu.hidden) {
+            e.preventDefault();
+            if (storyVisibilityInput) storyVisibilityInput.value = item.dataset.value;
+            if (storyVisibilityBtnContent) storyVisibilityBtnContent.innerHTML = item.innerHTML;
+            storyVisibilityMenu.querySelectorAll('.story-visibility-item').forEach(function (i) {
+                i.classList.remove('selected');
+            });
+            item.classList.add('selected');
+            closeStoryVisibilityMenu();
+            return;
+        }
+        if (storyVisibilityMenu && !storyVisibilityMenu.hidden &&
+            !storyVisibilityMenu.contains(e.target) && e.target !== storyVisibilityBtn) {
+            closeStoryVisibilityMenu();
+        }
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && storyVisibilityMenu && !storyVisibilityMenu.hidden) closeStoryVisibilityMenu();
+    });
 
     // ============================================================
     // --- Hikaye görüntüleyici ---
@@ -553,6 +662,16 @@
         viewerCaption.hidden = !s.caption;
         viewerCaption.textContent = s.caption || '';
 
+        // Altyazı konumu: composer'da sürüklenen konum (0-1 arası oran) —
+        // anket widget'ının renderStoryPoll()'daki konumlandırma tekniğiyle
+        // AYNI. undefined ise varsayılan 0.5/0.75 (backend eski hikayelerde
+        // bu alanları henüz döndürmeyebilir).
+        var captionPosX = (s.caption_position_x !== undefined && s.caption_position_x !== null) ? s.caption_position_x : 0.5;
+        var captionPosY = (s.caption_position_y !== undefined && s.caption_position_y !== null) ? s.caption_position_y : 0.75;
+        viewerCaption.style.left = (captionPosX * 100) + '%';
+        viewerCaption.style.top = (captionPosY * 100) + '%';
+        viewerCaption.style.transform = 'translate(-50%, -50%)';
+
         viewerVideo.pause();
         viewerVideo.hidden = true;
         viewerVideo.removeAttribute('src');
@@ -587,6 +706,11 @@
                 textSlide.style.backgroundColor = s.background_color;
                 var p = document.createElement('p');
                 p.textContent = s.caption || '';
+                // <p> aynı caption_position_x/y'e göre konumlanır (dış div
+                // tam ekranı kaplayan arkaplan konteyner olarak kalır)
+                p.style.left = (captionPosX * 100) + '%';
+                p.style.top = (captionPosY * 100) + '%';
+                p.style.transform = 'translate(-50%, -50%)';
                 textSlide.appendChild(p);
                 mediaArea.insertBefore(textSlide, mediaArea.firstChild);
             }

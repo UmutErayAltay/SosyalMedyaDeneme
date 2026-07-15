@@ -59,6 +59,23 @@
             '</div></div>';
     }
 
+    // Yeni eklenen yorum/yanıt HER ZAMAN gönderenin kendi yorumudur — sunucu
+    // tarafındaki "{% if me and c.user_id == me.id %}" kontrolüne eşdeğer,
+    // burada koşulsuz eklenir (server-render sonrası sayfa yenilenene kadar
+    // sil butonu hiç görünmüyordu, kullanıcı raporu).
+    function buildLikeBtnHtml(commentId) {
+        return '<button type="button" class="btn btn-ghost small comment-like-btn" data-liked="0" ' +
+            'data-like-url="/social/comment/like/' + commentId + '"><span class="comment-heart-icon">' +
+            (window.ICONS ? window.ICONS.get('heart', { size: 14 }) : '♥') + '</span> <span class="like-count">0</span></button>';
+    }
+
+    function buildDeleteFormHtml(commentId, csrf) {
+        return '<form action="/social/comment/' + commentId + '/delete" method="post" data-confirm="Yorumu sil?">' +
+            '<input type="hidden" name="csrf_token" value="' + csrf + '">' +
+            '<button type="submit" class="btn btn-ghost danger small" aria-label="Yorumu sil">Sil</button>' +
+            '</form>';
+    }
+
     function buildCommentHtml(data, content) {
         var username = data.username || 'Sen';
         var avatarHtml = data.avatar_url
@@ -215,7 +232,9 @@
                 }
                 article.innerHTML = buildCommentHtml(data, content) + mediaHtml +
                     '<div class="comment-actions">' +
+                    buildLikeBtnHtml(data.id) +
                     '<button type="button" class="btn btn-ghost small reply-toggle" data-comment-id="' + data.id + '">Yanıtla</button>' +
+                    buildDeleteFormHtml(data.id, csrfToken()) +
                     buildReactWrapHtml(data.id) +
                     '</div>' +
                     '<form class="reply-form" data-parent-id="' + data.id + '" data-post-id="' + postId + '" hidden>' +
@@ -437,9 +456,8 @@
             }
             replyArticle.innerHTML = buildCommentHtml(data, content) + mediaHtml +
                 '<div class="comment-actions">' +
-                '<button type="button" class="btn btn-ghost small comment-like-btn" data-liked="0" ' +
-                'data-like-url="/social/comment/like/' + data.id + '"><span class="comment-heart-icon">' +
-                (window.ICONS ? window.ICONS.get('heart', { size: 14 }) : '♥') + '</span> <span class="like-count">0</span></button>' +
+                buildLikeBtnHtml(data.id) +
+                buildDeleteFormHtml(data.id, csrfToken()) +
                 buildReactWrapHtml(data.id) +
                 '</div>';
             repliesDiv.appendChild(replyArticle);
