@@ -128,8 +128,8 @@
             🔁
         </button>
 
-        <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ p.id }}" aria-haspopup="dialog">
-            📤 Gönder
+        <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ p.id }}" aria-haspopup="dialog" aria-label="Gönder">
+            📤 <span class="share-btn-label">Gönder</span>
         </button>
         <button type="button"
                 class="btn btn-ghost bookmark-btn {{ 'bookmarked' if p.bookmarked_by_me }}"
@@ -139,12 +139,17 @@
             {{ '🔖' if p.bookmarked_by_me else '📑' }}
         </button>
         {% if me and p.user_id == me.id %}
-            <a href="{{ url_for('routes.edit_post', post_id=p.id) }}" class="btn btn-ghost" aria-label="Postu düzenle">Düzenle</a>
-            <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
-                data-confirm="Bu postu silmek istiyor musun?">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-ghost danger" aria-label="Postu sil">Sil</button>
-            </form>
+            <div class="post-more-wrap">
+                <button type="button" class="btn btn-ghost post-more-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Daha fazla seçenek">⋯</button>
+                <div class="post-more-menu" role="menu" hidden>
+                    <a href="{{ url_for('routes.edit_post', post_id=p.id) }}" class="post-more-item" role="menuitem">✏️ Düzenle</a>
+                    <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
+                        data-confirm="Bu postu silmek istiyor musun?">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="post-more-item danger" role="menuitem">🗑 Sil</button>
+                    </form>
+                </div>
+            </div>
         {% else %}
             <form action="{{ url_for('reports.create_report') }}" method="post" class="inline"
                   data-confirm="Bu postu şikayet etmek istiyor musun?">

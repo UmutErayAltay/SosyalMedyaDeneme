@@ -114,8 +114,8 @@
     </button>
 
     {# YENİ: Paylaş Modalı Tetikleyici Buton (Düzeltildi) #}
-    <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ post.id }}" aria-haspopup="dialog">
-        📤 Gönder
+    <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ post.id }}" aria-haspopup="dialog" aria-label="Gönder">
+        📤 <span class="share-btn-label">Gönder</span>
     </button>
     <button type="button"
             class="btn btn-ghost bookmark-btn {{ 'bookmarked' if post.bookmarked_by_me }}"

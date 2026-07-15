@@ -342,6 +342,14 @@ textarea:focus-visible, select:focus-visible {
     .nav-links a { margin-left: 0; padding: 10px 8px; border-radius: 6px; }
     .nav-profile { justify-content: flex-start; }
     .theme-toggle { margin-left: 0; align-self: flex-start; }
+
+    /* Post kartı aksiyon satırı dar ekranda 6 ikon+"⋯"u tek satıra sığdıramıyor
+       (kullanıcı raporu: sil/⋯ butonu kart dışına taşıyordu) — "Gönder"
+       metnini gizleyip sadece ikonu bırakmak + satırın kendi gap/padding'ini
+       daraltmak yeterli boşluğu açıyor, aria-label erişilebilirliği korunuyor. */
+    .share-post-btn .share-btn-label { display: none; }
+    .post-actions { gap: 2px; }
+    .post-actions .btn { padding: var(--btn-padding-y) 6px; }
 }
 
 /* Container */
@@ -558,6 +566,31 @@ label input { margin-top: 6px; }
 .mention-link { color: var(--primary); font-weight: 600; text-decoration: none; }
 .mention-link:hover { text-decoration: underline; }
 .post-actions { display: flex; gap: 8px; align-items: center; }
+
+/* Post kartı "⋯ Daha fazla" menüsü — az kullanılan sahip işlemlerini
+   (sabitle/arşivle/düzenle/sil) tek butonun arkasına toplar; profilde
+   post başına 4-5 buton aynı satırda kartın dışına taşıyordu (kullanıcı
+   raporu). attach-menu deseniyle aynı görsel dil, ayrı class'lar (composer
+   menüsüyle karışmasın). */
+.post-more-wrap { position: relative; margin-left: auto; }
+.post-more-btn {
+    font-size: 18px; font-weight: 700; line-height: 1; padding: 6px 12px;
+}
+.post-more-menu {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 20;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 4px 16px rgba(43, 36, 32, 0.15);
+    display: flex; flex-direction: column; min-width: 180px; padding: 6px;
+}
+.post-more-menu[hidden] { display: none; }
+.post-more-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: 8px; cursor: pointer;
+    background: none; border: none; font-size: 14px; color: var(--text);
+    text-align: left; width: 100%; text-decoration: none; font-family: inherit;
+}
+.post-more-item:hover { background: var(--border); }
+.post-more-item.danger:hover { background: var(--danger-bg); color: var(--danger); }
 .view-count { display: inline-flex; gap: .25rem; align-items: center; }
 .inline { display: inline; }
 
