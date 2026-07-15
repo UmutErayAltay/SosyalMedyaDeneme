@@ -68,6 +68,48 @@
             <button type="submit" class="btn btn-ghost" onclick="return confirm('2FA devre dışı bırakılacak. Emin misin?')">2FA'yı Kapat</button>
         </form>
     </div>
+
+    <hr style="margin: 24px 0;">
+
+    <h2 style="font-size: 16px; margin-bottom: 12px;">📱 Aktif Oturumlar</h2>
+    <p class="muted">Hesabına giriş yapılmış cihazlar. Tanımadığın bir oturum varsa sonlandır.</p>
+
+    {% if active_sessions %}
+        <div style="margin-top: 16px;">
+            {% for s in active_sessions %}
+                <div class="session-row">
+                    <div class="session-info">
+                        {% set browser = 'Chrome' if 'Chrome' in s.user_agent else ('Firefox' if 'Firefox' in s.user_agent else ('Safari' if 'Safari' in s.user_agent else 'Tarayıcı')) if s.user_agent else 'Tarayıcı' %}
+                        {% set os = 'Windows' if 'Windows' in s.user_agent else ('Android' if 'Android' in s.user_agent else ('iPhone' if 'iPhone' in s.user_agent else ('iPad' if 'iPad' in s.user_agent else ('Mac' if 'Macintosh' in s.user_agent else 'Bilinmeyen')))) if s.user_agent else 'Bilinmeyen' %}
+                        <span class="session-device">{{ browser }} · {{ os }}</span>
+                        {% if s.is_current %}
+                            <span class="session-current-badge">Bu cihaz</span>
+                        {% endif %}
+                        <br>
+                        <span class="muted" style="font-size: 12px;">
+                            {{ s.ip }}
+                            {% if s.last_active_at %}
+                                — son aktif: {{ s.last_active_at|relative_time }}
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% if not s.is_current %}
+                        <button type="button" class="btn btn-ghost danger session-revoke-btn" data-session-id="{{ s.id }}">
+                            Oturumu kapat
+                        </button>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+
+        {% if active_sessions|length > 1 %}
+            <button type="button" class="btn btn-ghost danger" id="revoke-others-btn" style="margin-top: 16px;">
+                Diğer tüm oturumları kapat
+            </button>
+        {% endif %}
+    {% else %}
+        <p class="muted" style="margin-top: 12px;">Henüz oturum kaydı yok — bir sonraki girişte görünür.</p>
+    {% endif %}
 </div>
 <script>
     // Avatar önizleme
@@ -85,4 +127,5 @@
         }
     });
 </script>
+<script src="{{ url_for('static', filename='js/sessions.js') }}"></script>
 {% endblock %}

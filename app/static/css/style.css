@@ -3387,3 +3387,51 @@ header[role="banner"] {
 /* Repost modal ayarlarını shareModal ile tutarlı tutmak için:
    Modal overlay ve modal yapısı zaten base CSS'de tanımlandı.
    Modal input/textarea/button stilleri global modal class'ları kullanıyor. */
+
+/* Aktif Oturumlar — session-row + session-current-badge */
+.session-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border);
+    gap: var(--space-4);
+}
+.session-row:last-child {
+    border-bottom: none;
+}
+.session-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+.session-device {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+}
+.session-current-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 12px;
+    padding: 2px 8px;
+    background: var(--color-green-50);
+    color: var(--color-green-700);
+    border-radius: var(--radius-full);
+    font-weight: 600;
+    width: fit-content;
+}
+@media (prefers-color-scheme: dark) {
+    :root[data-theme="dark"] .session-current-badge {
+        background: rgba(79, 195, 127, 0.15);
+        color: var(--color-green-300);
+    }
+}
+
+/* Button hidden attribute varyantı (CLAUDE.md kuralı) */
+.btn[hidden] { display: none; }
+
+/* Diğer button variantları için [hidden] belirtimi */
+.btn-primary[hidden] { display: none; }
+.btn-ghost[hidden] { display: none; }

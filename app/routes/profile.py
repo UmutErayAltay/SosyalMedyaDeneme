@@ -458,7 +458,22 @@ def profile_edit():
     prof = sb.table("profiles").select("*").eq("id", me).execute()
     if not prof.data:
         abort(404)
-    return render_template("profile_edit.html", profile=prof.data[0], me=session["user"])
+
+    # Aktif oturumlar listesi
+    active_sessions = []
+    try:
+        active_sessions = sb.table("user_sessions").select("*").eq(
+            "user_id", me
+        ).order("last_active_at", desc=True).execute().data or []
+        # Her satıra mevcut oturum işareti ekle
+        current_session_id = session.get("session_record_id")
+        for s in active_sessions:
+            s["is_current"] = (s["id"] == current_session_id)
+    except Exception:
+        active_sessions = []
+
+    return render_template("profile_edit.html", profile=prof.data[0], me=session["user"],
+                           active_sessions=active_sessions)
 
 
 def _daily_counts(rows: list, days: int) -> list[dict]:
@@ -571,3 +586,63 @@ def insights():
                            total_followers=total_followers, total_following=total_following,
                            avg_engagement=avg_engagement, day_of_week_stats=day_of_week_stats,
                            most_active_day=most_active_day)
+
+
+@bp.route("/sessions/<session_id>/revoke", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def revoke_session(session_id):
+    """Belirtilen oturumu sonlandır (uzaktan çıkış).
+
+    GET /sessions/<session_id>/revoke: Sadece POST geçerli.
+    Kendi mevcut oturumunu sonlandırmaya izin VERME (logout routeunu kullan).
+    """
+    from flask import jsonify
+    sb = get_sb()
+    me = _my_id()
+
+    # Satırın bana ait olup olmadığını kontrol et
+    try:
+        row = sb.table("user_sessions").select("user_id").eq("id", session_id).execute()
+        if not row.data or row.data[0]["user_id"] != me:
+            abort(403)
+    except Exception:
+        abort(403)
+
+    # Kendi mevcut oturumunu silmeye çalışıyorsan engelle
+    if session_id == session.get("session_record_id"):
+        return jsonify(error="use_logout"), 400
+
+    # Oturumu sil
+    try:
+        sb.table("user_sessions").delete().eq("id", session_id).execute()
+        return jsonify(ok=True)
+    except Exception:
+        abort(500)
+
+
+@bp.route("/sessions/revoke-others", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def revoke_other_sessions():
+    """Mevcut oturum hariç, tüm aktif oturumları sonlandır.
+
+    Özellikle şifresi çalınmış olabileceği şüphelendiğinde kullanışlı.
+    """
+    from flask import jsonify
+    sb = get_sb()
+    me = _my_id()
+    current_session_id = session.get("session_record_id")
+
+    if not current_session_id:
+        return jsonify(error="no_session"), 400
+
+    try:
+        # Mevcut oturum hariç tümünü sil
+        result = sb.table("user_sessions").delete().eq("user_id", me).neq(
+            "id", current_session_id
+        ).execute()
+        # Silinen satır sayısını say (count yok, status kodundan tahmin)
+        return jsonify(ok=True)
+    except Exception:
+        abort(500)

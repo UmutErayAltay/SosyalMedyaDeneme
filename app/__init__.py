@@ -2,7 +2,7 @@
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
-from flask import Flask, session, request, abort, send_from_directory
+from flask import Flask, session, request, abort, send_from_directory, redirect, url_for
 from .config import Config
 
 # Sabit UTC+3 — Türkiye 2016'dan beri yaz saati uygulamıyor, bu yüzden
@@ -85,14 +85,27 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # --- Presence (last-seen) ---
+    # --- Presence (last-seen) & Session validation ---
     # Her HTTP request'te, oturum açmış kullanıcı "son görülme" zamanını güncelle.
     # Profil/mesaj listesinde online status göstermek için kullanılır.
+    # Aynı zamanda aktif oturumun geçerli olup olmadığını kontrol et (uzaktan
+    # sonlandırılmışsa oturumu düşür).
     @app.before_request
     def update_presence():
         if session.get("user"):
             from .presence import mark_seen
             mark_seen(session["user"]["id"])
+
+            # Oturum kaydını doğrula (uzaktan sonlandırılmışsa logout yap)
+            session_record_id = session.get("session_record_id")
+            if session_record_id:
+                from .user_sessions import touch_session
+                # Auth routeları oturum doğrulamasından muaf (giriş döngüsü olmasın)
+                if request.endpoint and not request.endpoint.startswith("auth."):
+                    if not touch_session(session_record_id):
+                        # Oturum uzaktan sonlandırılmış
+                        session.clear()
+                        return redirect(url_for("auth.login"))
 
     # --- CSRF koruması ---
     # Tüm POST istekleri form alanı (csrf_token) veya header (X-CSRF-Token)

@@ -72,6 +72,13 @@ def _finalize_login(user_id: str, email: str, access_token: str, refresh_token: 
     session["user"]["avatar_url"] = prof_data.get("avatar_url")
     session["user"]["username"] = prof_data.get("username")
     session["user"]["is_admin"] = bool(prof_data.get("is_admin"))
+
+    # Yeni oturum kaydı oluştur (aktif oturumlar takibi için)
+    from .user_sessions import create_session_record
+    session_record_id = create_session_record(get_sb(), user_id)
+    if session_record_id:
+        session["session_record_id"] = session_record_id
+
     return True
 
 
@@ -229,6 +236,12 @@ def login():
 
 @bp.route("/logout")
 def logout():
+    # Oturum kaydını sil (varsa)
+    session_record_id = session.get("session_record_id")
+    if session_record_id:
+        from .user_sessions import delete_session_record
+        delete_session_record(session_record_id)
+
     try:
         get_auth().auth.sign_out()
     except Exception:
