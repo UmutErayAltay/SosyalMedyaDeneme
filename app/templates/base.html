@@ -1,3 +1,4 @@
+{% import "_icons.html" as icons %}
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -80,12 +81,12 @@
                       id="messages-badge" aria-hidden="true">{{ unread_messages or '' }}</span>
             </a>
             {% if me.is_admin %}
-                <a href="{{ url_for('admin.dashboard') }}" aria-label="Admin paneli">🛠️ Admin</a>
+                <a href="{{ url_for('admin.dashboard') }}" aria-label="Admin paneli">{{ icons.icon('tool', size=16) }} Admin</a>
             {% endif %}
             <a href="{{ url_for('notifications.list_notifications') }}" class="nav-bell" id="notif-bell"
                aria-label="Bildirimler{% if unread_notifications %}, {{ unread_notifications }} okunmamış{% endif %}"
                aria-haspopup="dialog">
-                🔔
+                {{ icons.icon('bell', size=20) }}
                 <span class="notif-badge{{ '' if unread_notifications else ' hidden' }}"
                       id="notif-badge" aria-hidden="true">{{ unread_notifications or '' }}</span>
             </a>
@@ -100,7 +101,7 @@
                 Profil
             </a>
             <button class="theme-toggle" id="theme-toggle" aria-label="Karanlık modu aç/kapat" type="button">
-                <span class="icon-sun">☀</span><span class="icon-moon">☾</span>
+                <span class="icon-sun">{{ icons.icon('sun', size=16) }}</span><span class="icon-moon">{{ icons.icon('moon', size=16) }}</span>
             </button>
             <a href="{{ url_for('auth.logout') }}" class="logout" aria-label="Çıkış yap">Çıkış</a>
         </div>
@@ -127,7 +128,7 @@
         <div class="modal">
             <div class="modal-header">
                 <h2 id="share-modal-title">Gönder</h2>
-                <button type="button" class="modal-close" id="close-share-modal" aria-label="Kapat">×</button>
+                <button type="button" class="modal-close" id="close-share-modal" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
             </div>
             <div class="modal-body">
                 <input type="search" id="share-search-input" placeholder="Kişi ara..." autocomplete="off" aria-label="Kişi ara">
@@ -144,11 +145,11 @@
         <div class="modal">
             <div class="modal-header">
                 <h2 id="repost-modal-title">Yeniden Paylaş</h2>
-                <button type="button" class="modal-close" id="close-repost-modal" aria-label="Kapat">×</button>
+                <button type="button" class="modal-close" id="close-repost-modal" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
             </div>
             <div class="modal-body">
                 <textarea id="repost-content-input" placeholder="Alıntına bir şeyler ekle (isteğe bağlı)" rows="3" aria-label="Alıntı metni"></textarea>
-                <button type="button" id="repost-submit-btn" class="btn btn-primary btn-full">🔁 Yeniden Paylaş</button>
+                <button type="button" id="repost-submit-btn" class="btn btn-primary btn-full">{{ icons.icon('repeat', size=16) }} Yeniden Paylaş</button>
             </div>
         </div>
     </div>
@@ -159,7 +160,7 @@
          aria-labelledby="notif-panel-title" hidden>
         <div class="notif-panel-header">
             <h2 id="notif-panel-title">Bildirimler</h2>
-            <button type="button" class="modal-close" id="notif-panel-close" aria-label="Kapat">×</button>
+            <button type="button" class="modal-close" id="notif-panel-close" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
         </div>
         <div class="notif-panel-list" id="notif-panel-list" aria-live="polite">
         </div>
@@ -168,7 +169,7 @@
 
     {# --- Görsel lightbox (feed, post detay, profil medya) — global --- #}
     <div class="modal-overlay lightbox-overlay" id="lightbox" role="dialog" aria-modal="true" aria-label="Görsel büyütme" hidden>
-        <button type="button" class="lightbox-close" id="lightbox-close" aria-label="Kapat">×</button>
+        <button type="button" class="lightbox-close" id="lightbox-close" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
         <button type="button" class="lightbox-nav lightbox-prev" id="lightbox-prev" aria-label="Önceki görsel">‹</button>
         <img src="" alt="" class="lightbox-img" id="lightbox-img">
         <button type="button" class="lightbox-nav lightbox-next" id="lightbox-next" aria-label="Sonraki görsel">›</button>
@@ -176,6 +177,9 @@
     </div>
 
     {# --- Sayfa geçişi ilerleme çubuğu JS --- #}
+    {# icons.js diğer TÜM script'lerden ÖNCE — birçoğu window.ICONS.get(...)
+       kullanıyor (emoji→SVG dönüşümü, bkz. app/templates/_icons.html). #}
+    <script src="{{ url_for('static', filename='js/icons.js') }}"></script>
     <script src="{{ url_for('static', filename='js/pageProgress.js') }}"></script>
     {# --- Dark mode toggle JS (FOUC'suz) --- #}
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>

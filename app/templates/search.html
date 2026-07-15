@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_post_card.html" as pc %}
+{% import "_icons.html" as icons %}
 {% block title %}Arama{% endblock %}
 {% block content %}
 <div class="search-page">
@@ -88,7 +89,7 @@
                    class="username">{{ p.profiles.username if p.profiles else 'Bilinmeyen' }}</a>
                 <span class="time">{{ p.created_at|local_time }}</span>
                 {% if p.visibility == 'followers' %}
-                    <span class="visibility-badge" title="Sadece takipçiler görebilir">🔒</span>
+                    <span class="visibility-badge" title="Sadece takipçiler görebilir">{{ icons.icon('lock', size=12) }}</span>
                 {% endif %}
                 {% if p.edited_at %}
                     <span class="edited-badge muted" title="Düzenlendi">(düzenlendi)</span>
@@ -117,21 +118,21 @@
                         data-reaction="{{ p.my_reaction or '' }}"
                         data-like-url="{{ url_for('social.toggle_like', post_id=p.id) }}"
                         aria-label="{{ 'Reaksiyonunu kaldır' if p.liked_by_me else 'Reaksiyon ekle (basılı tutarak seç)' }}">
-                    <span class="reaction-icon">{{ REACTIONS[p.my_reaction] if p.my_reaction else '👍' }}</span>
+                    <span class="reaction-icon {{ 'is-like-active' if p.liked_by_me and (not p.my_reaction or p.my_reaction == 'like') }}">{% if p.my_reaction and p.my_reaction != 'like' %}{{ REACTIONS[p.my_reaction] }}{% else %}{{ icons.icon('thumbs-up', size=18) }}{% endif %}</span>
                     <span class="like-count">{{ p.like_count or 0 }}</span>
                 </button>
                 <a href="{{ url_for('routes.post_detail', post_id=p.id) }}" class="btn btn-ghost" aria-label="Yorumlar">
-                    💬 {{ p.comment_count or 0 }}
+                    {{ icons.icon('message-circle', size=16) }} {{ p.comment_count or 0 }}
                 </a>
                 <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ p.id }}" aria-haspopup="dialog">
-                    📤 Gönder
+                    {{ icons.icon('send', size=16) }} Gönder
                 </button>
                 <button type="button"
                         class="btn btn-ghost bookmark-btn {{ 'bookmarked' if p.bookmarked_by_me }}"
                         data-bookmarked="{{ '1' if p.bookmarked_by_me else '0' }}"
                         data-bookmark-url="{{ url_for('social.toggle_bookmark', post_id=p.id) }}"
                         aria-label="{{ 'Kaydedilenlerden kaldır' if p.bookmarked_by_me else 'Kaydet' }}">
-                    {{ '🔖' if p.bookmarked_by_me else '📑' }}
+                    {{ icons.icon('bookmark', size=16) }}
                 </button>
             </footer>
         </article>

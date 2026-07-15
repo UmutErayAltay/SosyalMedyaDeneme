@@ -35,10 +35,15 @@ def _reset_rate_limited(ip: str) -> bool:
     return len(attempts) > _RESET_MAX_ATTEMPTS
 
 
-def _check_banned(user_id: str) -> bool:
+def _check_banned(user_id: str, access_token: str = None, refresh_token: str = None) -> bool:
     """Kullanıcı hesabı askıya alınmış mı kontrol et.
 
-    True döndürürse hesap banned, Supabase oturumu temizlenir.
+    True döndürürse hesap banned, bu SPESİFİK oturum (access_token/refresh_token
+    verildiyse) tek kullanımlık bir client ile kapatılır. Paylaşılan get_auth()
+    singleton'ı KULLANILMAZ — o client'ın iç oturum durumu, süreç genelinde AYNI
+    ANDA başka bir cihazın login/logout işlemiyle üzerine yazılabilir (bkz.
+    login()/register() içindeki tek-kullanımlık client deseni, ve bu dosyanın
+    reset_password()'daki aynı riske dair notu).
     """
     try:
         prof = get_sb().table("profiles").select(
@@ -46,10 +51,16 @@ def _check_banned(user_id: str) -> bool:
         ).eq("id", user_id).execute()
         prof_data = prof.data[0] if prof.data else {}
         if prof_data.get("is_banned"):
-            try:
-                get_auth().auth.sign_out()
-            except Exception:
-                pass
+            if access_token:
+                try:
+                    tmp = create_client(
+                        current_app.config["SUPABASE_URL"],
+                        current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+                    )
+                    tmp.auth.set_session(access_token, refresh_token)
+                    tmp.auth.sign_out()
+                except Exception:
+                    pass
             return True
     except Exception:
         pass
@@ -96,11 +107,12 @@ def _save_session(res):
     user = getattr(res, "user", None)
     s = getattr(res, "session", None)
     if user and s and getattr(s, "access_token", None):
+        refresh_token = getattr(s, "refresh_token", None)
         # Ban kontrolü — session kurmadan önce
-        if _check_banned(user.id):
+        if _check_banned(user.id, s.access_token, refresh_token):
             return "banned"
 
-        _finalize_login(user.id, user.email, s.access_token, getattr(s, "refresh_token", None))
+        _finalize_login(user.id, user.email, s.access_token, refresh_token)
         return True
     return False
 
@@ -146,10 +158,17 @@ def register():
             except Exception:
                 pass  # trigger zaten oluşturmuş olabilir
 
-            # 3) Otomatik giriş (sign_in ile geçerli session al)
+            # 3) Otomatik giriş (sign_in ile geçerli session al) — tek
+            # kullanımlık client: paylaşılan get_auth() singleton'ı başka bir
+            # cihazın AYNI ANDA login/logout işlemiyle çakışabilir (bkz.
+            # _check_banned üzerindeki not).
             try:
+                tmp_auth = create_client(
+                    current_app.config["SUPABASE_URL"],
+                    current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+                )
                 login_res = call_with_ssl_retry(
-                    lambda: get_auth().auth.sign_in_with_password({
+                    lambda: tmp_auth.auth.sign_in_with_password({
                         "email": email,
                         "password": password,
                     })
@@ -182,15 +201,23 @@ def login():
             return redirect(url_for("auth.login"))
 
         try:
+            # Tek kullanımlık client: paylaşılan get_auth() singleton'ı, AYNI
+            # ANDA başka bir cihazın login/logout işlemiyle çakışabilir (o
+            # client'ın iç oturum durumu süreç genelinde tek/paylaşılan —
+            # bkz. reset_password()'daki aynı riske dair not ve _check_banned).
+            tmp_auth = create_client(
+                current_app.config["SUPABASE_URL"],
+                current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+            )
             res = call_with_ssl_retry(
-                lambda: get_auth().auth.sign_in_with_password({
+                lambda: tmp_auth.auth.sign_in_with_password({
                     "email": email,
                     "password": password,
                 })
             )
 
             # Ban kontrolü önce
-            if _check_banned(res.user.id):
+            if _check_banned(res.user.id, res.session.access_token, getattr(res.session, "refresh_token", None)):
                 flash("Hesabın askıya alınmış. Bir yöneticiyle iletişime geç.", "error")
                 return redirect(url_for("auth.login"))
 
@@ -328,7 +355,7 @@ def google_complete():
     if not user:
         return jsonify(error="invalid_token"), 401
 
-    if _check_banned(user.id):
+    if _check_banned(user.id, access_token, refresh_token):
         return jsonify(error="banned"), 403
 
     # İlk Google girişi: profiles satırı yoksa oluştur (register'daki
@@ -371,10 +398,22 @@ def logout():
         from .user_sessions import delete_session_record
         delete_session_record(session_record_id)
 
-    try:
-        get_auth().auth.sign_out()
-    except Exception:
-        pass
+    # Tek kullanımlık client, BU cihazın kendi token'larıyla scope'lanır —
+    # paylaşılan get_auth() singleton'ı ile sign_out() çağırmak, o an
+    # başka bir cihazın login'iyle üzerine yazılmış YANLIŞ oturumu kapatabilir
+    # (bkz. _check_banned/login() üzerindeki aynı riske dair not).
+    access_token = session.get("access_token")
+    refresh_token = session.get("refresh_token")
+    if access_token:
+        try:
+            tmp = create_client(
+                current_app.config["SUPABASE_URL"],
+                current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+            )
+            tmp.auth.set_session(access_token, refresh_token)
+            tmp.auth.sign_out()
+        except Exception:
+            pass
     session.clear()
     flash("Çıkış yapıldı.", "success")
     return redirect(url_for("auth.login"))
@@ -444,7 +483,7 @@ def mfa_verify():
             refresh_token = session.pop("mfa_pending_refresh_token")
 
             # Ban kontrolü (double check)
-            if _check_banned(user_id):
+            if _check_banned(user_id, access_token, refresh_token):
                 flash("Hesabın askıya alınmış. Bir yöneticiyle iletişime geç.", "error")
                 return redirect(url_for("auth.login"))
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_icons.html" as icons %}
 {% block title %}Bildirim Tercihleri{% endblock %}
 {% block content %}
 <h1>Bildirim Tercihleri</h1>
@@ -7,7 +8,7 @@
    Anahtar sunucuda yoksa (.env VAPID_PRIVATE_KEY) buton "devre dışı" gösterir —
    feature-flag deseni, GIF/Klipy ile aynı graceful degradation. #}
 <section class="card push-pref-card" aria-label="Anlık bildirimler">
-    <h2>🔔 Anlık Bildirimler (Push)</h2>
+    <h2>{{ icons.icon('bell', size=18) }} Anlık Bildirimler (Push)</h2>
     <p class="muted">Uygulama kapalıyken de bildirim al (tarayıcı izni gerekir).</p>
     <button type="button" class="btn btn-primary" id="push-toggle-btn">Yükleniyor...</button>
     <p class="muted small" id="push-status-text"></p>

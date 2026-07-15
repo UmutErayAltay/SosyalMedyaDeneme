@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_icons.html" as icons %}
 {% block title %}Profili Düzenle{% endblock %}
 {% block content %}
 <div class="auth-card">
@@ -31,7 +32,7 @@
 
         <hr style="margin: 24px 0;">
 
-        <h2 style="font-size: 16px; margin-bottom: 12px;">🔒 Gizlilik</h2>
+        <h2 style="font-size: 16px; margin-bottom: 12px;">{{ icons.icon('lock', size=16) }} Gizlilik</h2>
         <label class="checkbox-label">
             <input type="checkbox" name="is_private" {% if profile.is_private %}checked{% endif %}>
             Gizli hesap
@@ -48,9 +49,9 @@
         <a href="{{ url_for('routes.profile', username=profile.username) }}" class="btn btn-ghost">İptal</a>
     </form>
     <p class="muted" style="margin-top: 16px;">
-        <a href="{{ url_for('close_friends.close_friends_list') }}">💚 Yakın Arkadaşlar</a>
+        <a href="{{ url_for('close_friends.close_friends_list') }}">{{ icons.heart_filled(size=14) }} Yakın Arkadaşlar</a>
         <br>
-        <a href="{{ url_for('blocks.blocked_list') }}">🚫 Engellenen kullanıcılar</a>
+        <a href="{{ url_for('blocks.blocked_list') }}">{{ icons.icon('slash-circle', size=14) }} Engellenen kullanıcılar</a>
     </p>
 
     <hr style="margin: 24px 0;">
@@ -71,7 +72,7 @@
 
     <hr style="margin: 24px 0;">
 
-    <h2 style="font-size: 16px; margin-bottom: 12px;">📱 Aktif Oturumlar</h2>
+    <h2 style="font-size: 16px; margin-bottom: 12px;">{{ icons.icon('smartphone', size=16) }} Aktif Oturumlar</h2>
     <p class="muted">Hesabına giriş yapılmış cihazlar. Tanımadığın bir oturum varsa sonlandır.</p>
 
     {% if active_sessions %}

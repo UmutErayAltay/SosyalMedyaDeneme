@@ -133,7 +133,7 @@
                 + ' alt="Sticker">';
             if (msg.sticker.id) {
                 html += '<button type="button" class="sticker-star-btn" data-sticker-id="'
-                    + escapeHtml(msg.sticker.id) + '" aria-label="Sticker&#39;ı kaydet">⭐</button>';
+                    + escapeHtml(msg.sticker.id) + '" aria-label="Sticker&#39;ı kaydet">' + (window.ICONS ? window.ICONS.get('star', { size: 14 }) : '⭐') + '</button>';
             }
             html += '</div>';
         } else if (msg.image_url) {
@@ -146,7 +146,7 @@
         }
         if (msg.audio_url) {
             html += '<div class="voice-player" data-voice-player>'
-                + '<button type="button" class="voice-play-btn" aria-label="Sesli mesajı oynat">▶</button>'
+                + '<button type="button" class="voice-play-btn" aria-label="Sesli mesajı oynat">' + (window.ICONS ? window.ICONS.get('play', { size: 14 }) : '▶') + '</button>'
                 + '<div class="voice-waveform" aria-hidden="true"></div>'
                 + '<span class="voice-duration">0:00</span>'
                 + '<audio src="' + escapeHtml(msg.audio_url) + '" class="msg-audio" preload="metadata" hidden></audio>'
@@ -163,7 +163,7 @@
         if (isMine) {
             var read = !!msg.read_at;
             html += ' <span class="read-receipt' + (read ? ' read' : '') + '" aria-label="' + (read ? 'Okundu' : 'İletildi') + '">'
-                + (read ? '✓✓' : '✓') + '</span>';
+                + (window.ICONS ? window.ICONS.get(read ? 'check-double' : 'check', { size: 12 }) : (read ? '✓✓' : '✓')) + '</span>';
         }
         html += '</span>';
         // Sunucu render'ındaki tepki tetikleyicisi + picker — bunlar olmadan
@@ -171,7 +171,7 @@
         // msg-react-row: chip'ler + tetik + sil TEK flex satırda (tetik
         // butonu chip eklendikçe alt satıra düşmesin — kullanıcı raporu)
         html += '<div class="msg-react-row">';
-        html += '<button class="msg-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>';
+        html += '<button class="msg-react-trigger" aria-label="Emoji tepkisi ekle" type="button">' + (window.ICONS ? window.ICONS.get('plus', { size: 14 }) : '🙂+') + '</button>';
         html += '<div class="msg-react-picker" hidden>';
         REACT_EMOJIS.forEach(function (em) {
             html += '<button type="button" data-emoji="' + em + '" aria-label="' + em + ' tepkisi">' + em + '</button>';
@@ -180,9 +180,9 @@
         // Sadece kendi mesajım silinebilir/düzenlenebilir (sunucu render'ıyla aynı desen)
         if (isMine) {
             if (msg.content) {
-                html += '<button class="msg-edit-btn" aria-label="Mesajı düzenle" type="button">✏️</button>';
+                html += '<button class="msg-edit-btn" aria-label="Mesajı düzenle" type="button">' + (window.ICONS ? window.ICONS.get('edit-2', { size: 14 }) : '✏️') + '</button>';
             }
-            html += '<button class="msg-delete-btn" aria-label="Mesajı sil" type="button">🗑</button>';
+            html += '<button class="msg-delete-btn" aria-label="Mesajı sil" type="button">' + (window.ICONS ? window.ICONS.get('trash-2', { size: 14 }) : '🗑') + '</button>';
         }
         html += '</div>';
         html += '</div>';
@@ -727,7 +727,7 @@
                 voicePreviewAudio.removeAttribute('src');
                 voiceDiscardBtn.hidden = true;
                 voiceBtn.hidden = false;
-                voiceBtn.textContent = '🎤';
+                voiceBtn.innerHTML = window.ICONS ? window.ICONS.get('mic', { size: 18 }) : '🎤';
                 voiceBtn.classList.remove('recording');
                 recordedVoiceBlob = null;
                 recordedChunks = [];
@@ -761,7 +761,7 @@
                     if (sendAfterStop) {
                         sendAfterStop = false;
                         if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
-                        voiceRecordingStatusText.textContent = '📤 Gönderiliyor...';
+                        voiceRecordingStatusText.innerHTML = (window.ICONS ? window.ICONS.get('corner-up-right', { size: 12 }) : '📤') + ' Gönderiliyor...';
                         sendTyping(false);
                         form.requestSubmit();
                         return;
@@ -782,13 +782,13 @@
                 recordingStartedAt = Date.now();
                 input.hidden = true;
                 voiceRecordingStatus.hidden = false;
-                voiceRecordingStatusText.textContent = '🔴 Kaydediliyor... 0:00';
+                voiceRecordingStatusText.innerHTML = (window.ICONS ? window.ICONS.recordDot({ size: 10 }) : '🔴') + ' Kaydediliyor... 0:00';
                 voiceBtn.textContent = '⏹';
                 voiceBtn.classList.add('recording');
                 startWaveformAnalyser();
                 sendTyping(true, 'voice');
                 recordingTimer = setInterval(function () {
-                    voiceRecordingStatusText.textContent = '🔴 Kaydediliyor... ' + formatElapsed(Date.now() - recordingStartedAt);
+                    voiceRecordingStatusText.innerHTML = (window.ICONS ? window.ICONS.recordDot({ size: 10 }) : '🔴') + ' Kaydediliyor... ' + formatElapsed(Date.now() - recordingStartedAt);
                 }, 500);
             }
 
@@ -1180,7 +1180,7 @@
                     if (!d.ok) return;
                     var isMuted = d.muted;
                     muteToggleBtn.dataset.muted = isMuted ? '1' : '0';
-                    muteToggleBtn.textContent = isMuted ? '🔕' : '🔔';
+                    muteToggleBtn.innerHTML = window.ICONS ? window.ICONS.get(isMuted ? 'bell-off' : 'bell', { size: 16 }) : (isMuted ? '🔕' : '🔔');
                     muteToggleBtn.setAttribute('aria-label', isMuted ? 'Sohbete dön' : 'Sessize al');
                     muteToggleBtn.setAttribute('title', isMuted ? 'Sohbete dön' : 'Sessize al');
                 })
@@ -1330,7 +1330,7 @@
                     if (msg.sender_id === window.ME_ID && msg.read_at) {
                         var receipt = el && el.querySelector('.read-receipt');
                         if (receipt) {
-                            receipt.textContent = '✓✓';
+                            receipt.innerHTML = window.ICONS ? window.ICONS.get('check-double', { size: 12 }) : '✓✓';
                             receipt.classList.add('read');
                             receipt.setAttribute('aria-label', 'Okundu');
                         }
@@ -1855,7 +1855,7 @@
             // Başarı — butonda kısa onay göster, SONRA modalı kapat (onay
             // görünür kalsın; liste her açılışta yeniden kurulduğu için
             // buton metnini geri almak gerekmez)
-            targetBtn.textContent = '✓ İletildi';
+            targetBtn.innerHTML = (window.ICONS ? window.ICONS.get('check', { size: 14 }) : '✓') + ' İletildi';
             window._forwardingMessageId = null;
             setTimeout(closeForwardModal, 800);
         })

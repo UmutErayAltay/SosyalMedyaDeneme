@@ -392,9 +392,16 @@ textarea:focus-visible, select:focus-visible {
 .btn-ghost.danger:hover { background: var(--danger-bg); color: var(--danger); }
 .btn-ghost.liked { background: var(--border); }
 .btn-ghost.bookmarked { background: var(--border); }
+.bookmark-btn.bookmarked svg { fill: currentColor; }
 .btn-danger { background: var(--danger); color: var(--color-white); }
 .btn-danger:hover { filter: brightness(0.9); }
 .reaction-icon { display: inline-block; }
+.reaction-icon svg { display: block; }
+/* "like" reaksiyonu SVG beğen ikonu — nötr durumda çizgi (muted), seçiliyken
+   dolu/mavi (Facebook/Instagram deseni). Diğer reaksiyonlar zaten emoji
+   olduğu için kendi rengini taşıyor, bu kural sadece SVG'yi etkiler. */
+.reaction-icon svg { color: var(--muted); }
+.reaction-icon.is-like-active svg { color: var(--primary); fill: var(--primary); }
 
 /* Emoji reaksiyon seçici popup (basılı tutunca açılır — likes.js) */
 .reaction-picker {
@@ -625,6 +632,9 @@ label input { margin-top: 6px; }
 .comment-list .card { padding: 12px 16px; }
 .comment-actions { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .comment-like-btn.liked { color: var(--danger); }
+.comment-heart-icon { display: inline-flex; vertical-align: middle; }
+.comment-heart-icon svg { display: block; }
+.comment-like-btn.liked .comment-heart-icon svg { fill: var(--danger); }
 .reply-form[hidden] { display: none; }
 /* reply-form'un display/gap/textarea kuralları composer-comment ile birlikte
    aşağıda tanımlı (kullanıcı isteğiyle mesaj composer'ıyla aynı tek satırlık

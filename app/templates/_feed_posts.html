@@ -5,10 +5,11 @@
    valid_usernames bekler. Boş liste mesajı BİLEREK burada değil feed.html'de —
    2. sayfa boş dönerse akışa "Henüz post yok" eklenmemeli. #}
 {% import "_post_card.html" as pc %}
+{% import "_icons.html" as icons %}
 {% for p in posts %}
 {% if trending_tags is defined and trending_tags and loop.index == 10 %}
 <div class="card feed-interleave-card">
-    <h2>🔥 Gündemde</h2>
+    <h2>{{ icons.icon('zap', size=18) }} Gündemde</h2>
     <div class="feed-interleave-tags">
     {% for t in trending_tags[:4] %}<a href="{{ url_for('hashtags.hashtag_posts', tag=t.tag) }}" class="trending-tag">#{{ t.tag }}</a>{% endfor %}
     </div>
@@ -22,7 +23,7 @@
    butonu yok, çok saçma duruyor"). #}
 {% if suggested_users is defined and suggested_users and loop.index == 5 %}
 <div class="card feed-interleave-card">
-    <h2>👥 Önerilen Kişiler</h2>
+    <h2>{{ icons.icon('users', size=18) }} Önerilen Kişiler</h2>
     <div class="feed-interleave-users">
     {% for u in suggested_users[:5] %}
         <div class="feed-interleave-user-card">
@@ -55,19 +56,19 @@
         <span class="time">{{ p.created_at|local_time }}</span>
         {% if p.location_name %}
             {% if p.location_lat and p.location_lng %}
-                <a class="post-location muted" href="https://www.openstreetmap.org/?mlat={{ p.location_lat }}&mlon={{ p.location_lng }}&zoom=15" target="_blank" rel="noopener">📍 {{ p.location_name }}</a>
+                <a class="post-location muted" href="https://www.openstreetmap.org/?mlat={{ p.location_lat }}&mlon={{ p.location_lng }}&zoom=15" target="_blank" rel="noopener">{{ icons.icon('pin', size=12) }} {{ p.location_name }}</a>
             {% else %}
-                <span class="post-location muted">📍 {{ p.location_name }}</span>
+                <span class="post-location muted">{{ icons.icon('pin', size=12) }} {{ p.location_name }}</span>
             {% endif %}
         {% endif %}
         {% if p.visibility == 'followers' %}
-            <span class="visibility-badge" title="Sadece takipçiler görebilir">🔒</span>
+            <span class="visibility-badge" title="Sadece takipçiler görebilir">{{ icons.icon('lock', size=12) }}</span>
         {% endif %}
         {% if p.edited_at %}
             <span class="edited-badge muted" title="Düzenlendi">(düzenlendi)</span>
         {% endif %}
     </header>
-    {% if p.repost_of %}<p class="repost-label muted">🔁 yeniden paylaştı</p>{% endif %}
+    {% if p.repost_of %}<p class="repost-label muted">{{ icons.icon('repeat', size=12) }} yeniden paylaştı</p>{% endif %}
     <p class="post-content">{{ p.content|linkify_hashtags|linkify_mentions(valid_usernames) }}</p>
     {{ pc.poll_widget(p) }}
 
@@ -104,7 +105,7 @@
         {% elif p.repost_of.image_url %}
             <img src="{{ p.repost_of.image_url }}" class="repost-embed-image" alt="Görseli" loading="lazy">
         {% elif p.repost_of.video_url %}
-            <p class="muted small">🎬 Video içeriği</p>
+            <p class="muted small">{{ icons.icon('video', size=14) }} Video içeriği</p>
         {% endif %}
     </div>
     {% endif %}
@@ -116,37 +117,37 @@
                 data-reaction="{{ p.my_reaction or '' }}"
                 data-like-url="{{ url_for('social.toggle_like', post_id=p.id) }}"
                 aria-label="{{ 'Reaksiyonunu kaldır' if p.liked_by_me else 'Reaksiyon ekle (basılı tutarak seç)' }}">
-            <span class="reaction-icon">{{ REACTIONS[p.my_reaction] if p.my_reaction else '👍' }}</span>
+            <span class="reaction-icon {{ 'is-like-active' if p.liked_by_me and (not p.my_reaction or p.my_reaction == 'like') }}">{% if p.my_reaction and p.my_reaction != 'like' %}{{ REACTIONS[p.my_reaction] }}{% else %}{{ icons.icon('thumbs-up', size=18) }}{% endif %}</span>
             <span class="like-count">{{ p.like_count or 0 }}</span>
         </button>
 
         <a href="{{ url_for('routes.post_detail', post_id=p.id) }}" class="btn btn-ghost" aria-label="Yorumlar">
-            💬 {{ p.comment_count or 0 }}
+            {{ icons.icon('message-circle', size=16) }} {{ p.comment_count or 0 }}
         </a>
 
         <button type="button" class="btn btn-ghost repost-btn" data-post-id="{{ p.id }}" aria-haspopup="dialog" aria-label="Yeniden paylaş">
-            🔁
+            {{ icons.icon('repeat', size=16) }}
         </button>
 
         <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ p.id }}" aria-haspopup="dialog" aria-label="Gönder">
-            📤 <span class="share-btn-label">Gönder</span>
+            {{ icons.icon('send', size=16) }} <span class="share-btn-label">Gönder</span>
         </button>
         <button type="button"
                 class="btn btn-ghost bookmark-btn {{ 'bookmarked' if p.bookmarked_by_me }}"
                 data-bookmarked="{{ '1' if p.bookmarked_by_me else '0' }}"
                 data-bookmark-url="{{ url_for('social.toggle_bookmark', post_id=p.id) }}"
                 aria-label="{{ 'Kaydedilenlerden kaldır' if p.bookmarked_by_me else 'Kaydet' }}">
-            {{ '🔖' if p.bookmarked_by_me else '📑' }}
+            {{ icons.icon('bookmark', size=16) }}
         </button>
         {% if me and p.user_id == me.id %}
             <div class="post-more-wrap">
-                <button type="button" class="btn btn-ghost post-more-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Daha fazla seçenek">⋯</button>
+                <button type="button" class="btn btn-ghost post-more-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Daha fazla seçenek">{{ icons.icon('more-horizontal', size=16) }}</button>
                 <div class="post-more-menu" role="menu" hidden>
-                    <a href="{{ url_for('routes.edit_post', post_id=p.id) }}" class="post-more-item" role="menuitem">✏️ Düzenle</a>
+                    <a href="{{ url_for('routes.edit_post', post_id=p.id) }}" class="post-more-item" role="menuitem">{{ icons.icon('edit-2', size=14) }} Düzenle</a>
                     <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
                         data-confirm="Bu postu silmek istiyor musun?">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="post-more-item danger" role="menuitem">🗑 Sil</button>
+                        <button type="submit" class="post-more-item danger" role="menuitem">{{ icons.icon('trash-2', size=14) }} Sil</button>
                     </form>
                 </div>
             </div>
@@ -156,7 +157,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="target_type" value="post">
                 <input type="hidden" name="target_id" value="{{ p.id }}">
-                <button type="submit" class="btn btn-ghost" aria-label="Postu şikayet et">🚩</button>
+                <button type="submit" class="btn btn-ghost" aria-label="Postu şikayet et">{{ icons.icon('flag', size=16) }}</button>
             </form>
         {% endif %}
     </footer>

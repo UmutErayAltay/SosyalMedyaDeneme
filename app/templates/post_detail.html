@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_post_card.html" as pc %}
+{% import "_icons.html" as icons %}
 {% import "_profile_summary_card.html" as psc %}
 {% import "_sidebar_cards.html" as sc %}
 {% set author = post.profiles.username if post.profiles else 'Bilinmeyen' %}
@@ -45,19 +46,19 @@
         <span class="time">{{ post.created_at|local_time }}</span>
         {% if post.location_name %}
             {% if post.location_lat and post.location_lng %}
-                <a class="post-location muted" href="https://www.openstreetmap.org/?mlat={{ post.location_lat }}&mlon={{ post.location_lng }}&zoom=15" target="_blank" rel="noopener">📍 {{ post.location_name }}</a>
+                <a class="post-location muted" href="https://www.openstreetmap.org/?mlat={{ post.location_lat }}&mlon={{ post.location_lng }}&zoom=15" target="_blank" rel="noopener">{{ icons.icon('pin', size=12) }} {{ post.location_name }}</a>
             {% else %}
-                <span class="post-location muted">📍 {{ post.location_name }}</span>
+                <span class="post-location muted">{{ icons.icon('pin', size=12) }} {{ post.location_name }}</span>
             {% endif %}
         {% endif %}
         {% if post.visibility == 'followers' %}
-            <span class="visibility-badge" title="Sadece takipçiler görebilir">🔒</span>
+            <span class="visibility-badge" title="Sadece takipçiler görebilir">{{ icons.icon('lock', size=12) }}</span>
         {% endif %}
         {% if post.edited_at %}
             <span class="edited-badge muted" title="Düzenlendi">(düzenlendi)</span>
         {% endif %}
     </header>
-    {% if post.repost_of %}<p class="repost-label muted">🔁 yeniden paylaştı</p>{% endif %}
+    {% if post.repost_of %}<p class="repost-label muted">{{ icons.icon('repeat', size=12) }} yeniden paylaştı</p>{% endif %}
     <p class="post-content">{{ post.content|linkify_hashtags|linkify_mentions(valid_usernames) }}</p>
     {{ pc.poll_widget(post) }}
 
@@ -93,7 +94,7 @@
         {% elif post.repost_of.image_url %}
             <img src="{{ post.repost_of.image_url }}" class="repost-embed-image" alt="Görseli" loading="lazy">
         {% elif post.repost_of.video_url %}
-            <p class="muted small">🎬 Video içeriği</p>
+            <p class="muted small">{{ icons.icon('video', size=14) }} Video içeriği</p>
         {% endif %}
     </div>
     {% endif %}
@@ -105,29 +106,29 @@
             data-reaction="{{ post.my_reaction or '' }}"
             data-like-url="{{ url_for('social.toggle_like', post_id=post.id) }}"
             aria-label="{{ 'Reaksiyonunu kaldır' if post.liked_by_me else 'Reaksiyon ekle (basılı tutarak seç)' }}">
-        <span class="reaction-icon">{{ REACTIONS[post.my_reaction] if post.my_reaction else '👍' }}</span>
+        <span class="reaction-icon {{ 'is-like-active' if post.liked_by_me and (not post.my_reaction or post.my_reaction == 'like') }}">{% if post.my_reaction and post.my_reaction != 'like' %}{{ REACTIONS[post.my_reaction] }}{% else %}{{ icons.icon('thumbs-up', size=18) }}{% endif %}</span>
         <span class="like-count">{{ post.like_count or 0 }}</span>
     </button>
     
     <button type="button" class="btn btn-ghost repost-btn" data-post-id="{{ post.id }}" aria-haspopup="dialog" aria-label="Yeniden paylaş">
-        🔁
+        {{ icons.icon('repeat', size=16) }}
     </button>
 
     {# YENİ: Paylaş Modalı Tetikleyici Buton (Düzeltildi) #}
     <button type="button" class="btn btn-ghost share-post-btn" data-post-id="{{ post.id }}" aria-haspopup="dialog" aria-label="Gönder">
-        📤 <span class="share-btn-label">Gönder</span>
+        {{ icons.icon('send', size=16) }} <span class="share-btn-label">Gönder</span>
     </button>
     <button type="button"
             class="btn btn-ghost bookmark-btn {{ 'bookmarked' if post.bookmarked_by_me }}"
             data-bookmarked="{{ '1' if post.bookmarked_by_me else '0' }}"
             data-bookmark-url="{{ url_for('social.toggle_bookmark', post_id=post.id) }}"
             aria-label="{{ 'Kaydedilenlerden kaldır' if post.bookmarked_by_me else 'Kaydet' }}">
-        {{ '🔖' if post.bookmarked_by_me else '📑' }}
+        {{ icons.icon('bookmark', size=16) }}
     </button>
     {% if me and post.user_id == me.id %}
-        <a href="{{ url_for('routes.edit_post', post_id=post.id) }}" class="btn btn-ghost" aria-label="Postu düzenle">✏️ Düzenle</a>
+        <a href="{{ url_for('routes.edit_post', post_id=post.id) }}" class="btn btn-ghost" aria-label="Postu düzenle">{{ icons.icon('edit-2', size=14) }} Düzenle</a>
         {% if view_count is not none %}
-            <span class="view-count muted" title="Görüntülenme sayısı">👁️ {{ view_count }}</span>
+            <span class="view-count muted" title="Görüntülenme sayısı">{{ icons.icon('eye', size=14) }} {{ view_count }}</span>
         {% endif %}
     {% endif %}
 </footer>
@@ -196,7 +197,7 @@
         {% if c.sticker %}
         <div class="sticker-wrap">
             <img src="{{ c.sticker.image_url }}" class="sticker-rendered comment-sticker" data-sticker-id="{{ c.sticker.id }}" alt="Sticker" loading="lazy">
-            <button type="button" class="sticker-star-btn" data-sticker-id="{{ c.sticker.id }}" aria-label="Sticker'ı kaydet">⭐</button>
+            <button type="button" class="sticker-star-btn" data-sticker-id="{{ c.sticker.id }}" aria-label="Sticker'ı kaydet">{{ icons.icon('star', size=14) }}</button>
         </div>
         {% endif %}
         {% if c.gif_url %}
@@ -209,7 +210,7 @@
                     data-liked="{{ '1' if c.liked_by_me else '0' }}"
                     data-like-url="{{ url_for('social.toggle_comment_like', comment_id=c.id) }}"
                     aria-label="Yorumu beğen">
-                ♥ <span class="like-count">{{ c.like_count or 0 }}</span>
+                <span class="comment-heart-icon">{{ icons.icon('heart', size=14) }}</span> <span class="like-count">{{ c.like_count or 0 }}</span>
             </button>
             <button type="button" class="btn btn-ghost small reply-toggle"
                     data-comment-id="{{ c.id }}" aria-label="Yanıtla">Yanıtla</button>
@@ -225,7 +226,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="target_type" value="comment">
                 <input type="hidden" name="target_id" value="{{ c.id }}">
-                <button type="submit" class="btn btn-ghost" aria-label="Yorumu şikayet et">🚩</button>
+                <button type="submit" class="btn btn-ghost" aria-label="Yorumu şikayet et">{{ icons.icon('flag', size=16) }}</button>
             </form>
             {% endif %}
             <div class="comment-react-wrap" data-react-url="{{ url_for('social.react_comment', comment_id=c.id) }}">
@@ -240,7 +241,7 @@
                     {% endfor %}
                 </div>
                 {% endif %}
-                <button class="comment-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>
+                <button class="comment-react-trigger" aria-label="Emoji tepkisi ekle" type="button">{{ icons.icon('plus', size=14) }}</button>
                 <div class="comment-react-picker" hidden>
                     <button type="button" data-emoji="❤️" aria-label="Kalp tepkisi">❤️</button>
                     <button type="button" data-emoji="😂" aria-label="Gül tepkisi">😂</button>
@@ -301,7 +302,7 @@
                 {% if r.sticker %}
                 <div class="sticker-wrap">
                     <img src="{{ r.sticker.image_url }}" class="sticker-rendered comment-sticker" data-sticker-id="{{ r.sticker.id }}" alt="Sticker" loading="lazy">
-                    <button type="button" class="sticker-star-btn" data-sticker-id="{{ r.sticker.id }}" aria-label="Sticker'ı kaydet">⭐</button>
+                    <button type="button" class="sticker-star-btn" data-sticker-id="{{ r.sticker.id }}" aria-label="Sticker'ı kaydet">{{ icons.icon('star', size=14) }}</button>
                 </div>
                 {% endif %}
                 {% if r.gif_url %}
@@ -314,7 +315,7 @@
                             data-liked="{{ '1' if r.liked_by_me else '0' }}"
                             data-like-url="{{ url_for('social.toggle_comment_like', comment_id=r.id) }}"
                             aria-label="Yorumu beğen">
-                        ♥ <span class="like-count">{{ r.like_count or 0 }}</span>
+                        <span class="comment-heart-icon">{{ icons.icon('heart', size=14) }}</span> <span class="like-count">{{ r.like_count or 0 }}</span>
                     </button>
                     {% if me and r.user_id == me.id %}
                     <form action="{{ url_for('social.delete_comment', comment_id=r.id) }}" method="post"
@@ -328,7 +329,7 @@
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="target_type" value="comment">
                         <input type="hidden" name="target_id" value="{{ r.id }}">
-                        <button type="submit" class="btn btn-ghost" aria-label="Yanıtı şikayet et">🚩</button>
+                        <button type="submit" class="btn btn-ghost" aria-label="Yanıtı şikayet et">{{ icons.icon('flag', size=16) }}</button>
                     </form>
                     {% endif %}
                     <div class="comment-react-wrap" data-react-url="{{ url_for('social.react_comment', comment_id=r.id) }}">
@@ -343,7 +344,7 @@
                             {% endfor %}
                         </div>
                         {% endif %}
-                        <button class="comment-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>
+                        <button class="comment-react-trigger" aria-label="Emoji tepkisi ekle" type="button">{{ icons.icon('plus', size=14) }}</button>
                         <div class="comment-react-picker" hidden>
                             <button type="button" data-emoji="❤️" aria-label="Kalp tepkisi">❤️</button>
                             <button type="button" data-emoji="😂" aria-label="Gül tepkisi">😂</button>

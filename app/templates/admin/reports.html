@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% import "_icons.html" as icons %}
 {% block title %}Şikayetler — Admin{% endblock %}
 {% block content %}
-<h1>🛠️ Admin Paneli</h1>
+<h1>{{ icons.icon('tool', size=22) }} Admin Paneli</h1>
 
 <nav class="admin-nav">
     <a href="{{ url_for('admin.dashboard') }}" class="btn btn-ghost">Genel Bakış</a>
@@ -19,7 +20,7 @@
 {% for r in reports %}
 <article class="card admin-report-card">
     <header class="admin-report-header">
-        <span class="admin-report-type">{{ {'post': '📝 Post', 'comment': '💬 Yorum', 'user': '👤 Kullanıcı'}[r.target_type] }}</span>
+        <span class="admin-report-type">{{ icons.icon({'post': 'file-text', 'comment': 'message-circle', 'user': 'user'}[r.target_type], size=14) }} {{ {'post': 'Post', 'comment': 'Yorum', 'user': 'Kullanıcı'}[r.target_type] }}</span>
         <span class="muted">{{ r.created_at|local_time }}</span>
         <span class="admin-status-badge admin-status-{{ r.status }}">{{ r.status }}</span>
     </header>
@@ -51,19 +52,19 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="status" value="reviewed">
             <input type="hidden" name="current_status" value="{{ status }}">
-            <button type="submit" class="btn btn-ghost">✓ İncelendi işaretle</button>
+            <button type="submit" class="btn btn-ghost">{{ icons.icon('check', size=14) }} İncelendi işaretle</button>
         </form>
         <form action="{{ url_for('admin.resolve_report', report_id=r.id) }}" method="post" class="inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="status" value="dismissed">
             <input type="hidden" name="current_status" value="{{ status }}">
-            <button type="submit" class="btn btn-ghost">✕ Reddet</button>
+            <button type="submit" class="btn btn-ghost">{{ icons.icon('x', size=14) }} Reddet</button>
         </form>
         {% if r.target_type in ('post', 'comment') and r.target %}
         <form action="{{ url_for('admin.delete_report_target', report_id=r.id) }}" method="post" class="inline"
               data-confirm="Bu içeriği kalıcı olarak silmek istiyor musun?">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-ghost danger">🗑 İçeriği sil</button>
+            <button type="submit" class="btn btn-ghost danger">{{ icons.icon('trash-2', size=14) }} İçeriği sil</button>
         </form>
         {% endif %}
     </footer>

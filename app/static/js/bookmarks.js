@@ -50,8 +50,10 @@
 
             var wasBookmarked = true;
             btn.dataset.bookmarked = '0';
+            // İkon şekli sabit (bookmark), dolu/boş hâli sadece .bookmarked
+            // class'ıyla CSS üzerinden yönetiliyor — textContent atamasına
+            // gerek yok (öncesinde SVG'yi silip düz emoji metnine çeviriyordu).
             btn.classList.toggle('bookmarked', false);
-            btn.textContent = '📑';
             btn.dataset.busy = '1';
 
             try {
@@ -68,12 +70,10 @@
                 var data = await res.json();
                 btn.dataset.bookmarked = data.bookmarked ? '1' : '0';
                 btn.classList.toggle('bookmarked', data.bookmarked);
-                btn.textContent = data.bookmarked ? '🔖' : '📑';
                 btn.setAttribute('aria-label', data.bookmarked ? 'Kaydedilenlerden kaldır' : 'Kaydet');
             } catch (err) {
                 btn.dataset.bookmarked = wasBookmarked ? '1' : '0';
                 btn.classList.toggle('bookmarked', wasBookmarked);
-                btn.textContent = wasBookmarked ? '🔖' : '📑';
                 console.error('Kaydetme güncellenemedi:', err);
             } finally {
                 btn.dataset.busy = '0';
@@ -92,7 +92,7 @@
         popover.className = 'bookmark-picker';
         popover.setAttribute('role', 'menu');
 
-        var html = '<button type="button" class="bookmark-picker-item" role="menuitem" data-collection-id="">📁 Genel</button>';
+        var html = '<button type="button" class="bookmark-picker-item" role="menuitem" data-collection-id="">' + (window.ICONS ? window.ICONS.get('folder', { size: 14 }) : '📁') + ' Genel</button>';
         collections.forEach(function (col) {
             html += '<button type="button" class="bookmark-picker-item" role="menuitem" data-collection-id="' + col.id + '">' + escapeHtml(col.name) + '</button>';
         });
@@ -130,7 +130,6 @@
                     var resData = await res.json();
                     btn.dataset.bookmarked = resData.bookmarked ? '1' : '0';
                     btn.classList.toggle('bookmarked', resData.bookmarked);
-                    btn.textContent = resData.bookmarked ? '🔖' : '📑';
                     btn.setAttribute('aria-label', resData.bookmarked ? 'Kaydedilenlerden kaldır' : 'Kaydet');
                     closePopover();
                 } catch (err) {
@@ -191,7 +190,6 @@
                         var resData2 = await res2.json();
                         btn.dataset.bookmarked = resData2.bookmarked ? '1' : '0';
                         btn.classList.toggle('bookmarked', resData2.bookmarked);
-                        btn.textContent = resData2.bookmarked ? '🔖' : '📑';
                         btn.setAttribute('aria-label', resData2.bookmarked ? 'Kaydedilenlerden kaldır' : 'Kaydet');
                         closePopover();
                     } catch (err) {

@@ -60,7 +60,7 @@
                 var wrap = document.createElement('div');
                 wrap.className = 'voice-player';
                 wrap.dataset.voicePlayer = '';
-                wrap.innerHTML = '<button type="button" class="voice-play-btn" aria-label="Sesli mesajı oynat">▶</button>'
+                wrap.innerHTML = '<button type="button" class="voice-play-btn" aria-label="Sesli mesajı oynat">' + (window.ICONS ? window.ICONS.get('play', { size: 14 }) : '▶') + '</button>'
                     + '<div class="voice-waveform" aria-hidden="true"></div>'
                     + '<span class="voice-duration">0:00</span>'
                     + '<audio src="' + m.url + '" class="msg-audio" preload="metadata" hidden></audio>';

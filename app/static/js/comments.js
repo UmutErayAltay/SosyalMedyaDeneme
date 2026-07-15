@@ -48,7 +48,7 @@
     // reaksiyon listesiyle başlar (yeni yorumda henüz kimse tepki vermemiştir).
     function buildReactWrapHtml(commentId) {
         return '<div class="comment-react-wrap" data-react-url="/social/comment/' + commentId + '/react">' +
-            '<button class="comment-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>' +
+            '<button class="comment-react-trigger" aria-label="Emoji tepkisi ekle" type="button">' + (window.ICONS ? window.ICONS.get('plus', { size: 14 }) : '🙂+') + '</button>' +
             '<div class="comment-react-picker" hidden>' +
             '<button type="button" data-emoji="❤️" aria-label="Kalp tepkisi">❤️</button>' +
             '<button type="button" data-emoji="😂" aria-label="Gül tepkisi">😂</button>' +
@@ -207,7 +207,7 @@
                     if (imgUrl) {
                         mediaHtml = '<div class="sticker-wrap">' +
                             '<img src="' + escapeHtml(imgUrl) + '" class="sticker-rendered comment-sticker" data-sticker-id="' + escapeHtml(stickerVal) + '" alt="Sticker" loading="lazy">' +
-                            '<button type="button" class="sticker-star-btn" data-sticker-id="' + escapeHtml(stickerVal) + '" aria-label="Sticker\'ı kaydet">⭐</button>' +
+                            '<button type="button" class="sticker-star-btn" data-sticker-id="' + escapeHtml(stickerVal) + '" aria-label="Sticker\'ı kaydet">' + (window.ICONS ? window.ICONS.get('star', { size: 14 }) : '⭐') + '</button>' +
                             '</div>';
                     }
                 } else if (gifVal) {
@@ -429,7 +429,7 @@
                 if (imgUrl) {
                     mediaHtml = '<div class="sticker-wrap">' +
                         '<img src="' + escapeHtml(imgUrl) + '" class="sticker-rendered comment-sticker" data-sticker-id="' + escapeHtml(replyStickerVal) + '" alt="Sticker" loading="lazy">' +
-                        '<button type="button" class="sticker-star-btn" data-sticker-id="' + escapeHtml(replyStickerVal) + '" aria-label="Sticker\'ı kaydet">⭐</button>' +
+                        '<button type="button" class="sticker-star-btn" data-sticker-id="' + escapeHtml(replyStickerVal) + '" aria-label="Sticker\'ı kaydet">' + (window.ICONS ? window.ICONS.get('star', { size: 14 }) : '⭐') + '</button>' +
                         '</div>';
                 }
             } else if (replyGifVal) {
@@ -438,7 +438,8 @@
             replyArticle.innerHTML = buildCommentHtml(data, content) + mediaHtml +
                 '<div class="comment-actions">' +
                 '<button type="button" class="btn btn-ghost small comment-like-btn" data-liked="0" ' +
-                'data-like-url="/social/comment/like/' + data.id + '">♥ <span class="like-count">0</span></button>' +
+                'data-like-url="/social/comment/like/' + data.id + '"><span class="comment-heart-icon">' +
+                (window.ICONS ? window.ICONS.get('heart', { size: 14 }) : '♥') + '</span> <span class="like-count">0</span></button>' +
                 buildReactWrapHtml(data.id) +
                 '</div>';
             repliesDiv.appendChild(replyArticle);

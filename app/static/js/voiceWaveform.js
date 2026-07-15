@@ -113,11 +113,11 @@
         });
 
         audio.addEventListener('play', function () {
-            playBtn.textContent = '⏸';
+            playBtn.innerHTML = window.ICONS ? window.ICONS.get('pause', { size: 14 }) : '⏸';
             playBtn.setAttribute('aria-label', 'Sesli mesajı duraklat');
         });
         audio.addEventListener('pause', function () {
-            playBtn.textContent = '▶';
+            playBtn.innerHTML = window.ICONS ? window.ICONS.get('play', { size: 14 }) : '▶';
             playBtn.setAttribute('aria-label', 'Sesli mesajı oynat');
         });
         audio.addEventListener('ended', function () {

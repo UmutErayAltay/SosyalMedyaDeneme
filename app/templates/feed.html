@@ -2,6 +2,7 @@
 {% import "_post_card.html" as pc %}
 {% import "_profile_summary_card.html" as psc %}
 {% import "_sidebar_cards.html" as sc %}
+{% import "_icons.html" as icons %}
 {% block title %}Akış{% endblock %}
 {% block container_class %}feed-page{% endblock %}
 {% block content %}
@@ -26,7 +27,7 @@
     {# Sekmeli akış: Akış | Keşfet #}
     <nav class="feed-tabs" aria-label="Akış sekmeleri">
         <a href="{{ url_for('routes.feed') }}" class="feed-tab active" aria-current="page">Akış</a>
-        <a href="{{ url_for('routes.discover') }}" class="feed-tab">🧭 Keşfet</a>
+        <a href="{{ url_for('routes.discover') }}" class="feed-tab">{{ icons.icon('compass', size=16) }} Keşfet</a>
     </nav>
 
     {# Hikaye çubuğu: 24 saatte kaybolan ephemeral paylaşımlar — sadece
@@ -59,7 +60,7 @@
 
     {% if memories %}
     <section class="card memories-card" aria-label="Bugün ne oldu">
-        <h2>📅 Bugün Ne Oldu</h2>
+        <h2>{{ icons.icon('calendar', size=18) }} Bugün Ne Oldu</h2>
         {% for m in memories %}
         <a href="{{ url_for('routes.post_detail', post_id=m.id) }}" class="memory-item">
             {% if m.image_url %}
@@ -68,7 +69,7 @@
             <div class="memory-text">
                 <span class="muted">{{ m.years_ago }} yıl önce bugün</span>
                 <p>{{ (m.content or 'Görsel/video gönderisi')[:100] }}</p>
-                <span class="muted">👍 {{ m.like_count }} · 💬 {{ m.comment_count }}</span>
+                <span class="muted">{{ icons.icon('thumbs-up', size=14) }} {{ m.like_count }} · {{ icons.icon('message-circle', size=14) }} {{ m.comment_count }}</span>
             </div>
         </a>
         {% endfor %}
@@ -89,7 +90,7 @@
         {# Akış zayıfsa (5'ten az post — backend kararı) keşfet önerileri:
            "if not posts" İÇİNE gömülmemeli, 1-4 postta da görünmeli. #}
         {% if explore_suggestions %}
-        <h2 class="explore-suggestions-title">✨ Şunlar ilgini çekebilir</h2>
+        <h2 class="explore-suggestions-title">{{ icons.icon('star', size=18) }} Şunlar ilgini çekebilir</h2>
         {% for p in explore_suggestions %}
             {{ pc.post_card(p, p.profiles.username if p.profiles else 'Bilinmeyen', p.profiles.avatar_url if p.profiles else none, false) }}
         {% endfor %}
@@ -131,7 +132,7 @@
    üstünde tam genişlikte bir "Post Paylaş" çubuğuydu, artık Twitter/Material
    Design tarzı tek bir yuvarlak buton. #}
 <button type="button" class="fab-post-btn" id="open-post-modal" aria-haspopup="dialog" aria-label="Post paylaş">
-    ✏️
+    {{ icons.icon('edit-2', size=20) }}
 </button>
 
 {# --- Post Paylaşma Modalı --- #}
@@ -139,7 +140,7 @@
     <div class="modal">
         <div class="modal-header">
             <h2 id="post-modal-title">Post Paylaş</h2>
-            <button type="button" class="modal-close" id="close-post-modal" aria-label="Kapat">×</button>
+            <button type="button" class="modal-close" id="close-post-modal" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
         </div>
         <form action="{{ url_for('routes.create_post') }}" method="post" enctype="multipart/form-data" class="modal-body">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -173,8 +174,8 @@
 
             {# Konum rozeti #}
             <div id="location-badge-wrap" class="location-badge-wrap" hidden>
-                <span class="location-badge">📍 <span id="location-name-display"></span></span>
-                <button type="button" class="btn btn-ghost small" id="location-remove-btn">×</button>
+                <span class="location-badge">{{ icons.icon('pin', size=12) }} <span id="location-name-display"></span></span>
+                <button type="button" class="btn btn-ghost small" id="location-remove-btn">{{ icons.icon('x', size=14) }}</button>
             </div>
 
             {# Gizli input'lar (planlama, GIF, konum) #}
@@ -193,26 +194,26 @@
             <div class="composer-toolbar">
                 <div class="attach-menu-wrap">
                     <button type="button" class="attach-menu-btn" id="attach-menu-btn"
-                            aria-haspopup="true" aria-expanded="false" aria-label="Ekle">⋯</button>
+                            aria-haspopup="true" aria-expanded="false" aria-label="Ekle">{{ icons.icon('more-horizontal', size=16) }}</button>
                     <div class="attach-menu" id="attach-menu" role="menu" hidden>
                         <label class="attach-menu-item" for="post-image-input" role="menuitem">
-                            📷 Görsel Ekle
+                            {{ icons.icon('image', size=14) }} Görsel Ekle
                             <input type="file" name="images" accept="image/png,image/jpeg,image/gif,image/webp"
                                    multiple hidden id="post-image-input">
                         </label>
                         <label class="attach-menu-item" for="post-video-input" role="menuitem">
-                            🎥 Video Ekle
+                            {{ icons.icon('video', size=14) }} Video Ekle
                             <input type="file" name="video" accept="video/mp4,video/webm,video/quicktime"
                                    hidden id="post-video-input">
                         </label>
                         <button type="button" class="attach-menu-item" id="poll-toggle-btn" role="menuitem">
-                            📊 Anket Ekle
+                            {{ icons.icon('bar-chart-2', size=14) }} Anket Ekle
                         </button>
                         <button type="button" class="attach-menu-item" id="gif-toggle-btn" role="menuitem">
-                            🎬 GIF Ekle
+                            {{ icons.icon('film', size=14) }} GIF Ekle
                         </button>
                         <button type="button" class="attach-menu-item" id="location-toggle-btn" role="menuitem">
-                            📍 Konum Ekle
+                            {{ icons.icon('pin', size=14) }} Konum Ekle
                         </button>
                     </div>
                 </div>
@@ -233,7 +234,7 @@
             </div>
 
             <button type="submit" name="action" value="publish" class="btn btn-primary btn-full">Paylaş</button>
-            <button type="button" class="btn btn-ghost btn-full" id="schedule-modal-btn">🕒 Planla</button>
+            <button type="button" class="btn btn-ghost btn-full" id="schedule-modal-btn">{{ icons.icon('clock', size=16) }} Planla</button>
             <button type="submit" name="action" value="draft" class="btn btn-ghost btn-full">Taslak olarak kaydet</button>
         </form>
     </div>
@@ -244,7 +245,7 @@
     <div class="modal">
         <div class="modal-header">
             <h2 id="story-modal-title">Hikaye Paylaş</h2>
-            <button type="button" class="modal-close" id="close-story-modal" aria-label="Kapat">×</button>
+            <button type="button" class="modal-close" id="close-story-modal" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
         </div>
         <form action="{{ url_for('stories.create_story') }}" method="post" enctype="multipart/form-data" class="modal-body story-modal-body">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -289,7 +290,7 @@
                     {# Görünürlük: yakın arkadaşlar toggle'ı #}
                     <label class="story-visibility-toggle">
                         <input type="checkbox" name="visibility_cf" id="story-visibility-cf">
-                        💚 Sadece yakın arkadaşlar
+                        {{ icons.heart_filled(size=14) }} Sadece yakın arkadaşlar
                     </label>
                 </div>
 
@@ -318,12 +319,12 @@
 
             {# Butonlar en altta, tam genişlikte #}
             <div class="story-attach-row">
-                <label class="story-attach-label" for="story-image-input">📷 Görsel</label>
+                <label class="story-attach-label" for="story-image-input">{{ icons.icon('image', size=14) }} Görsel</label>
                 <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" hidden id="story-image-input">
-                <label class="story-attach-label" for="story-video-input">🎥 Video</label>
+                <label class="story-attach-label" for="story-video-input">{{ icons.icon('video', size=14) }} Video</label>
                 <input type="file" name="video" accept="video/mp4,video/webm,video/quicktime" hidden id="story-video-input">
-                <button type="button" class="story-attach-label" id="story-poll-toggle-btn">📊 Anket</button>
-                <button type="button" class="story-attach-label" id="story-bg-toggle-btn">🎨 Renk</button>
+                <button type="button" class="story-attach-label" id="story-poll-toggle-btn">{{ icons.icon('bar-chart-2', size=14) }} Anket</button>
+                <button type="button" class="story-attach-label" id="story-bg-toggle-btn">{{ icons.icon('palette', size=14) }} Renk</button>
             </div>
             <button type="submit" class="btn btn-primary btn-full">Paylaş</button>
         </form>
@@ -339,9 +340,9 @@
             <img class="avatar avatar-sm" id="story-viewer-avatar" src="" alt="" hidden>
             <span id="story-viewer-username"></span>
             <span class="time" id="story-viewer-time"></span>
-            <button type="button" class="story-highlight-btn" id="story-highlight-btn" hidden aria-label="Öne çıkar">⭐</button>
-            <button type="button" class="story-delete-btn" id="story-delete-btn" hidden aria-label="Hikayeyi sil">🗑️</button>
-            <button type="button" class="modal-close" id="story-viewer-close" aria-label="Kapat">×</button>
+            <button type="button" class="story-highlight-btn" id="story-highlight-btn" hidden aria-label="Öne çıkar">{{ icons.icon('star', size=16) }}</button>
+            <button type="button" class="story-delete-btn" id="story-delete-btn" hidden aria-label="Hikayeyi sil">{{ icons.icon('trash-2', size=16) }}</button>
+            <button type="button" class="modal-close" id="story-viewer-close" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
         </header>
         <div class="story-media-area" id="story-media-area">
             <div class="story-nav-zone story-nav-prev" id="story-nav-prev"></div>
@@ -351,7 +352,7 @@
             <img id="story-viewer-image" alt="" hidden>
             <video id="story-viewer-video" hidden playsinline></video>
             <p class="story-caption" id="story-viewer-caption" hidden></p>
-            <div class="story-paused-indicator" id="story-paused-indicator" hidden>⏸</div>
+            <div class="story-paused-indicator" id="story-paused-indicator" hidden>{{ icons.icon('pause', size=32) }}</div>
 
             {# Hikaye anket widget'ı (varsa story.poll) — position_x/y oranları
                oluşturma önizlemesindeki gibi SADECE medya alanına göre (header/
@@ -379,7 +380,7 @@
                 <button type="button" class="story-reaction-btn" data-emoji="👏" aria-label="Alkış">👏</button>
             </div>
             <input type="text" id="story-reply-input" placeholder="Yanıt gönder..." maxlength="500" aria-label="Hikayeye yanıt yaz" autocomplete="off">
-            <button type="submit" class="story-reply-send-btn" aria-label="Yanıtı gönder">➤</button>
+            <button type="submit" class="story-reply-send-btn" aria-label="Yanıtı gönder">{{ icons.icon('send', size=16) }}</button>
         </form>
     </div>
 </div>
@@ -392,7 +393,7 @@
     <div class="modal">
         <div class="modal-header">
             <h2 id="highlight-picker-title">Öne Çıkanlara Ekle</h2>
-            <button type="button" class="modal-close" id="highlight-picker-close" aria-label="Kapat">×</button>
+            <button type="button" class="modal-close" id="highlight-picker-close" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
         </div>
         <div class="modal-body">
             <div id="highlight-picker-list" aria-live="polite"></div>

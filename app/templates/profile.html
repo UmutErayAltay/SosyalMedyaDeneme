@@ -19,6 +19,7 @@
 {% endblock %}
 
 {% import "_post_card.html" as pc with context %}
+{% import "_icons.html" as icons %}
 
 {% block content %}
 <header class="card profile-header">
@@ -28,11 +29,11 @@
         <div class="avatar large avatar-placeholder" aria-hidden="true"></div>
     {% endif %}
     <div class="profile-info">
-        <h1>{{ profile.username }}{% if is_private %} 🔒{% endif %}{% if is_online %}<span class="online-dot" title="Aktif" aria-label="Aktif"></span>{% endif %}</h1>
+        <h1>{{ profile.username }}{% if is_private %} {{ icons.icon('lock', size=14) }}{% endif %}{% if is_online %}<span class="online-dot" title="Aktif" aria-label="Aktif"></span>{% endif %}</h1>
         {% if profile.full_name %}<p class="muted">{{ profile.full_name }}</p>{% endif %}
         {% if profile.bio %}<p class="bio">{{ profile.bio }}</p>{% endif %}
         {% if profile.created_at %}
-        <p class="muted">📅 {{ profile.created_at|local_time('%Y %m') }} tarihinde katıldı</p>
+        <p class="muted">{{ icons.icon('calendar', size=14) }} {{ profile.created_at|local_time('%Y %m') }} tarihinde katıldı</p>
         {% endif %}
 
         <div class="profile-stats">
@@ -44,8 +45,8 @@
         <div class="profile-actions">
             {% if is_self %}
                 <a href="{{ url_for('routes.profile_edit') }}" class="btn btn-ghost">Profili düzenle</a>
-                <a href="{{ url_for('routes.insights') }}" class="btn btn-ghost">📊 İstatistikler</a>
-                <a href="{{ url_for('routes.drafts_list') }}" class="btn btn-ghost">📝 Taslaklarım</a>
+                <a href="{{ url_for('routes.insights') }}" class="btn btn-ghost">{{ icons.icon('bar-chart-2', size=16) }} İstatistikler</a>
+                <a href="{{ url_for('routes.drafts_list') }}" class="btn btn-ghost">{{ icons.icon('file-text', size=16) }} Taslaklarım</a>
             {% elif is_blocked_by_me %}
                 <form action="{{ url_for('blocks.toggle_block', username=profile.username) }}"
                       method="post" class="inline">
@@ -68,14 +69,14 @@
                                 aria-label="Takip seçenekleri"
                                 aria-haspopup="menu"
                                 aria-expanded="false">
-                            ✓ Takip ▾
+                            {{ icons.icon('check', size=14) }} Takip ▾
                         </button>
                         <div class="profile-follow-menu" role="menu" hidden>
                             <button type="button" class="profile-follow-menu-item" data-action="unfollow">
-                                ❌ Takipten çık
+                                {{ icons.icon('x', size=14) }} Takipten çık
                             </button>
                             <button type="button" class="profile-follow-menu-item" data-action="close-friend">
-                                💚 <span class="close-friend-text">{{ 'Yakın arkadaşlardan çıkar' if is_close_friend else 'Yakın arkadaşlara ekle' }}</span>
+                                {{ icons.heart_filled(size=14) }} <span class="close-friend-text">{{ 'Yakın arkadaşlardan çıkar' if is_close_friend else 'Yakın arkadaşlara ekle' }}</span>
                             </button>
                         </div>
                     </div>
@@ -91,7 +92,7 @@
                             data-add-close-friend-url="{{ url_for('close_friends.add_close_friend') }}"
                             data-remove-close-friend-url="{{ url_for('close_friends.remove_close_friend', user_id=profile.id) }}"
                             aria-label="İstek gönderildi">
-                        ✓ İstek Gönderildi
+                        {{ icons.icon('check', size=14) }} İstek Gönderildi
                     </button>
                 {% else %}
                     {# Takip et veya takip isteği gönder (gizli profil) #}
@@ -122,7 +123,7 @@
                             aria-label="Daha fazla seçenek"
                             aria-haspopup="menu"
                             aria-expanded="false">
-                        ⋯
+                        {{ icons.icon('more-horizontal', size=16) }}
                     </button>
                     <div class="profile-actions-menu" role="menu" hidden>
                         <form action="{{ url_for('blocks.toggle_block', username=profile.username) }}"
@@ -130,7 +131,7 @@
                               data-confirm="{{ profile.username }} kullanıcısını engellemek istediğine emin misin?">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="profile-actions-menu-item">
-                                🚫 Engelle
+                                {{ icons.icon('slash-circle', size=14) }} Engelle
                             </button>
                         </form>
                         <form action="{{ url_for('reports.create_report') }}" method="post" class="profile-actions-menu-form"
@@ -139,13 +140,13 @@
                             <input type="hidden" name="target_type" value="user">
                             <input type="hidden" name="target_id" value="{{ profile.id }}">
                             <button type="submit" class="profile-actions-menu-item">
-                                🚩 Şikayet et
+                                {{ icons.icon('flag', size=14) }} Şikayet et
                             </button>
                         </form>
                         <form action="{{ url_for('mutes.toggle_mute', user_id=profile.id) }}" method="post" class="profile-actions-menu-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="profile-actions-menu-item">
-                                {{ '🔔 Sessizi Kaldır' if is_muted else '🔕 Sessize Al' }}
+                                {{ icons.icon('bell' if is_muted else 'bell-off', size=14) }} {{ 'Sessizi Kaldır' if is_muted else 'Sessize Al' }}
                             </button>
                         </form>
                     </div>
@@ -185,9 +186,9 @@
         <button type="button" role="tab" id="tab-bookmarks" aria-selected="false"
                 aria-controls="panel-bookmarks" class="tab-btn" tabindex="-1">Kaydedilenler</button>
         <button type="button" role="tab" id="tab-stickers" aria-selected="false"
-                aria-controls="panel-stickers" class="tab-btn" tabindex="-1">🏷️ Çıkartmalarım</button>
+                aria-controls="panel-stickers" class="tab-btn" tabindex="-1">{{ icons.icon('tag', size=14) }} Çıkartmalarım</button>
         <button type="button" role="tab" id="tab-archive" aria-selected="false"
-                aria-controls="panel-archive" class="tab-btn" tabindex="-1">🗄️ Arşiv</button>
+                aria-controls="panel-archive" class="tab-btn" tabindex="-1">{{ icons.icon('archive', size=14) }} Arşiv</button>
         {% endif %}
     </div>
 
@@ -299,8 +300,8 @@
     <div class="story-viewer">
         <header class="story-viewer-header">
             <span id="highlight-viewer-title"></span>
-            <button type="button" class="story-delete-btn" id="highlight-delete-btn" hidden aria-label="Öne çıkanı sil">🗑️</button>
-            <button type="button" class="modal-close" id="highlight-viewer-close" aria-label="Kapat">×</button>
+            <button type="button" class="story-delete-btn" id="highlight-delete-btn" hidden aria-label="Öne çıkanı sil">{{ icons.icon('trash-2', size=16) }}</button>
+            <button type="button" class="modal-close" id="highlight-viewer-close" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
         </header>
         <div class="story-media-area" id="highlight-media-area">
             <div class="story-nav-zone story-nav-prev" id="highlight-nav-prev"></div>
@@ -342,7 +343,7 @@
 
                 if (!data.stickers || data.stickers.length === 0) {
                     // Boş durum: + karosu
-                    grid.innerHTML = '<div class="sticker-grid"><div class="sticker-item-wrap sticker-upload-wrap"><button type="button" class="sticker-upload-profile-btn" aria-label="Sticker yükle">➕</button><input type="file" name="sticker-file-profile" accept="image/*" hidden></div></div>';
+                    grid.innerHTML = '<div class="sticker-grid"><div class="sticker-item-wrap sticker-upload-wrap"><button type="button" class="sticker-upload-profile-btn" aria-label="Sticker yükle">{{ icons.icon("plus", size=18) }}</button><input type="file" name="sticker-file-profile" accept="image/*" hidden></div></div>';
                     return;
                 }
 
@@ -351,11 +352,11 @@
                     itemsHtml += '<div class="sticker-item-wrap">' +
                         '<div class="sticker-item" data-sticker-id="' + s.id + '">' +
                         '<img src="' + s.image_url + '" alt="Sticker" class="sticker-item-img">' +
-                        (s.mine_created ? '<button type="button" class="sticker-delete-profile-btn" data-sticker-id="' + s.id + '" aria-label="Sil">🗑</button>' : '') +
+                        (s.mine_created ? '<button type="button" class="sticker-delete-profile-btn" data-sticker-id="' + s.id + '" aria-label="Sil">{{ icons.icon("trash-2", size=14) }}</button>' : '') +
                         '</div>' +
                         '</div>';
                 });
-                itemsHtml += '<div class="sticker-item-wrap sticker-upload-wrap"><button type="button" class="sticker-upload-profile-btn" aria-label="Sticker yükle">➕</button><input type="file" name="sticker-file-profile" accept="image/*" hidden></div>';
+                itemsHtml += '<div class="sticker-item-wrap sticker-upload-wrap"><button type="button" class="sticker-upload-profile-btn" aria-label="Sticker yükle">{{ icons.icon("plus", size=18) }}</button><input type="file" name="sticker-file-profile" accept="image/*" hidden></div>';
                 itemsHtml += '</div>';
 
                 grid.innerHTML = itemsHtml;

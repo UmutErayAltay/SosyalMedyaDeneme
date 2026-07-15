@@ -65,7 +65,7 @@
                 '        <div class="modal-body call-modal-body">\n' +
                 '            <div class="call-avatar-circle call-avatar-circle--md">\n' +
                 '                <img id="incoming-call-avatar-img" alt="" hidden>\n' +
-                '                <span id="incoming-call-avatar-fallback" aria-hidden="true">👤</span>\n' +
+                '                <span id="incoming-call-avatar-fallback" aria-hidden="true">' + (window.ICONS ? window.ICONS.get('user', { size: 32 }) : '👤') + '</span>\n' +
                 '            </div>\n' +
                 '            <p id="incoming-call-name" class="call-incoming-name"></p>\n' +
                 '            <p id="incoming-call-type" class="call-incoming-type"></p>\n' +
@@ -93,7 +93,7 @@
         // YERİNE gösterilen, siteye uygun küçük kart (kullanıcı isteği)
         if (!document.getElementById('call-outgoing-panel')) {
             var outgoingHtml = '<div class="call-outgoing-panel" id="call-outgoing-panel" role="status" hidden>\n' +
-                '    <div class="call-outgoing-pulse" aria-hidden="true">📞</div>\n' +
+                '    <div class="call-outgoing-pulse" aria-hidden="true">' + (window.ICONS ? window.ICONS.get('phone', { size: 20 }) : '📞') + '</div>\n' +
                 '    <div class="call-outgoing-text">\n' +
                 '        <strong id="call-outgoing-name"></strong>\n' +
                 '        <span class="muted">aranıyor<span class="call-dots"><span>.</span><span>.</span><span>.</span></span></span>\n' +
@@ -116,7 +116,7 @@
                 '    <div class="call-remote-avatar" id="call-remote-avatar" hidden>\n' +
                 '        <div class="call-avatar-circle call-avatar-circle--lg" id="call-remote-avatar-circle">\n' +
                 '            <img id="call-remote-avatar-img" alt="" hidden>\n' +
-                '            <span id="call-remote-avatar-fallback" aria-hidden="true">👤</span>\n' +
+                '            <span id="call-remote-avatar-fallback" aria-hidden="true">' + (window.ICONS ? window.ICONS.get('user', { size: 32 }) : '👤') + '</span>\n' +
                 '        </div>\n' +
                 '        <p id="call-remote-name" class="call-remote-name"></p>\n' +
                 '        <p id="call-voice-info" class="call-type-label">Sesli Arama</p>\n' +

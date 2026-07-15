@@ -46,7 +46,7 @@
         var back = document.createElement('a');
         back.className = 'conv-back-link';
         back.href = '/messages/';
-        back.textContent = '← Geri';
+        back.innerHTML = (window.ICONS ? window.ICONS.get('arrow-left', { size: 16 }) : '←') + ' Geri';
         header.appendChild(back);
         var av = link.querySelector('img.avatar');
         if (av) {

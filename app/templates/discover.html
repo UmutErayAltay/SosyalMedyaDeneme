@@ -2,6 +2,7 @@
 {% import "_post_card.html" as pc with context %}
 {% import "_profile_summary_card.html" as psc %}
 {% import "_sidebar_cards.html" as sc %}
+{% import "_icons.html" as icons %}
 {% block title %}Keşfet{% endblock %}
 {% block description %}Takip etmediğin kişilerden popüler postlar{% endblock %}
 {% block container_class %}feed-page{% endblock %}
@@ -16,10 +17,10 @@
 <div class="feed-layout">
     <nav class="feed-tabs" aria-label="Akış sekmeleri">
         <a href="{{ url_for('routes.feed') }}" class="feed-tab">Akış</a>
-        <a href="{{ url_for('routes.discover') }}" class="feed-tab active" aria-current="page">🧭 Keşfet</a>
+        <a href="{{ url_for('routes.discover') }}" class="feed-tab active" aria-current="page">{{ icons.icon('compass', size=18) }} Keşfet</a>
     </nav>
 
-    <h1>🧭 Keşfet</h1>
+    <h1>{{ icons.icon('compass', size=18) }} Keşfet</h1>
     <p class="muted">Son 7 günde, takip etmediğin kişilerin en popüler herkese açık postları.</p>
 
     <section class="post-list">

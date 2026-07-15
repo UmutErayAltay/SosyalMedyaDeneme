@@ -71,7 +71,7 @@
                     wrap.className = 'sticker-item-wrap';
                     wrap.innerHTML = '<div class="sticker-item" data-sticker-id="' + s.id + '">' +
                         '<img src="' + escapeHtml(s.image_url) + '" alt="Sticker" class="sticker-item-img">' +
-                        (s.mine_created ? '<button type="button" class="sticker-delete-btn" aria-label="Sil">🗑</button>' : '') +
+                        (s.mine_created ? '<button type="button" class="sticker-delete-btn" aria-label="Sil">' + (window.ICONS ? window.ICONS.get('trash-2', { size: 14 }) : '🗑') + '</button>' : '') +
                         '</div>';
                     grid.appendChild(wrap);
                 });
@@ -80,7 +80,7 @@
             // Upload butonu
             var uploadWrap = document.createElement('div');
             uploadWrap.className = 'sticker-item-wrap sticker-upload-wrap';
-            uploadWrap.innerHTML = '<button type="button" class="sticker-upload-btn" aria-label="Sticker yükle">➕ Yükle</button>' +
+            uploadWrap.innerHTML = '<button type="button" class="sticker-upload-btn" aria-label="Sticker yükle">' + (window.ICONS ? window.ICONS.get('plus', { size: 14 }) : '➕') + ' Yükle</button>' +
                 '<input type="file" name="sticker-file" accept="image/*" hidden>';
             grid.appendChild(uploadWrap);
 
@@ -160,7 +160,7 @@
                 if (sticker) {
                     previewArea.innerHTML = '<div class="sticker-preview-item">' +
                         '<img src="' + escapeHtml(sticker.image_url) + '" alt="Sticker">' +
-                        '<button type="button" class="sticker-preview-remove" aria-label="Kaldır">×</button>' +
+                        '<button type="button" class="sticker-preview-remove" aria-label="Kaldır">' + (window.ICONS ? window.ICONS.get('x', { size: 14 }) : '×') + '</button>' +
                         '</div>';
                 }
             });
@@ -264,10 +264,10 @@
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (data.ok) {
-                    starBtn.textContent = '✅';
+                    starBtn.innerHTML = window.ICONS ? window.ICONS.get('check-circle', { size: 14 }) : '✅';
                     starBtn.disabled = true;
                     setTimeout(function () {
-                        starBtn.textContent = '⭐';
+                        starBtn.innerHTML = window.ICONS ? window.ICONS.get('star', { size: 14 }) : '⭐';
                         starBtn.disabled = false;
                     }, 1500);
                 }

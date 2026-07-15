@@ -7,6 +7,22 @@
     var REACTIONS = { like: '👍', love: '❤️', haha: '😂', wow: '😮', sad: '😢' };
     var LONG_PRESS_MS = 500;
 
+    // "like" reaksiyonu (varsayılan/nötr durum dahil) SVG beğen ikonuyla
+    // gösterilir — kullanıcı raporu: 👍 emoji'si buton üzerinde her zaman
+    // görünürken kötü render oluyordu. Diğer reaksiyonlar (love/haha/wow/sad)
+    // renkli emoji olarak KALIYOR (picker'da hepsi zaten emoji, bilinçli
+    // karar — bkz. .context/active_context.md). `active` liked+like durumunda
+    // ikonu dolduran CSS class'ı (.reaction-icon.is-like-active) ekler/kaldırır.
+    function renderReactionIcon(iconEl, reaction, liked) {
+        if (!reaction || reaction === 'like') {
+            iconEl.innerHTML = window.ICONS ? window.ICONS.get('thumbs-up', { size: 18 }) : '👍';
+            iconEl.classList.toggle('is-like-active', !!liked);
+        } else {
+            iconEl.textContent = REACTIONS[reaction] || '👍';
+            iconEl.classList.remove('is-like-active');
+        }
+    }
+
     var pressTimer = null;
     var longPressFired = false;
     var activeBtn = null;
@@ -31,7 +47,7 @@
         var nextLiked = !willRemove;
         btn.dataset.liked = nextLiked ? '1' : '0';
         btn.classList.toggle('liked', nextLiked);
-        iconEl.textContent = nextLiked ? (REACTIONS[reaction] || '👍') : '👍';
+        renderReactionIcon(iconEl, nextLiked ? reaction : '', nextLiked);
         btn.dataset.reaction = nextLiked ? reaction : '';
         countEl.textContent = prevCount + (willRemove ? -1 : (wasLiked ? 0 : 1));
 
@@ -55,7 +71,7 @@
                 btn.dataset.liked = data.liked ? '1' : '0';
                 btn.classList.toggle('liked', data.liked);
                 btn.dataset.reaction = data.liked ? (data.reaction || reaction) : '';
-                iconEl.textContent = data.liked ? (REACTIONS[data.reaction] || REACTIONS[reaction] || '👍') : '👍';
+                renderReactionIcon(iconEl, data.liked ? (data.reaction || reaction) : '', data.liked);
                 countEl.textContent = data.count;
             } catch (err) {
                 console.error('Reaksiyon güncellenemedi:', err);
@@ -63,7 +79,7 @@
                 btn.dataset.liked = wasLiked ? '1' : '0';
                 btn.classList.toggle('liked', wasLiked);
                 btn.dataset.reaction = prevReaction;
-                iconEl.textContent = wasLiked ? (REACTIONS[prevReaction] || '👍') : '👍';
+                renderReactionIcon(iconEl, wasLiked ? prevReaction : '', wasLiked);
                 countEl.textContent = prevCount;
             }
         });

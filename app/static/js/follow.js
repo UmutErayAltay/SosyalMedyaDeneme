@@ -87,7 +87,7 @@ document.addEventListener("click", (e) => {
                 console.error("İstek geri alınamadı:", err);
                 // Geri al: pending durumuna dön
                 if (btn.isConnected) {
-                    btn.textContent = "✓ İstek Gönderildi";
+                    btn.innerHTML = window.ICONS.get('check', { size: 14 }) + " İstek Gönderildi";
                     btn.classList.remove("btn-primary");
                     btn.classList.add("btn-ghost");
                     btn.dataset.pending = "1";
@@ -351,7 +351,7 @@ function createFollowMenu(data) {
     btn.setAttribute("aria-label", "Takip seçenekleri");
     btn.setAttribute("aria-haspopup", "menu");
     btn.setAttribute("aria-expanded", "false");
-    btn.textContent = "✓ Takip ▾";
+    btn.innerHTML = window.ICONS.get('check', { size: 14 }) + " Takip ▾";
 
     const menu = document.createElement("div");
     menu.className = "profile-follow-menu";
@@ -362,13 +362,13 @@ function createFollowMenu(data) {
     unfollowItem.type = "button";
     unfollowItem.className = "profile-follow-menu-item";
     unfollowItem.dataset.action = "unfollow";
-    unfollowItem.textContent = "❌ Takipten çık";
+    unfollowItem.innerHTML = window.ICONS.get('x', { size: 14 }) + " Takipten çık";
 
     const closeFriendItem = document.createElement("button");
     closeFriendItem.type = "button";
     closeFriendItem.className = "profile-follow-menu-item";
     closeFriendItem.dataset.action = "close-friend";
-    closeFriendItem.innerHTML = '💚 <span class="close-friend-text">Yakın arkadaşlara ekle</span>';
+    closeFriendItem.innerHTML = window.ICONS.heartFilled({ size: 14 }) + ' <span class="close-friend-text">Yakın arkadaşlara ekle</span>';
 
     menu.appendChild(unfollowItem);
     menu.appendChild(closeFriendItem);
@@ -392,6 +392,6 @@ function createPendingButton(data) {
     newBtn.dataset.addCloseFriendUrl = data.addCloseFriendUrl;
     newBtn.dataset.removeCloseFriendUrl = data.removeCloseFriendUrl;
     newBtn.setAttribute("aria-label", "İstek gönderildi");
-    newBtn.textContent = "✓ İstek Gönderildi";
+    newBtn.innerHTML = window.ICONS.get('check', { size: 14 }) + " İstek Gönderildi";
     return newBtn;
 }

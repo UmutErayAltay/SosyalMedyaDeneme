@@ -1,4 +1,5 @@
 {# Paylaşılan profil özet kartı — feed + post detay sayfasında kullanılır #}
+{% import "_icons.html" as icons %}
 {% macro profile_summary_card(profile_user, my_stats, my_bio, my_recent_media=none, my_week_stats=none) -%}
 <aside class="card feed-profile-card" aria-label="Profil özetin">
     <a href="{{ url_for('routes.profile', username=profile_user.username) }}" class="feed-profile-avatar-link">
@@ -36,9 +37,9 @@
     </div>
     {% endif %}
     <nav class="feed-profile-links" aria-label="Hızlı linkler">
-        <a href="{{ url_for('routes.profile_edit') }}">✏️ Profili Düzenle</a>
-        <a href="{{ url_for('routes.drafts_list') }}">📝 Taslaklarım</a>
-        <a href="{{ url_for('routes.profile', username=profile_user.username) }}#panel-stickers">🏷️ Çıkartmalarım</a>
+        <a href="{{ url_for('routes.profile_edit') }}">{{ icons.icon('edit-2', size=14) }} Profili Düzenle</a>
+        <a href="{{ url_for('routes.drafts_list') }}">{{ icons.icon('file-text', size=14) }} Taslaklarım</a>
+        <a href="{{ url_for('routes.profile', username=profile_user.username) }}#panel-stickers">{{ icons.icon('tag', size=14) }} Çıkartmalarım</a>
     </nav>
     {# "💚 Yakın Arkadaşlar" linki BİLEREK kaldırıldı — sol kolonda bu kartın
        hemen altında ayrı bir close_friends_card zaten var (bkz. feed.html/

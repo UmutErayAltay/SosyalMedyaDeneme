@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% import "_icons.html" as icons %}
 {% block title %}Gündem{% endblock %}
 {% block content %}
 <div class="card">
-    <h1>🔥 Gündemde</h1>
+    <h1>{{ icons.icon('zap', size=22) }} Gündemde</h1>
     {% for t in tags %}
         <a href="{{ url_for('hashtags.hashtag_posts', tag=t.tag) }}" class="trending-tag-row">
             <span class="trending-tag">#{{ t.tag }}</span>

@@ -1,8 +1,9 @@
 {# Sohbet listesi (sol panel) — inbox.html ve conversation.html arasında paylaşılır. #}
+{% import "_icons.html" as icons %}
 <div class="messages-sidebar">
     <div class="messages-sidebar-header">
         <h1>Mesajlar</h1>
-        <button type="button" class="btn btn-ghost" id="open-new-group-modal">+ Yeni Grup</button>
+        <button type="button" class="btn btn-ghost" id="open-new-group-modal">{{ icons.icon('plus', size=14) }} Yeni Grup</button>
     </div>
     <div class="inbox-list" id="inbox-list">
         {% for c in convos %}
@@ -13,7 +14,7 @@
            class="card inbox-item{{ ' active' if c.id == active_id else '' }}{{ ' unread' if show_unread else '' }}"
            data-conversation-id="{{ c.id }}">
             {% if c.is_group %}
-                <div class="avatar avatar-placeholder" aria-hidden="true">👥</div>
+                <div class="avatar avatar-placeholder" aria-hidden="true">{{ icons.icon('users', size=18) }}</div>
             {% elif c.other_user and c.other_user.avatar_url %}
                 <img src="{{ c.other_user.avatar_url }}" class="avatar" alt="" loading="lazy">
             {% else %}
@@ -21,7 +22,7 @@
             {% endif %}
             {% if not c.is_group and c.is_online %}<span class="online-dot" title="Aktif" aria-label="Aktif"></span>{% endif %}
             <div>
-                <strong>{{ c.name if c.is_group else (c.other_user.username if c.other_user else 'Bilinmeyen') }}{% if c.is_muted %} <span class="muted-indicator" aria-label="Sessize alındı">🔕</span>{% endif %}</strong>
+                <strong>{{ c.name if c.is_group else (c.other_user.username if c.other_user else 'Bilinmeyen') }}{% if c.is_muted %} <span class="muted-indicator" aria-label="Sessize alındı">{{ icons.icon('bell-off', size=12) }}</span>{% endif %}</strong>
                 {% if c.is_group %}<span class="muted"> · {{ c.member_count }} kişi</span>{% endif %}
                 {% if c.last_message %}
                 <p class="muted preview">{{ c.last_message.content[:40] }}</p>
@@ -42,7 +43,7 @@
     <div class="modal">
         <div class="modal-header">
             <h2 id="new-group-modal-title">Yeni Grup</h2>
-            <button type="button" class="modal-close" id="close-new-group-modal" aria-label="Kapat">×</button>
+            <button type="button" class="modal-close" id="close-new-group-modal" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
         </div>
         <div class="modal-body">
             <input type="text" id="group-name-input" placeholder="Grup adı..." maxlength="60" aria-label="Grup adı">

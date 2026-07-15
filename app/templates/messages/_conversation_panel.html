@@ -2,6 +2,7 @@
    AJAX ile getirdiği fragment olarak (X-Requested-With: fetch header'ıyla) kullanılır.
    Konuşmaya özgü değerler data-* attribute'larda tutulur; chat.js bunları okuyup
    window.initConversation() içinde kullanır (innerHTML ile eklenen <script> çalışmaz). #}
+{% import "_icons.html" as icons %}
 <div class="messages-panel" id="conversation-panel"
      data-conversation-id="{{ conversation_id }}"
      data-send-url="{{ url_for('messaging.send_message', conversation_id=conversation_id) }}"
@@ -14,9 +15,9 @@
      data-member-map="{{ (member_map if is_group else {})|tojson|forceescape }}"
      data-valid-usernames="{{ valid_usernames|list|tojson|forceescape }}">
     <header class="conv-header">
-        <a href="{{ url_for('messaging.inbox') }}" class="conv-back-link" aria-label="Mesajlara dön">← Geri</a>
+        <a href="{{ url_for('messaging.inbox') }}" class="conv-back-link" aria-label="Mesajlara dön">{{ icons.icon('arrow-left', size=16) }} Geri</a>
         {% if is_group %}
-            <h2>👥 {{ group_name or 'Grup' }}</h2>
+            <h2>{{ icons.icon("users", size=20) }} {{ group_name or "Grup" }}</h2>
             <span class="muted conv-member-count">{{ group_members|length + 1 }} kişi</span>
             {# Çevrimiçi göstergesi — chat.js /active ping yanıtıyla doldurur #}
             <span id="conv-presence" class="conv-presence" hidden></span>
@@ -53,7 +54,7 @@
                         data-muted="{{ '1' if my_is_muted else '0' }}"
                         aria-label="{% if my_is_muted %}Sohbete dön{% else %}Sessize al{% endif %}"
                         title="{% if my_is_muted %}Sohbete dön{% else %}Sessize al{% endif %}">
-                    {% if my_is_muted %}🔕{% else %}🔔{% endif %}
+                    {{ icons.icon('bell-off' if my_is_muted else 'bell', size=16) }}
                 </button>
                 <button type="button" class="conv-call-btn" id="msg-search-toggle-btn"
                         aria-label="Sohbette ara" title="Sohbette ara" aria-expanded="false">
@@ -111,7 +112,7 @@
                         data-muted="{{ '1' if my_is_muted else '0' }}"
                         aria-label="{% if my_is_muted %}Sohbete dön{% else %}Sessize al{% endif %}"
                         title="{% if my_is_muted %}Sohbete dön{% else %}Sessize al{% endif %}">
-                    {% if my_is_muted %}🔕{% else %}🔔{% endif %}
+                    {{ icons.icon('bell-off' if my_is_muted else 'bell', size=16) }}
                 </button>
                 <button type="button" class="conv-call-btn" id="msg-search-toggle-btn"
                         aria-label="Sohbette ara" title="Sohbette ara" aria-expanded="false">
@@ -157,14 +158,14 @@
     <div class="pinned-bar" id="pinned-bar">
         {% for pm in pinned_messages %}
         <button type="button" class="pinned-bar-item" data-quoted-id="{{ pm.id }}" aria-label="Sabitlenmiş mesaja git">
-            📌 <span class="pinned-bar-sender">{{ pm.profiles.username if pm.profiles else 'Bilinmeyen' }}:</span>
+            {{ icons.icon('pin', size=14) }} <span class="pinned-bar-sender">{{ pm.profiles.username if pm.profiles else 'Bilinmeyen' }}:</span>
             <span class="pinned-bar-content">
                 {%- if pm.content -%}
                     {{ pm.content[:50] }}{% if pm.content|length > 50 %}…{% endif %}
                 {%- elif pm.image_url -%}
-                    📷 Görsel
+                    {{ icons.icon('image', size=12) }} Görsel
                 {%- elif pm.audio_url -%}
-                    🎤 Sesli mesaj
+                    {{ icons.icon('mic', size=12) }} Sesli mesaj
                 {%- elif pm.sticker_id -%}
                     Sticker
                 {%- else -%}
@@ -185,7 +186,7 @@
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
         <input type="search" id="msg-search-input" placeholder="Sohbette ara..." aria-label="Sohbette mesaj ara">
-        <button type="button" id="msg-search-close-btn" aria-label="Aramayı kapat">×</button>
+        <button type="button" id="msg-search-close-btn" aria-label="Aramayı kapat">{{ icons.icon('x', size=16) }}</button>
     </div>
     <div class="msg-search-results" id="msg-search-results" hidden></div>
 
@@ -198,7 +199,7 @@
         {# Açılışta yalnızca son N mesaj gelir (performans) — tamamı istenirse
            panel ?all=1 ile yeniden yüklenir (messagesPanel.js yakalar) #}
         <a href="{{ url_for('messaging.conversation', conversation_id=conversation_id, all=1) }}"
-           class="btn btn-ghost small msg-load-all">↑ Daha eski mesajları yükle</a>
+           class="btn btn-ghost small msg-load-all">{{ icons.icon('arrow-up', size=14) }} Daha eski mesajları yükle</a>
         {% endif %}
         {% for m in messages %}
         {% if first_unread_id and m.id == first_unread_id %}
@@ -214,7 +215,7 @@
                     {%- if m.reply_to.content -%}
                         {{ m.reply_to.content[:60] }}{% if m.reply_to.content|length > 60 %}…{% endif %}
                     {%- elif m.reply_to.image_url -%}
-                        📷 Görsel
+                        {{ icons.icon('image', size=12) }} Görsel
                     {%- else -%}
                         (Boş mesaj)
                     {%- endif -%}
@@ -225,12 +226,12 @@
                 <span class="msg-sender">{{ m.profiles.username if m.profiles else 'Bilinmeyen' }}</span>
             {% endif %}
             {% if m.is_forwarded %}
-                <span class="msg-forwarded-tag">📤 İletildi</span>
+                <span class="msg-forwarded-tag">{{ icons.icon('corner-up-right', size=12) }} İletildi</span>
             {% endif %}
             {% if m.sticker %}
                 <div class="sticker-wrap">
                     <img src="{{ m.sticker.image_url }}" class="sticker-rendered msg-sticker" data-sticker-id="{{ m.sticker.id }}" alt="Sticker" loading="lazy">
-                    <button type="button" class="sticker-star-btn" data-sticker-id="{{ m.sticker.id }}" aria-label="Sticker'ı kaydet">⭐</button>
+                    <button type="button" class="sticker-star-btn" data-sticker-id="{{ m.sticker.id }}" aria-label="Sticker'ı kaydet">{{ icons.icon('star', size=14) }}</button>
                 </div>
             {% elif m.image_url %}
                 <img src="{{ m.image_url }}" class="msg-image" alt="Görsel mesaj" loading="lazy">
@@ -240,7 +241,7 @@
                    çizilir; native <audio> gizli kalıp SADECE oynatma motoru
                    olarak kullanılır (controls YOK — özel play/seek arayüzü). #}
                 <div class="voice-player" data-voice-player>
-                    <button type="button" class="voice-play-btn" aria-label="Sesli mesajı oynat">▶</button>
+                    <button type="button" class="voice-play-btn" aria-label="Sesli mesajı oynat">{{ icons.icon('play', size=14) }}</button>
                     <div class="voice-waveform" aria-hidden="true"></div>
                     <span class="voice-duration">0:00</span>
                     <audio src="{{ m.audio_url }}" class="msg-audio" preload="metadata" hidden></audio>
@@ -254,9 +255,9 @@
                 {% if m.edited_at %}<span class="msg-edited-tag" title="Düzenlendi">(düzenlendi)</span>{% endif %}
                 {% if m.sender_id == me.id and not is_group %}
                     <span class="read-receipt {{ 'read' if m.read_at }}"
-                          aria-label="{{ 'Okundu' if m.read_at else 'İletildi' }}">{{ '✓✓' if m.read_at else '✓' }}</span>
+                          aria-label="{{ 'Okundu' if m.read_at else 'İletildi' }}">{{ icons.icon('check-double' if m.read_at else 'check', size=12) }}</span>
                 {% elif m.sender_id == me.id %}
-                    <span class="read-receipt" aria-label="İletildi">✓</span>
+                    <span class="read-receipt" aria-label="İletildi">{{ icons.icon('check', size=12) }}</span>
                 {% endif %}
             </span>
 
@@ -279,16 +280,17 @@
             {% endif %}
 
             {# Yanıtla butonu (hover'da belirir, tüm mesajlarda görülebilir) #}
-            <button class="msg-reply-btn" data-msg-id="{{ m.id }}" aria-label="Yanıtla" type="button">↩</button>
+            <button class="msg-reply-btn" data-msg-id="{{ m.id }}" aria-label="Yanıtla" type="button">{{ icons.icon('corner-up-left', size=14) }}</button>
 
             {# Sabitle butonu — sabitliyken görsel fark (opacity 1), yoksa hover-reveal #}
-            <button class="msg-pin-btn{% if m.pinned_at %} pinned{% endif %}" data-msg-id="{{ m.id }}" aria-label="{{ 'Sabitlemeyi kaldır' if m.pinned_at else 'Sabitle' }}" type="button">📌</button>
+            <button class="msg-pin-btn{% if m.pinned_at %} pinned{% endif %}" data-msg-id="{{ m.id }}" aria-label="{{ 'Sabitlemeyi kaldır' if m.pinned_at else 'Sabitle' }}" type="button">{{ icons.icon('pin', size=14) }}</button>
 
             {# İlet butonu (hover'da belirir, tüm mesajlarda görülebilir) #}
-            <button class="msg-forward-btn" data-msg-id="{{ m.id }}" aria-label="İlet" type="button">📤</button>
+            <button class="msg-forward-btn" data-msg-id="{{ m.id }}" aria-label="İlet" type="button">{{ icons.icon('corner-up-right', size=14) }}</button>
 
-            {# Emoji tepkisi tetik butonu (baloncuk hover'ında belirir) + picker #}
-            <button class="msg-react-trigger" aria-label="Emoji tepkisi ekle" type="button">🙂+</button>
+            {# Emoji tepkisi tetik butonu (baloncuk hover'ında belirir) + picker — tetik SVG'dir,
+               picker'daki emoji seçenekleri BİLEREK renkli emoji kalıyor (kullanıcı kararı). #}
+            <button class="msg-react-trigger" aria-label="Emoji tepkisi ekle" type="button">{{ icons.icon('plus', size=14) }}</button>
             <div class="msg-react-picker" hidden>
                 <button type="button" data-emoji="❤️" aria-label="Kalp tepkisi">❤️</button>
                 <button type="button" data-emoji="😂" aria-label="Gül tepkisi">😂</button>
@@ -302,9 +304,9 @@
                mesajlarda gösterilir — görsel/ses/sticker eki değişmez. #}
             {% if m.sender_id == me.id %}
             {% if m.content %}
-            <button class="msg-edit-btn" aria-label="Mesajı düzenle" type="button">✏️</button>
+            <button class="msg-edit-btn" aria-label="Mesajı düzenle" type="button">{{ icons.icon('edit-2', size=14) }}</button>
             {% endif %}
-            <button class="msg-delete-btn" aria-label="Mesajı sil" type="button">🗑</button>
+            <button class="msg-delete-btn" aria-label="Mesajı sil" type="button">{{ icons.icon('trash-2', size=14) }}</button>
             {% endif %}
             </div>{# /msg-react-row #}
         </div>
@@ -319,7 +321,7 @@
     {# Yanıta yanıt veriliyor göstergesi — yanıtla butonu tıklanınca form üstünde görünür #}
     <div id="reply-preview-bar" class="reply-preview-bar" hidden aria-live="polite">
         <span id="reply-preview-text"></span>
-        <button type="button" id="reply-preview-cancel" class="reply-preview-cancel" aria-label="Yanıtı iptal et">×</button>
+        <button type="button" id="reply-preview-cancel" class="reply-preview-cancel" aria-label="Yanıtı iptal et">{{ icons.icon('x', size=16) }}</button>
     </div>
 
     <form id="msg-form" class="composer-msg" enctype="multipart/form-data">
@@ -392,7 +394,7 @@
             <audio id="voice-preview-audio" class="voice-preview-audio" hidden controls></audio>
         </div>
 
-        <button type="button" id="voice-discard-btn" class="msg-icon-btn msg-discard-btn" aria-label="Ses kaydını sil" hidden>🗑</button>
+        <button type="button" id="voice-discard-btn" class="msg-icon-btn msg-discard-btn" aria-label="Ses kaydını sil" hidden>{{ icons.icon('trash-2', size=14) }}</button>
         <button type="submit" class="msg-send-btn" aria-label="Mesajı gönder">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M16.6915026,12.4744748 L3.50612381,13.2599618 C3.19218622,13.2599618 3.03521743,13.4170592 3.03521743,13.5741566 L1.15159189,20.0151496 C0.8376543,20.8006365 0.99,21.89 1.77946707,22.52 C2.41,22.99 3.50612381,23.1 4.13399899,22.8429026 L21.714504,14.0454487 C22.6563168,13.5741566 23.1272231,12.6315722 22.9702544,11.6889879 L4.13399899,1.16554995 C3.50612381,-0.1 2.40999899,0.0570974056 1.77946707,0.4744748 C0.994623095,1.10604706 0.837654326,2.0486314 1.15159189,2.99701575 L3.03521743,9.43800871 C3.03521743,9.59510618 3.34915502,9.75220365 3.50612381,9.75220365 L16.6915026,10.5376906 C16.6915026,10.5376906 17.1624089,10.5376906 17.1624089,11.0089827 L17.1624089,12.0515671 C17.1624089,12.5228591 16.6915026,12.4744748 16.6915026,12.4744748 Z"/>
@@ -420,7 +422,7 @@
     <div class="modal">
         <div class="modal-header">
             <h2 id="msg-media-modal-title">Paylaşılan Medya</h2>
-            <button type="button" class="modal-close" id="close-msg-media-modal" aria-label="Kapat">×</button>
+            <button type="button" class="modal-close" id="close-msg-media-modal" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
         </div>
         <div class="modal-body">
             <div class="msg-media-tabs" role="tablist">
@@ -440,7 +442,7 @@
     <div class="modal">
         <div class="modal-header">
             <h2 id="forward-modal-title">Mesajı İlet</h2>
-            <button type="button" class="modal-close" id="close-forward-modal" aria-label="Kapat">×</button>
+            <button type="button" class="modal-close" id="close-forward-modal" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
         </div>
         <div class="modal-body">
             <div id="forward-targets-list" class="forward-targets-list" role="list"></div>
@@ -466,7 +468,7 @@
     <div class="modal">
         <div class="modal-header">
             <h2 id="group-manage-modal-title">Grubu Yönet</h2>
-            <button type="button" class="modal-close" id="close-group-manage-modal" aria-label="Kapat">×</button>
+            <button type="button" class="modal-close" id="close-group-manage-modal" aria-label="Kapat">{{ icons.icon('x', size=16) }}</button>
         </div>
         <div class="modal-body">
             <div class="group-manage-section">
@@ -492,7 +494,7 @@
                             <div class="avatar avatar-placeholder" aria-hidden="true"></div>
                         {% endif %}
                         <span class="username">{{ me.username }} (sen)</span>
-                        {% if my_is_admin %}<span class="admin-badge">👑 Yönetici</span>{% endif %}
+                        {% if my_is_admin %}<span class="admin-badge">{{ icons.icon('crown', size=14) }} Yönetici</span>{% endif %}
                     </div>
                     {% for mmb in group_members %}
                     <div class="group-member-row" data-user-id="{{ mmb.id }}">
@@ -502,7 +504,7 @@
                             <div class="avatar avatar-placeholder" aria-hidden="true"></div>
                         {% endif %}
                         <span class="username">{{ mmb.username }}</span>
-                        {% if mmb.is_admin %}<span class="admin-badge">👑 Yönetici</span>{% endif %}
+                        {% if mmb.is_admin %}<span class="admin-badge">{{ icons.icon('crown', size=14) }} Yönetici</span>{% endif %}
                         {% if my_is_admin %}
                         <div class="group-member-actions">
                             <button type="button" class="btn btn-ghost small group-toggle-admin-btn"

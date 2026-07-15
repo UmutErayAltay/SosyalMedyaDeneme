@@ -2,11 +2,12 @@
    AYNI sıra ve markup'la kullanılır. SADECE makro içerir; {% extends %} veya
    sayfa-özel değişken referansı EKLENMEZ (bkz. CLAUDE.md partial kuralı —
    aksi halde {% from %} import'u sayfayı çökertir). #}
+{% import "_icons.html" as icons %}
 
 {% macro suggested_users_card(suggested_users) -%}
 {% if suggested_users %}
 <div class="card suggested-users-card">
-    <h2>👥 Kimi takip etmeli?</h2>
+    <h2>{{ icons.icon('users', size=18) }} Kimi takip etmeli?</h2>
     {% for u in suggested_users %}
         <div class="suggested-user-row">
             <a href="{{ url_for('routes.profile', username=u.username) }}" class="suggested-user-link">
@@ -35,7 +36,7 @@
 
 {% macro trending_card(trending_tags) -%}
 <div class="card trending-sidebar-card">
-    <h2>🔥 Gündemde</h2>
+    <h2>{{ icons.icon('zap', size=18) }} Gündemde</h2>
     {% for t in trending_tags[:5] %}
         <a href="{{ url_for('hashtags.hashtag_posts', tag=t.tag) }}" class="trending-tag-row">
             <span class="trending-tag">#{{ t.tag }}</span>
@@ -53,7 +54,7 @@
 {% macro close_friends_card(close_friends_preview) -%}
 {% if close_friends_preview %}
 <div class="card close-friends-sidebar-card">
-    <h2>💚 Yakın Arkadaşların</h2>
+    <h2>{{ icons.heart_filled(size=16) }} Yakın Arkadaşların</h2>
     <div class="close-friends-avatar-row">
         {% for u in close_friends_preview %}
             <a href="{{ url_for('routes.profile', username=u.username) }}" aria-label="{{ u.username }}">
@@ -73,7 +74,7 @@
 {% macro activity_card(recent_activity) -%}
 {% if recent_activity %}
 <div class="card activity-sidebar-card">
-    <h2>⚡ Son Aktiviteler</h2>
+    <h2>{{ icons.icon('zap', size=18) }} Son Aktiviteler</h2>
     {% for a in recent_activity[:3] %}
     <div class="activity-row">
         {% if a.profiles and a.profiles.avatar_url %}<img src="{{ a.profiles.avatar_url }}" class="avatar avatar-sm" alt="">

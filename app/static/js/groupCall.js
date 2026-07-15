@@ -145,7 +145,7 @@
         micBtn.type = 'button';
         micBtn.className = 'grp-call-control-btn grp-call-mic-btn';
         micBtn.title = 'Mikrofon';
-        micBtn.textContent = '🎤';
+        micBtn.innerHTML = window.ICONS ? window.ICONS.get('mic', { size: 18 }) : '🎤';
         micBtn.dataset.micOn = '1';
         micBtn.addEventListener('click', function () {
             if (!activeRoom) return;
@@ -161,7 +161,7 @@
             camBtn.type = 'button';
             camBtn.className = 'grp-call-control-btn grp-call-cam-btn';
             camBtn.title = 'Kamera';
-            camBtn.textContent = '📹';
+            camBtn.innerHTML = window.ICONS ? window.ICONS.get('video', { size: 18 }) : '📹';
             camBtn.dataset.camOn = '1';
             camBtn.addEventListener('click', function () {
                 if (!activeRoom) return;
@@ -177,7 +177,8 @@
         leaveBtn.type = 'button';
         leaveBtn.className = 'grp-call-control-btn grp-call-leave-btn';
         leaveBtn.title = 'Aramadan ayrıl';
-        leaveBtn.textContent = '☎️';
+        // call.js'teki hang-up ikonuyla aynı desen: telefon ikonu 135° döndürülmüş
+        leaveBtn.innerHTML = window.ICONS ? window.ICONS.get('phone', { size: 18, cls: 'call-svg-flip' }) : '☎️';
         leaveBtn.addEventListener('click', function () { disconnectCall(); });
         controlsDiv.appendChild(leaveBtn);
     }

@@ -634,7 +634,7 @@
                 if (!cfBadgeEl) {
                     cfBadgeEl = document.createElement('span');
                     cfBadgeEl.className = 'story-cf-badge';
-                    cfBadgeEl.textContent = '💚';
+                    cfBadgeEl.innerHTML = window.ICONS.heartFilled({ size: 14 });
                     cfBadgeEl.setAttribute('title', 'Yakın arkadaşlar hikayesi');
                     viewerUsername.appendChild(cfBadgeEl);
                 }
