@@ -39,6 +39,7 @@
     var locationLatInput = document.getElementById('location-lat-input');
     var locationLngInput = document.getElementById('location-lng-input');
     var locationNameInput = document.getElementById('location-name-input');
+    var postVisibilityWrap = document.querySelector('.post-visibility-wrap');
     var postVisibilityBtn = document.getElementById('post-visibility-btn');
     var postVisibilityMenu = document.getElementById('post-visibility-menu');
     var postVisibilityBtnContent = document.getElementById('post-visibility-btn-content');
@@ -79,8 +80,10 @@
 
     // --- Görünürlük dropdown'ı — native <select>'in emoji option'ları SVG
     // ikona hiç çevrilemediği için (kullanıcı raporu) attach-menu ile AYNI
-    // özel dropdown deseni. Varsayılan "followers" (kullanıcı isteği: "ilk
-    // başta herkese açık yerine sadece takipçilerim seçeneği olsun"). ---
+    // özel dropdown deseni. Varsayılan sunucu tarafında hesabın gizlilik
+    // durumuna göre hesaplanıp `.post-visibility-wrap[data-default-value]`'a
+    // yazılıyor (gizli hesap -> followers, açık hesap -> public) — JS bunu
+    // sabit kodlamak yerine DOM'dan okur (bkz. app/routes/posts.py my_is_private). ---
     function closePostVisibilityMenu() {
         if (!postVisibilityMenu || postVisibilityMenu.hidden) return;
         postVisibilityMenu.hidden = true;
@@ -89,12 +92,13 @@
 
     function resetPostVisibilityUI() {
         if (!postVisibilityMenu) return;
-        var defaultItem = postVisibilityMenu.querySelector('.post-visibility-item[data-value="followers"]');
+        var defaultValue = (postVisibilityWrap && postVisibilityWrap.dataset.defaultValue) || 'public';
+        var defaultItem = postVisibilityMenu.querySelector('.post-visibility-item[data-value="' + defaultValue + '"]');
         if (defaultItem && postVisibilityBtnContent) postVisibilityBtnContent.innerHTML = defaultItem.innerHTML;
         postVisibilityMenu.querySelectorAll('.post-visibility-item').forEach(function (i) {
-            i.classList.toggle('selected', i.dataset.value === 'followers');
+            i.classList.toggle('selected', i.dataset.value === defaultValue);
         });
-        if (postVisibilityInput) postVisibilityInput.value = 'followers';
+        if (postVisibilityInput) postVisibilityInput.value = defaultValue;
         closePostVisibilityMenu();
     }
 

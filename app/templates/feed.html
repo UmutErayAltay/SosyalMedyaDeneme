@@ -221,17 +221,20 @@
                 {# Görünürlük dropdown'ı — native <select> emoji'leri SVG'ye
                    çevrilemediği için (option içindeki emoji hiç ikon olamaz)
                    post-more-wrap/attach-menu ile AYNI özel dropdown desenine
-                   çevrildi. Varsayılan artık "followers" (kullanıcı isteği). #}
-                <div class="post-visibility-wrap">
-                    <input type="hidden" name="visibility" id="post-visibility-input" value="followers">
+                   çevrildi. Varsayılan hesabın gizlilik durumuna göre değişir:
+                   gizli hesap -> "Sadece takipçilerim", açık hesap -> "Herkese
+                   açık" (kullanıcı isteği). #}
+                {% set post_default_visibility = 'followers' if my_is_private else 'public' %}
+                <div class="post-visibility-wrap" data-default-value="{{ post_default_visibility }}">
+                    <input type="hidden" name="visibility" id="post-visibility-input" value="{{ post_default_visibility }}">
                     <button type="button" class="post-visibility-btn" id="post-visibility-btn"
                             aria-haspopup="menu" aria-expanded="false" aria-label="Kimler görebilir?">
-                        <span class="post-visibility-btn-content" id="post-visibility-btn-content">{{ icons.icon('lock', size=14) }} Sadece takipçilerim</span>
+                        <span class="post-visibility-btn-content" id="post-visibility-btn-content">{% if my_is_private %}{{ icons.icon('lock', size=14) }} Sadece takipçilerim{% else %}{{ icons.icon('globe', size=14) }} Herkese açık{% endif %}</span>
                         <span class="post-visibility-chevron" aria-hidden="true">▾</span>
                     </button>
                     <div class="post-visibility-menu" id="post-visibility-menu" role="menu" hidden>
-                        <button type="button" class="post-visibility-item" data-value="public" role="menuitem">{{ icons.icon('globe', size=14) }} Herkese açık</button>
-                        <button type="button" class="post-visibility-item selected" data-value="followers" role="menuitem">{{ icons.icon('lock', size=14) }} Sadece takipçilerim</button>
+                        <button type="button" class="post-visibility-item {{ 'selected' if post_default_visibility == 'public' }}" data-value="public" role="menuitem">{{ icons.icon('globe', size=14) }} Herkese açık</button>
+                        <button type="button" class="post-visibility-item {{ 'selected' if post_default_visibility == 'followers' }}" data-value="followers" role="menuitem">{{ icons.icon('lock', size=14) }} Sadece takipçilerim</button>
                         <button type="button" class="post-visibility-item" data-value="close_friends" role="menuitem">{{ icons.heart_filled(size=14) }} Yakın Arkadaşlar</button>
                     </div>
                 </div>
@@ -301,16 +304,21 @@
 
                     {# Görünürlük dropdown'ı — eski checkbox ("çok kötü duruyordu",
                        kullanıcı raporu) yerine post composer'daki AYNI özel
-                       dropdown deseni. Varsayılan "public" olarak KALIYOR. #}
-                    <div class="story-visibility-wrap">
+                       dropdown deseni. Varsayılan post composer'la AYNI kuralı
+                       izler: gizli hesap -> "Takipçilere özel", açık hesap ->
+                       "Herkese açık" (kullanıcı isteği: "hikayelerde falan da
+                       ilk başta varsayılan sadece takipçilerim olsun, hesap
+                       açıksa herkese açık olsun"). #}
+                    {% set story_default_visibility = 'followers' if my_is_private else 'public' %}
+                    <div class="story-visibility-wrap" data-default-value="{{ story_default_visibility }}">
                         <button type="button" class="story-visibility-btn" id="story-visibility-btn"
                                 aria-haspopup="menu" aria-expanded="false" aria-label="Kimler görebilir?">
-                            <span class="story-visibility-btn-content" id="story-visibility-btn-content">{{ icons.icon('globe', size=14) }} Herkese açık</span>
+                            <span class="story-visibility-btn-content" id="story-visibility-btn-content">{% if my_is_private %}{{ icons.icon('lock', size=14) }} Takipçilere özel{% else %}{{ icons.icon('globe', size=14) }} Herkese açık{% endif %}</span>
                             <span class="story-visibility-chevron" aria-hidden="true">▾</span>
                         </button>
                         <div class="story-visibility-menu" id="story-visibility-menu" role="menu" hidden>
-                            <button type="button" class="story-visibility-item selected" data-value="public" role="menuitem">{{ icons.icon('globe', size=14) }} Herkese açık</button>
-                            <button type="button" class="story-visibility-item" data-value="followers" role="menuitem">{{ icons.icon('lock', size=14) }} Takipçilere özel</button>
+                            <button type="button" class="story-visibility-item {{ 'selected' if story_default_visibility == 'public' }}" data-value="public" role="menuitem">{{ icons.icon('globe', size=14) }} Herkese açık</button>
+                            <button type="button" class="story-visibility-item {{ 'selected' if story_default_visibility == 'followers' }}" data-value="followers" role="menuitem">{{ icons.icon('lock', size=14) }} Takipçilere özel</button>
                             <button type="button" class="story-visibility-item" data-value="close_friends" role="menuitem">{{ icons.heart_filled(size=14) }} Yakın arkadaşlara özel</button>
                         </div>
                     </div>
@@ -338,7 +346,7 @@
             {# Gizli input'lar: background_color, visibility ve altyazı konumu
                (0-1 arası oran — anketin poll_position_x/y'siyle AYNI temsil) #}
             <input type="hidden" name="background_color" id="story-bg-input" value="">
-            <input type="hidden" name="visibility" id="story-visibility-input" value="public">
+            <input type="hidden" name="visibility" id="story-visibility-input" value="{{ story_default_visibility }}">
             <input type="hidden" name="caption_position_x" id="story-caption-position-x-input" value="0.5">
             <input type="hidden" name="caption_position_y" id="story-caption-position-y-input" value="0.75">
 

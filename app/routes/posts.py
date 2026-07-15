@@ -214,6 +214,16 @@ def feed():
 
         return {"posts": posts_count, "likes": likes_count}
 
+    def _fetch_my_is_private():
+        """Viewer'ın kendi is_private durumu — post/hikaye paylaşma modallarında
+        görünürlük varsayılanını belirlemek için (gizli hesap -> varsayılan
+        'Sadece takipçilerim', açık hesap -> varsayılan 'Herkese açık')."""
+        try:
+            prof = sb.table("profiles").select("is_private").eq("id", me).execute().data
+            return bool(prof[0].get("is_private")) if prof else False
+        except Exception:
+            return False
+
     with ThreadPoolExecutor(max_workers=10) as executor:
         blocked_fut = executor.submit(blocked_user_ids, sb, me)
         memories_fut = executor.submit(get_memories, sb, me) if page == 1 else None
@@ -222,6 +232,7 @@ def feed():
         recent_media_fut = executor.submit(_fetch_recent_media)
         close_friends_fut = executor.submit(_fetch_close_friends)
         following_ids_fut = executor.submit(_fetch_following_ids)
+        my_is_private_fut = executor.submit(_fetch_my_is_private)
         recent_activity_fut = executor.submit(_fetch_recent_activity)
         my_week_stats_fut = executor.submit(_fetch_my_week_stats)
 
@@ -238,6 +249,7 @@ def feed():
         stories_bar = stories_fut.result()
         recent_activity = recent_activity_fut.result()
         my_week_stats = my_week_stats_fut.result()
+        my_is_private = my_is_private_fut.result()
 
         # following_ids/blocked_ids bekledikten sonra: "kimi takip etmeli" önerisi
         def _fetch_suggested_users():
@@ -264,6 +276,7 @@ def feed():
             explore_suggestions = []
 
     return render_template("feed.html", posts=posts, me=session.get("user"),
+                           my_is_private=my_is_private,
                            page=page, has_next=has_next, trending_tags=trending_tags,
                            suggested_users=suggested_users, stories_bar=stories_bar,
                            memories=memories, valid_usernames=valid_usernames,

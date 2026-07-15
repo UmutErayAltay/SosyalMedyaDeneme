@@ -37,6 +37,7 @@
     var storyTextPreview = document.getElementById('story-text-preview');
     var storyMediaPreviewInner = document.querySelector('.story-media-preview-inner');
     var storyVisibilityInput = document.getElementById('story-visibility-input');
+    var storyVisibilityWrap = document.querySelector('.story-visibility-wrap');
     var storyVisibilityBtn = document.getElementById('story-visibility-btn');
     var storyVisibilityMenu = document.getElementById('story-visibility-menu');
     var storyVisibilityBtnContent = document.getElementById('story-visibility-btn-content');
@@ -78,17 +79,21 @@
                 sw.classList.remove('selected');
             });
         }
-        // Görünürlük dropdown'ını varsayılana ("public"/Herkese açık) döndür
+        // Görünürlük dropdown'ını varsayılana döndür — varsayılan sunucu
+        // tarafında hesabın gizlilik durumuna göre hesaplanıp
+        // `.story-visibility-wrap[data-default-value]`'a yazılıyor (gizli
+        // hesap -> followers, açık hesap -> public), sabit kodlanmıyor.
+        var storyDefaultValue = (storyVisibilityWrap && storyVisibilityWrap.dataset.defaultValue) || 'public';
         if (storyVisibilityMenu) {
-            var defaultItem = storyVisibilityMenu.querySelector('.story-visibility-item[data-value="public"]');
+            var defaultItem = storyVisibilityMenu.querySelector('.story-visibility-item[data-value="' + storyDefaultValue + '"]');
             if (defaultItem && storyVisibilityBtnContent) storyVisibilityBtnContent.innerHTML = defaultItem.innerHTML;
             storyVisibilityMenu.querySelectorAll('.story-visibility-item').forEach(function (i) {
-                i.classList.toggle('selected', i.dataset.value === 'public');
+                i.classList.toggle('selected', i.dataset.value === storyDefaultValue);
             });
             storyVisibilityMenu.hidden = true;
         }
         if (storyVisibilityBtn) storyVisibilityBtn.setAttribute('aria-expanded', 'false');
-        if (storyVisibilityInput) storyVisibilityInput.value = 'public';
+        if (storyVisibilityInput) storyVisibilityInput.value = storyDefaultValue;
     }
 
     if (addStoryBtn) addStoryBtn.addEventListener('click', openStoryModal);
