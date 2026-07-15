@@ -85,6 +85,16 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
 
+    # Render (ve benzeri PaaS'ler) TLS'i kendi kenarında sonlandırıp uygulamaya
+    # DÜZ HTTP ile bağlanır — bu middleware olmadan url_for(..., _external=True)
+    # (Google OAuth redirect_to, şifre sıfırlama e-postası linki) canlıda
+    # "http://" üretir, gerçek site "https://" olduğu için Supabase'in
+    # redirect_to eşleşmesi/kullanıcı deneyimi bozulur. ProxyFix, Render'ın
+    # eklediği X-Forwarded-Proto (ve Host) başlığına GÜVENİLİR TEK atlama
+    # için bakar; header yoksa (yerel geliştirme) hiçbir şeyi değiştirmez.
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
     # --- Presence (last-seen) & Session validation ---
     # Her HTTP request'te, oturum açmış kullanıcı "son görülme" zamanını güncelle.
     # Profil/mesaj listesinde online status göstermek için kullanılır.
