@@ -177,14 +177,14 @@
 <div class="profile-tabs">
     <div role="tablist" aria-label="Profil içerikleri" class="tablist">
         <button type="button" role="tab" id="tab-posts" aria-selected="true"
-                aria-controls="panel-posts" class="tab-btn" tabindex="0">Gönderiler</button>
+                aria-controls="panel-posts" class="tab-btn" tabindex="0">{{ icons.icon('grid', size=14) }} Gönderiler</button>
         <button type="button" role="tab" id="tab-media" aria-selected="false"
-                aria-controls="panel-media" class="tab-btn" tabindex="-1">Medya</button>
+                aria-controls="panel-media" class="tab-btn" tabindex="-1">{{ icons.icon('image', size=14) }} Medya</button>
         <button type="button" role="tab" id="tab-liked" aria-selected="false"
-                aria-controls="panel-liked" class="tab-btn" tabindex="-1">Beğenilenler</button>
+                aria-controls="panel-liked" class="tab-btn" tabindex="-1">{{ icons.icon('heart', size=14) }} Beğenilenler</button>
         {% if is_self %}
         <button type="button" role="tab" id="tab-bookmarks" aria-selected="false"
-                aria-controls="panel-bookmarks" class="tab-btn" tabindex="-1">Kaydedilenler</button>
+                aria-controls="panel-bookmarks" class="tab-btn" tabindex="-1">{{ icons.icon('bookmark', size=14) }} Kaydedilenler</button>
         <button type="button" role="tab" id="tab-stickers" aria-selected="false"
                 aria-controls="panel-stickers" class="tab-btn" tabindex="-1">{{ icons.icon('tag', size=14) }} Çıkartmalarım</button>
         <button type="button" role="tab" id="tab-archive" aria-selected="false"

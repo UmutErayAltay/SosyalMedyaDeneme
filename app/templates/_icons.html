@@ -65,23 +65,18 @@
     'sun': '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>',
     'moon': '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
     'folder': '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+    'grid': '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
 } -%}
-<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
-     {% if cls %}class="{{ cls }}"{% endif %}>{{ paths[name]|safe }}</svg>
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"{% if cls %} class="{{ cls }}"{% endif %}>{{ paths[name]|safe }}</svg>
 {%- endmacro %}
 
 {# Yakın arkadaş rozeti (💚) — tek istisna: yeşil DOLU kalp, çizgi ikon değil
    (emoji'nin renkli kimliğini korumak kasıtlı, bkz. reaction-icon kararı). #}
 {% macro heart_filled(size=14, color='#2ecc71') %}
-<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="{{ color }}" stroke="none" aria-hidden="true">
-    <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/>
-</svg>
-{% endmacro %}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="{{ color }}" stroke="none" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>
+{%- endmacro %}
 
 {# Kayıt göstergesi (🔴) — dolu kırmızı nokta, sesli mesaj kaydı sırasında #}
 {% macro record_dot(size=10, color='#e74c3c') %}
-<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="{{ color }}" stroke="none" aria-hidden="true">
-    <circle cx="12" cy="12" r="10"/>
-</svg>
-{% endmacro %}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="{{ color }}" stroke="none" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg>
+{%- endmacro %}
