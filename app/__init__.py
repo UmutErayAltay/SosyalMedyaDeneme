@@ -86,14 +86,41 @@ def create_app() -> Flask:
     app.config.from_object(Config)
 
     # Render (ve benzeri PaaS'ler) TLS'i kendi kenarında sonlandırıp uygulamaya
-    # DÜZ HTTP ile bağlanır — bu middleware olmadan url_for(..., _external=True)
-    # (Google OAuth redirect_to, şifre sıfırlama e-postası linki) canlıda
-    # "http://" üretir, gerçek site "https://" olduğu için Supabase'in
-    # redirect_to eşleşmesi/kullanıcı deneyimi bozulur. ProxyFix, Render'ın
-    # eklediği X-Forwarded-Proto (ve Host) başlığına GÜVENİLİR TEK atlama
-    # için bakar; header yoksa (yerel geliştirme) hiçbir şeyi değiştirmez.
+    # DÜZ HTTP ile bağlanır — bu olmadan url_for(..., _external=True) (Google
+    # OAuth redirect_to, şifre sıfırlama e-postası linki) canlıda "http://"
+    # üretir, gerçek site "https://" olduğu için Supabase'in redirect_to
+    # eşleşmesi bozulur. ProxyFix standart X-Forwarded-Proto'ya bakar (header
+    # yoksa hiçbir şeyi değiştirmez) ama CANLIDA DOĞRULANDI: Render'ın
+    # *.onrender.com adresleri Cloudflare üzerinden servis ediliyor ve
+    # X-Forwarded-Proto HİÇ gönderilmiyor — gerçek şema sadece Cloudflare'in
+    # kendi `Cf-Visitor: {"scheme":"https"}` başlığında geliyor (curl ile
+    # /_debug_headers üzerinden ham başlıklar dökülüp tek tek kontrol edildi).
     from werkzeug.middleware.proxy_fix import ProxyFix
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+    import json as _json
+
+    class _CloudflareSchemeFix:
+        """Cf-Visitor başlığındaki gerçek şemayı wsgi.url_scheme'e yazar.
+        ProxyFix'ten SONRA (dıştan) sarılır — X-Forwarded-Proto gelirse
+        ProxyFix zaten doğru ayarlamış olur, bu middleware sadece o header
+        YOKSA (mevcut Render+Cloudflare durumu) devreye girer."""
+        def __init__(self, app):
+            self.app = app
+
+        def __call__(self, environ, start_response):
+            if not environ.get("HTTP_X_FORWARDED_PROTO"):
+                cf_visitor = environ.get("HTTP_CF_VISITOR")
+                if cf_visitor:
+                    try:
+                        scheme = _json.loads(cf_visitor).get("scheme")
+                        if scheme in ("http", "https"):
+                            environ["wsgi.url_scheme"] = scheme
+                    except (ValueError, AttributeError):
+                        pass
+            return self.app(environ, start_response)
+
+    app.wsgi_app = _CloudflareSchemeFix(app.wsgi_app)
 
     # --- Presence (last-seen) & Session validation ---
     # Her HTTP request'te, oturum açmış kullanıcı "son görülme" zamanını güncelle.
@@ -259,18 +286,5 @@ def create_app() -> Flask:
     app.register_blueprint(gifs_bp)
     app.register_blueprint(stickers_bp)
     app.register_blueprint(push_bp)
-
-    # GEÇİCİ teşhis endpoint'i — Render/Cloudflare proxy zincirinin gerçek
-    # X-Forwarded-* başlıklarını görmek için (ProxyFix hop sayısı ayarı).
-    # Google OAuth redirect_to şeması sorunu çözülünce KALDIRILACAK.
-    @app.route("/_debug_headers")
-    def _debug_headers():
-        from flask import jsonify
-        return jsonify(
-            all_headers=dict(request.headers),
-            resolved_scheme=request.scheme,
-            resolved_host=request.host,
-            wsgi_url_scheme=request.environ.get("wsgi.url_scheme"),
-        )
 
     return app
