@@ -226,11 +226,18 @@
     if (form && input && list) {
         form.addEventListener('submit', async function (e) {
             e.preventDefault();
+            // Enter'a art arda basmak her seferinde requestSubmit() çağırıyor
+            // (aşağıdaki keydown handler'ı) — submitBtn.disabled bunu
+            // ENGELLEMEZ (programatik submit, buton durumuna bakmaz), bu
+            // yüzden aynı yorum 4-5 kere gönderiliyordu (kullanıcı raporu).
+            // Form üzerinde ayrı bir busy bayrağı ile en baştan koşulsuz çık.
+            if (form.dataset.busy === '1') return;
             var content = input.value.trim();
             var stickerVal = (form.querySelector('input[name="sticker_id"]') || {}).value || '';
             var gifVal = (form.querySelector('input[name="gif_url"]') || {}).value || '';
             // Sticker/GIF seçiliyken metin boş olabilir
             if (!content && !stickerVal && !gifVal) return;
+            form.dataset.busy = '1';
             var postId = form.dataset.postId;
             var submitBtn = form.querySelector('button[type="submit"]');
             // NOT: submitBtn artık sadece SVG ikon içeriyor (metin YOK) —
@@ -305,6 +312,7 @@
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.classList.remove('busy');
+                form.dataset.busy = '0';
             }
         });
     }
@@ -445,6 +453,10 @@
         var replyForm = e.target.closest('.reply-form');
         if (!replyForm) return;
         e.preventDefault();
+        // Ana yorum formundaki AYNI bug: Enter'a art arda basmak her seferinde
+        // requestSubmit() çağırıyor, burada hiç busy koruması yoktu — aynı
+        // yanıt birden fazla kez gönderiliyordu.
+        if (replyForm.dataset.busy === '1') return;
         var ta = replyForm.querySelector('textarea');
         var content = ta.value.trim();
         var stickerIdInput = replyForm.querySelector('input[name="sticker_id"]');
@@ -453,6 +465,7 @@
         var replyGifVal = gifUrlInput ? gifUrlInput.value : '';
         // Sticker/GIF seçiliyken metin boş olabilir
         if (!content && !replyStickerVal && !replyGifVal) return;
+        replyForm.dataset.busy = '1';
         var parentId = replyForm.dataset.parentId;
         var postId = replyForm.dataset.postId;
 
@@ -507,6 +520,8 @@
         } catch (err) {
             console.error('Yanıt gönderilemedi:', err);
             alert('Yanıt gönderilemedi.');
+        } finally {
+            replyForm.dataset.busy = '0';
         }
     });
 
