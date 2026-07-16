@@ -149,15 +149,24 @@ def discover():
     sb = get_sb()
     me = _my_id()
 
-    # Sayfalama: 1-index, geçersizse 1'e sabitle
-    page = max(1, request.args.get("page", 1, type=int))
+    # Sayfalama: 1-index, geçersizse 1'e sabitle. Üst sınır: aşırı büyük bir
+    # page değeri offset'i Postgres int4 sınırına yaklaştırıp RPC'nin
+    # "integer out of range" hatasıyla patlamasına, bu da geniş except'in
+    # bunu "migration uygulanmamış" sanıp PAHALI tam-tablo fallback'ine
+    # düşmesine yol açabilirdi (kaynak tüketimi/DoS vektörü) — 100_000
+    # sayfa (7 günlük veri için pratikte asla ulaşılamayacak kadar geniş
+    # bir üst sınır) offset'i her zaman güvenli aralıkta tutar.
+    page = max(1, min(request.args.get("page", 1, type=int), 100_000))
     offset = (page - 1) * PAGE_SIZE
 
-    # RPC kritik yol: görünürlük + engelleme + 7 gün + skor RPC'de yapılır
+    # RPC kritik yol: görünürlük + engelleme + 7 gün + skor RPC'de yapılır.
+    # p_limit=PAGE_SIZE+1 istenir — feed()'deki aynı desen (bkz. posts.py):
+    # tam PAGE_SIZE dönerse "daha fazla var mı" belirsiz kalırdı (off-by-one),
+    # +1 fazladan satır çekilip has_more hesabından sonra atılır.
     def _fetch_discover_rpc():
         try:
             return sb.rpc("discover_page_posts", {
-                "p_me": me, "p_limit": PAGE_SIZE, "p_offset": offset
+                "p_me": me, "p_limit": PAGE_SIZE + 1, "p_offset": offset
             }).execute().data or []
         except Exception:
             return None
@@ -224,10 +233,14 @@ def discover():
         for p in posts:
             p["_score"] = (p.get("like_count") or 0) + (p.get("comment_count") or 0)
         posts.sort(key=lambda p: p["_score"], reverse=True)
-        posts = posts[offset:offset + PAGE_SIZE]
+        posts = posts[offset:offset + PAGE_SIZE + 1]
 
-    # has_more: Postgres'te sayfalama sonrası tam PAGE_SIZE kayıt dönmüşse, daha fazla var demektir
-    has_more = len(posts) == PAGE_SIZE
+    # has_more: PAGE_SIZE+1 istenip PAGE_SIZE'dan fazla dönmüşse daha fazla
+    # var demektir (feed()'deki has_next ile aynı desen) — tam katlarda
+    # (örn. toplam post sayısı tam 20/40 ise) yanlış "daha fazla var" sinyali
+    # veren eski `len(posts) == PAGE_SIZE` off-by-one'ı düzeltir.
+    has_more = len(posts) > PAGE_SIZE
+    posts = posts[:PAGE_SIZE]
 
     # Yan paneller feed ile aynı (sol: profil özeti + yakın arkadaşlar,
     # sağ: öneri + gündem + aktivite) — kullanıcı isteği, Sprint 58

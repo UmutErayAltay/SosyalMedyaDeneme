@@ -506,6 +506,26 @@ def mfa_verify():
     return render_template("auth/mfa_verify.html", me=session.get("user"))
 
 
+def _user_has_password_identity(access_token: str) -> bool:
+    """Kullanıcının Supabase Auth'ta bir 'email' (şifre) identity'si var mı.
+
+    Sadece Google ile kayıt olmuş hesaplarda (google_complete()) hiçbir zaman
+    şifre belirlenmez — bu kullanıcılar için sign_in_with_password HER ZAMAN
+    "Invalid login credentials" ile başarısız olur. 2FA enroll/disable
+    reverifikasyonu bu yüzden koşullu: şifresi olmayan hesaplarda atlanır
+    (aksi halde bu kullanıcı segmenti 2FA'yı hiç açıp kapatamaz — kalıcı
+    kilitlenme, bkz. code-reviewer bulgusu). Belirsiz durumda (get_user
+    başarısız) fail-closed davranılır: şifre isteniyor kabul edilir.
+    """
+    try:
+        user_res = call_with_ssl_retry(lambda: get_auth().auth.get_user(access_token))
+        user = getattr(user_res, "user", None)
+        identities = getattr(user, "identities", None) or []
+        return any(getattr(i, "provider", None) == "email" for i in identities)
+    except Exception:
+        return True
+
+
 @bp.route("/2fa/enroll", methods=["GET", "POST"])
 def mfa_enroll():
     """2FA (TOTP) kaydı: şifre doğrulama → QR kodu göster → doğrulama.
@@ -538,8 +558,19 @@ def mfa_enroll():
         except Exception:
             pass  # MFA kontrolü başarısız — devam et
 
-        # Şifre doğrulanmış mı?
-        if session.get("mfa_verified_for_enroll"):
+        # Google-only hesaplarda şifre YOK (sign_in_with_password her zaman
+        # başarısız olur) — bu kullanıcılar için şifre adımı atlanır, önceki
+        # (reverifikasyonsuz) davranış korunur, aksi halde bu segment 2FA'yı
+        # hiç açamazdı (bkz. _user_has_password_identity docstring'i).
+        no_password_account = not _user_has_password_identity(session["access_token"])
+
+        # Şifre doğrulanmış mı? Flag'e zaman damgası eklendi (satır ~606) —
+        # süresiz kalırsa yarıda kalan bir akışta (örn. şifre doğrulandı ama
+        # sekme kapandı) paylaşılan/çalınmış bir cihazda session çerezi
+        # günlerce geçerli kaldığı sürece QR'a şifresiz erişim açık kalırdı.
+        # 120 saniyelik dar bir pencereyle sınırlanıyor.
+        verified_at = session.get("mfa_verified_for_enroll")
+        if no_password_account or (verified_at and time.time() - verified_at < 120):
             # Flag tüket (tek kullanımlık)
             session.pop("mfa_verified_for_enroll", None)
 
@@ -602,8 +633,9 @@ def mfa_enroll():
                     })
                 )
 
-                # Şifre doğru — flag set et ve QR sayfasına yönlendir
-                session["mfa_verified_for_enroll"] = True
+                # Şifre doğru — flag'i zaman damgasıyla set et (TTL kontrolü
+                # için, bkz. GET akışındaki 120sn penceresi) ve QR sayfasına yönlendir
+                session["mfa_verified_for_enroll"] = time.time()
                 return redirect(url_for("auth.mfa_enroll"))
 
             except Exception as e:
@@ -661,9 +693,10 @@ def mfa_enroll():
 
 @bp.route("/2fa/disable", methods=["POST"])
 def mfa_disable():
-    """2FA (TOTP) devre dışı bırakma — şifre doğrulama ile korunur.
+    """2FA (TOTP) devre dışı bırakma — şifresi olan hesaplarda şifre doğrulaması ile korunur.
 
-    CSRF korumalı POST isteği — geçerli oturum + şifre gerekli.
+    CSRF korumalı POST isteği — geçerli oturum gerekli. Google-only hesaplarda
+    (hiç şifre yok) reverifikasyon adımı atlanır, bkz. _user_has_password_identity.
     """
     if "user" not in session:
         flash("Giriş yap.", "error")
@@ -673,30 +706,39 @@ def mfa_disable():
     email = session["user"]["email"]
     password = request.form.get("password", "").strip()
 
-    # Şifre alanı boş mı kontrol et
-    if not password:
-        flash("2FA'yı kapatmak için şifreni gir.", "error")
-        return redirect(url_for("routes.profile_edit"))
+    if _user_has_password_identity(session["access_token"]):
+        # Şifre alanı boş mu kontrol et
+        if not password:
+            flash("2FA'yı kapatmak için şifreni gir.", "error")
+            return redirect(url_for("routes.profile_edit"))
 
-    # Kullanıcı bazlı rate limit — 5 deneme / 300 saniye
-    if is_rate_limited(f"2fa_disable:{user_id}", 5, 300):
-        flash("Çok fazla 2FA kapatma denemesi yaptın. Lütfen biraz sonra tekrar dene.", "error")
-        return redirect(url_for("routes.profile_edit"))
+        # Kullanıcı bazlı rate limit — 5 deneme / 300 saniye
+        if is_rate_limited(f"2fa_disable:{user_id}", 5, 300):
+            flash("Çok fazla 2FA kapatma denemesi yaptın. Lütfen biraz sonra tekrar dene.", "error")
+            return redirect(url_for("routes.profile_edit"))
+
+        try:
+            # Şifreyi doğrula — başarısız olursa exception fırlar
+            tmp_auth = create_client(
+                current_app.config["SUPABASE_URL"],
+                current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+            )
+            call_with_ssl_retry(
+                lambda: tmp_auth.auth.sign_in_with_password({
+                    "email": email,
+                    "password": password,
+                })
+            )
+        except Exception as e:
+            msg = str(e)
+            if "Invalid login credentials" in msg:
+                flash("Şifre yanlış.", "error")
+            else:
+                flash(f"2FA devre dışı bırakma hatası: {msg}", "error")
+            return redirect(url_for("routes.profile_edit"))
 
     try:
-        # Şifreyi doğrula — başarısız olursa exception fırlar
-        tmp_auth = create_client(
-            current_app.config["SUPABASE_URL"],
-            current_app.config["SUPABASE_PUBLISHABLE_KEY"],
-        )
-        call_with_ssl_retry(
-            lambda: tmp_auth.auth.sign_in_with_password({
-                "email": email,
-                "password": password,
-            })
-        )
-
-        # Şifre doğru — TOTP factor'ü bul ve kaldır
+        # Şifre doğru (veya hesap zaten şifresiz) — TOTP factor'ü bul ve kaldır
         tmp = create_client(
             current_app.config["SUPABASE_URL"],
             current_app.config["SUPABASE_PUBLISHABLE_KEY"],
@@ -721,11 +763,7 @@ def mfa_disable():
         return redirect(url_for("routes.profile_edit"))
 
     except Exception as e:
-        msg = str(e)
-        if "Invalid login credentials" in msg:
-            flash("Şifre yanlış.", "error")
-        else:
-            flash(f"2FA devre dışı bırakma hatası: {msg}", "error")
+        flash(f"2FA devre dışı bırakma hatası: {e}", "error")
         return redirect(url_for("routes.profile_edit"))
 
 

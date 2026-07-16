@@ -475,8 +475,14 @@ def profile_edit():
     except Exception:
         active_sessions = []
 
+    # Google-only hesaplarda şifre yok — 2FA aç/kapat formlarında şifre
+    # alanı zorunlu (required) gösterilmemeli, aksi halde bu kullanıcı
+    # segmenti formu hiç gönderemez (bkz. app/auth.py _user_has_password_identity)
+    from ..auth import _user_has_password_identity
+    has_password = _user_has_password_identity(session.get("access_token", ""))
+
     return render_template("profile_edit.html", profile=prof.data[0], me=session["user"],
-                           active_sessions=active_sessions)
+                           active_sessions=active_sessions, has_password=has_password)
 
 
 def _daily_counts(rows: list, days: int) -> list[dict]:
