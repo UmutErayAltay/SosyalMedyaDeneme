@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Test suite gerçek Supabase projesine karşı sabit e-posta adresleriyle
+# (bkz. tests/conftest.py) kullanıcı oluşturup siliyor — aynı anda birden
+# fazla CI koşumu aynı e-postayı yarışa sokup flaky hataya/kalıntıya yol
+# açabilir. Aynı branch için sadece TEK koşum aktif kalır, yenisi gelince
+# öncekini iptal eder.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Bağımlılıkları kur
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: py_compile (backend)
+        run: python -m py_compile app/*.py app/routes/*.py app/messaging/*.py
+
+      - name: Node kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: node --check + Jinja parse (tüm izlenen .py/.js/.html)
+        run: |
+          FILES=$(git ls-files '*.py' '*.js' '*.html')
+          python .claude/skills/post-change-verify/scripts/check_changes.py $FILES
+
+      # Test suite gerçek Supabase'e karşı çalışır (mock yok, bkz.
+      # tests/conftest.py) — bu yüzden repo secret'ları gerekli:
+      # Settings → Secrets and variables → Actions → New repository secret
+      # FLASK_SECRET_KEY, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY,
+      # SUPABASE_SECRET_KEY (service role), SUPABASE_JWKS_URL
+      - name: pytest (gerçek Supabase'e karşı)
+        env:
+          FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_JWKS_URL: ${{ secrets.SUPABASE_JWKS_URL }}
+        run: python -m pytest tests/ -v
