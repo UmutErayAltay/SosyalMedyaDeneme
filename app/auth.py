@@ -508,10 +508,10 @@ def mfa_verify():
 
 @bp.route("/2fa/enroll", methods=["GET", "POST"])
 def mfa_enroll():
-    """2FA (TOTP) kaydı: QR kodu göster ve doğrula.
+    """2FA (TOTP) kaydı: şifre doğrulama → QR kodu göster → doğrulama.
 
-    GET: QR kodu + secret'ı göster.
-    POST: Doğrulama kodunu al, kurulumu tamamla.
+    GET: Şifre doğrulanmadıysa form, doğrulanmışsa QR kodu göster.
+    POST: Şifre doğrula (flag set) veya TOTP kodu doğrula (kurulum tamamla).
     """
     # Kullanıcı oturum açmış mı?
     if "user" not in session:
@@ -519,10 +519,11 @@ def mfa_enroll():
         return redirect(url_for("auth.login"))
 
     user_id = session["user"]["id"]
+    email = session["user"]["email"]
 
-    # GET: QR kod + secret göster
+    # GET: Şifre doğrulanmadıysa form göster, doğrulanmışsa QR göster
     if request.method == "GET":
-        # Zaten kurulu mu kontrol et (geçici client ile list_factors)
+        # Zaten kurulu mu kontrol et
         try:
             tmp = create_client(
                 current_app.config["SUPABASE_URL"],
@@ -537,75 +538,125 @@ def mfa_enroll():
         except Exception:
             pass  # MFA kontrolü başarısız — devam et
 
-        # Geçici client ile enrollment başlat
-        try:
-            tmp = create_client(
-                current_app.config["SUPABASE_URL"],
-                current_app.config["SUPABASE_PUBLISHABLE_KEY"],
-            )
-            tmp.auth.set_session(session["access_token"], session["refresh_token"])
+        # Şifre doğrulanmış mı?
+        if session.get("mfa_verified_for_enroll"):
+            # Flag tüket (tek kullanımlık)
+            session.pop("mfa_verified_for_enroll", None)
 
-            # TOTP enrollment: QR kod + secret dön
-            # issuer EXPLICIT verilmezse Supabase, projenin Site URL ayarına
-            # (örn. "localhost:3000") düşüyor — authenticator'da site adı
-            # yerine bu görünüyordu, elle site adı veriyoruz.
-            enrollment = tmp.auth.mfa.enroll({"factor_type": "totp", "issuer": "Sosyal Medya"})
+            # QR/secret üret
+            try:
+                tmp = create_client(
+                    current_app.config["SUPABASE_URL"],
+                    current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+                )
+                tmp.auth.set_session(session["access_token"], session["refresh_token"])
+                enrollment = tmp.auth.mfa.enroll({"factor_type": "totp", "issuer": "Sosyal Medya"})
 
-            # Session'a geçici olarak kaydet (POST'ta kullanacağız)
-            session["mfa_enrollment_id"] = enrollment.id
-            session["mfa_enrollment_secret"] = getattr(enrollment.totp, "secret", "")
+                session["mfa_enrollment_id"] = enrollment.id
+                session["mfa_enrollment_secret"] = getattr(enrollment.totp, "secret", "")
 
+                return render_template(
+                    "auth/mfa_enroll.html",
+                    me=session.get("user"),
+                    qr_code=getattr(enrollment.totp, "qr_code", ""),
+                    secret=session["mfa_enrollment_secret"],
+                    show_qr=True,
+                )
+            except Exception as e:
+                flash(f"2FA kurulum hatası: {e}", "error")
+                return redirect(url_for("routes.profile_edit"))
+        else:
+            # Şifre formu göster
             return render_template(
                 "auth/mfa_enroll.html",
                 me=session.get("user"),
-                qr_code=getattr(enrollment.totp, "qr_code", ""),
-                secret=session["mfa_enrollment_secret"],
+                show_qr=False,
             )
-        except Exception as e:
-            flash(f"2FA kurulum hatası: {e}", "error")
-            return redirect(url_for("routes.profile_edit"))
 
-    # POST: Verification kodunu doğrula
+    # POST: Şifre veya kod doğrula
     if request.method == "POST":
+        password = request.form.get("password", "").strip()
         code = request.form.get("code", "").strip()
 
-        if not code or len(code) != 6 or not code.isdigit():
-            flash("Lütfen 6 haneli kodu gir.", "error")
+        # Şifre POST'u (2FA'nın başında)
+        if password and not code:
+            if not password:
+                flash("2FA'yı etkinleştirmek için şifreni gir.", "error")
+                return redirect(url_for("auth.mfa_enroll"))
+
+            # Rate limit — 5 deneme / 300 saniye
+            if is_rate_limited(f"2fa_enroll:{user_id}", 5, 300):
+                flash("Çok fazla 2FA kurulum denemesi yaptın. Lütfen biraz sonra tekrar dene.", "error")
+                return redirect(url_for("auth.mfa_enroll"))
+
+            try:
+                # Şifreyi doğrula
+                tmp_auth = create_client(
+                    current_app.config["SUPABASE_URL"],
+                    current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+                )
+                call_with_ssl_retry(
+                    lambda: tmp_auth.auth.sign_in_with_password({
+                        "email": email,
+                        "password": password,
+                    })
+                )
+
+                # Şifre doğru — flag set et ve QR sayfasına yönlendir
+                session["mfa_verified_for_enroll"] = True
+                return redirect(url_for("auth.mfa_enroll"))
+
+            except Exception as e:
+                msg = str(e)
+                if "Invalid login credentials" in msg:
+                    flash("Şifre yanlış.", "error")
+                else:
+                    flash(f"Şifre doğrulama hatası: {msg}", "error")
+                return redirect(url_for("auth.mfa_enroll"))
+
+        # Kod POST'u (2FA kurulumunun tamamlanması)
+        elif code and not password:
+            if not code or len(code) != 6 or not code.isdigit():
+                flash("Lütfen 6 haneli kodu gir.", "error")
+                return redirect(url_for("auth.mfa_enroll"))
+
+            enrollment_id = session.pop("mfa_enrollment_id", None)
+            if not enrollment_id:
+                flash("Geçersiz 2FA kurulum oturumu.", "error")
+                return redirect(url_for("routes.profile_edit"))
+
+            try:
+                tmp = create_client(
+                    current_app.config["SUPABASE_URL"],
+                    current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+                )
+                tmp.auth.set_session(session["access_token"], session["refresh_token"])
+
+                # TOTP kodunu doğrula
+                challenge_resp = tmp.auth.mfa.challenge({"factor_id": enrollment_id})
+                tmp.auth.mfa.verify({
+                    "factor_id": enrollment_id,
+                    "challenge_id": challenge_resp.id,
+                    "code": code,
+                })
+
+                session.pop("mfa_enrollment_secret", None)
+                session.pop("mfa_verified_for_enroll", None)  # Güvenlik: flag'i temizle
+                flash("2FA başarıyla etkinleştirildi!", "success")
+                return redirect(url_for("routes.profile_edit"))
+
+            except Exception as e:
+                msg = str(e)
+                if "Invalid verification code" in msg or "invalid_code" in msg:
+                    flash("Geçersiz doğrulama kodu. Tekrar dene.", "error")
+                else:
+                    flash(f"2FA doğrulama hatası: {e}", "error")
+                return redirect(url_for("auth.mfa_enroll"))
+        else:
+            flash("Geçersiz istek.", "error")
             return redirect(url_for("auth.mfa_enroll"))
 
-        enrollment_id = session.pop("mfa_enrollment_id", None)
-        if not enrollment_id:
-            flash("Geçersiz 2FA kurulum oturumu.", "error")
-            return redirect(url_for("routes.profile_edit"))
-
-        try:
-            tmp = create_client(
-                current_app.config["SUPABASE_URL"],
-                current_app.config["SUPABASE_PUBLISHABLE_KEY"],
-            )
-            tmp.auth.set_session(session["access_token"], session["refresh_token"])
-
-            # TOTP kodunu doğrula: önce challenge oluştur, sonra verify et
-            challenge_resp = tmp.auth.mfa.challenge({"factor_id": enrollment_id})
-            tmp.auth.mfa.verify({
-                "factor_id": enrollment_id,
-                "challenge_id": challenge_resp.id,
-                "code": code,
-            })
-
-            session.pop("mfa_enrollment_secret", None)
-            flash("2FA başarıyla etkinleştirildi!", "success")
-            return redirect(url_for("routes.profile_edit"))
-
-        except Exception as e:
-            msg = str(e)
-            if "Invalid verification code" in msg or "invalid_code" in msg:
-                flash("Geçersiz doğrulama kodu. Tekrar dene.", "error")
-            else:
-                flash(f"2FA doğrulama hatası: {e}", "error")
-            return redirect(url_for("auth.mfa_enroll"))
-
-    return render_template("auth/mfa_enroll.html", me=session.get("user"))
+    return render_template("auth/mfa_enroll.html", me=session.get("user"), show_qr=False)
 
 
 @bp.route("/2fa/disable", methods=["POST"])

@@ -2,6 +2,8 @@
 {% block title %}2FA Kurulumu{% endblock %}
 {% block content %}
 <div class="auth-card" style="max-width: 450px;">
+    {% if show_qr %}
+    <!-- Adım 2: QR kodu ve TOTP kodu doğrulama -->
     <h1>2FA Kur</h1>
     <p class="muted">Telefonuna bir authenticator uygulaması indir (Google Authenticator, Authy vb.) ve bu QR kodunu tara.</p>
 
@@ -29,5 +31,20 @@
         <button type="submit" class="btn btn-primary">2FA'yı Etkinleştir</button>
         <a href="{{ url_for('routes.profile_edit') }}" class="btn btn-ghost">İptal</a>
     </form>
+
+    {% else %}
+    <!-- Adım 1: Şifre doğrulama -->
+    <h1>2FA'yı Etkinleştir</h1>
+    <p class="muted">Hesabını korumak için, lütfen şifreni doğrula.</p>
+
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Şifre
+            <input type="password" name="password" required autofocus>
+        </label>
+        <button type="submit" class="btn btn-primary">Devam Et</button>
+        <a href="{{ url_for('routes.profile_edit') }}" class="btn btn-ghost">İptal</a>
+    </form>
+    {% endif %}
 </div>
 {% endblock %}
