@@ -5,6 +5,12 @@
 # Playwright MCP test artefaktları (snapshot/screenshot çıktıları)
 .playwright-mcp/
 
+# Node (Playwright E2E test runner, ileride esbuild)
+node_modules/
+test-results/
+playwright-report/
+e2e/.auth/
+
 # Python
 __pycache__/
 *.py[cod]
