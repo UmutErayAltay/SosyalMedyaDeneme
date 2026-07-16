@@ -64,9 +64,10 @@
             <button type="submit" class="btn btn-primary" onclick="this.form.method='get'">2FA'yı Etkinleştir</button>
         </form>
 
-        <form method="post" action="{{ url_for('auth.mfa_disable') }}" style="display: inline;">
+        <form method="post" action="{{ url_for('auth.mfa_disable') }}" style="display: inline; vertical-align: top;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-ghost" onclick="return confirm('2FA devre dışı bırakılacak. Emin misin?')">2FA'yı Kapat</button>
+            <input type="password" name="password" placeholder="Şifreni gir" required style="width: 200px; padding: 6px 8px; margin-right: 8px; vertical-align: middle;">
+            <button type="submit" class="btn btn-ghost" style="vertical-align: middle;">2FA'yı Kapat</button>
         </form>
     </div>
 

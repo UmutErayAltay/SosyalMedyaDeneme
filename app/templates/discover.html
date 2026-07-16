@@ -31,6 +31,21 @@
             <p class="muted center">Şu an gösterilecek bir şey yok — belki herkesi zaten takip ediyorsun!</p>
         {% endfor %}
     </section>
+
+    {# Sayfalama: discover.html'de feed.html'deki sonsuz kaydırma altyapısı
+       (infiniteScroll.js #post-list/#feed-sentinel/#feed-pagination ID'lerine
+       ve AJAX partial-render'a bağlı) YOK — bu yüzden nav'ı `hidden` yapıp
+       JS'e bırakmak yerine DOĞRUDAN görünür basit link sayfalaması kullanılır. #}
+    {% if page > 1 or has_more %}
+    <nav class="pagination" aria-label="Sayfalama">
+        {% if page > 1 %}
+            <a href="{{ url_for('routes.discover', page=page-1) }}" class="btn btn-ghost">← Daha yeni</a>
+        {% endif %}
+        {% if has_more %}
+            <a href="{{ url_for('routes.discover', page=page+1) }}" class="btn btn-ghost">Daha eski →</a>
+        {% endif %}
+    </nav>
+    {% endif %}
 </div>
 
 <aside class="feed-sidebar" aria-label="Önerilen kişiler ve gündemdeki etiketler">

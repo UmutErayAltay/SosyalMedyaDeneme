@@ -260,6 +260,20 @@ def _attach_post_metrics(sb, posts: list, me: str) -> None:
     Sayılar embedded count ile tek sorguda gelir; kullanıcıya özel alanlar ve
     repost orijinalleri için tüm postlar üzerinden tek birer IN sorgusu
     yapılır (N+1 önlenir).
+
+    VERI SÖZLEŞMESİ: Bu fonksiyonun eklediği alanlar (like_count, comment_count,
+    liked_by_me, my_reaction, bookmarked_by_me, repost_of) AYNEN
+    sql/migration_discover_profile_rpc.sql'deki enrich_post_json() RPC'sinin
+    döndürdüğü JSON şemasıyla EŞLEŞMELİDİR. RPC yolu (feed/discover/profile RPC
+    başarılıyken) ile Python fallback yolu (RPC başarısız/migration henüz
+    uygulanmamışken) farklı şema DÖNERSE, template _post_card.html bazı
+    kullanıcılarda KeyError/None gösterir.
+
+    YENİ BİR ALAN EKLERKEN: (1) bu fonksiyona ekle, (2)
+    enrich_post_json() RPC'sine ekle, (3) attach_polls() docstring'ine nota
+    yaz (poll alanı için sözleşme), (4) .claude/rules/backend.md kuralını
+    hatırla ("Post kartına yeni alan = HEM _attach_post_metrics() HEM
+    enrich_post_json() RPC güncellenir").
     """
     post_ids = [p["id"] for p in posts]
     my_reactions: dict = {}

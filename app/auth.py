@@ -610,18 +610,42 @@ def mfa_enroll():
 
 @bp.route("/2fa/disable", methods=["POST"])
 def mfa_disable():
-    """2FA (TOTP) devre dışı bırakma.
+    """2FA (TOTP) devre dışı bırakma — şifre doğrulama ile korunur.
 
-    CSRF korumalı POST isteği — geçerli oturum gerekli.
+    CSRF korumalı POST isteği — geçerli oturum + şifre gerekli.
     """
     if "user" not in session:
         flash("Giriş yap.", "error")
         return redirect(url_for("auth.login"))
 
     user_id = session["user"]["id"]
+    email = session["user"]["email"]
+    password = request.form.get("password", "").strip()
+
+    # Şifre alanı boş mı kontrol et
+    if not password:
+        flash("2FA'yı kapatmak için şifreni gir.", "error")
+        return redirect(url_for("routes.profile_edit"))
+
+    # Kullanıcı bazlı rate limit — 5 deneme / 300 saniye
+    if is_rate_limited(f"2fa_disable:{user_id}", 5, 300):
+        flash("Çok fazla 2FA kapatma denemesi yaptın. Lütfen biraz sonra tekrar dene.", "error")
+        return redirect(url_for("routes.profile_edit"))
 
     try:
-        # Kurulu TOTP factor'ü bul ve kaldır
+        # Şifreyi doğrula — başarısız olursa exception fırlar
+        tmp_auth = create_client(
+            current_app.config["SUPABASE_URL"],
+            current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+        )
+        call_with_ssl_retry(
+            lambda: tmp_auth.auth.sign_in_with_password({
+                "email": email,
+                "password": password,
+            })
+        )
+
+        # Şifre doğru — TOTP factor'ü bul ve kaldır
         tmp = create_client(
             current_app.config["SUPABASE_URL"],
             current_app.config["SUPABASE_PUBLISHABLE_KEY"],
@@ -646,7 +670,11 @@ def mfa_disable():
         return redirect(url_for("routes.profile_edit"))
 
     except Exception as e:
-        flash(f"2FA devre dışı bırakma hatası: {e}", "error")
+        msg = str(e)
+        if "Invalid login credentials" in msg:
+            flash("Şifre yanlış.", "error")
+        else:
+            flash(f"2FA devre dışı bırakma hatası: {msg}", "error")
         return redirect(url_for("routes.profile_edit"))
 
 

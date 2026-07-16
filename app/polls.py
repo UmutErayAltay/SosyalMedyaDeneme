@@ -55,6 +55,17 @@ def attach_polls(sb, posts: list, me: str) -> None:
 
     Sayaçlar/seçenekler tek birer IN sorgusuyla tüm post ID'leri üzerinden
     toplu çekilir (N+1 önlenir — bkz. _attach_post_metrics ile aynı desen).
+
+    VERI SÖZLEŞMESİ: Bu fonksiyonun döndürdüğü poll şeması (id, total_votes,
+    my_vote, options[{id, text, votes, pct}]) AYNEN
+    sql/migration_discover_profile_rpc.sql'deki enrich_post_json()'ın poll
+    jsonb_build_object'iyle EŞLEŞMELİDİR. Şekil değişirse, RPC yolu ile Python
+    fallback yolu uyumsuzlaşır, template'te alanlar kaybolabilir.
+
+    YENİ BİR POLL ALANI EKLERKEN: (1) burayı güncelle, (2)
+    enrich_post_json() RPC poll bölümünü güncelle, (3)
+    _attach_post_metrics docstring'ini hatırla (cross-referans), (4)
+    .claude/rules/backend.md kuralını tekrar oku.
     """
     post_ids = [p["id"] for p in posts]
     for p in posts:

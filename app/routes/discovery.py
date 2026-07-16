@@ -144,13 +144,21 @@ def discover():
     (trending hashtag) sayfasının post versiyonu — burada da engelleme
     ilişkileri viewer'a özel süzülür ama gündem/keşfet listesi kişiselleştirme
     açısından basit tutuldu (takip grafiği dışında bir öneri algoritması yok)."""
+    from ._common import PAGE_SIZE
+
     sb = get_sb()
     me = _my_id()
+
+    # Sayfalama: 1-index, geçersizse 1'e sabitle
+    page = max(1, request.args.get("page", 1, type=int))
+    offset = (page - 1) * PAGE_SIZE
 
     # RPC kritik yol: görünürlük + engelleme + 7 gün + skor RPC'de yapılır
     def _fetch_discover_rpc():
         try:
-            return sb.rpc("discover_page_posts", {"p_me": me, "p_limit": 20}).execute().data or []
+            return sb.rpc("discover_page_posts", {
+                "p_me": me, "p_limit": PAGE_SIZE, "p_offset": offset
+            }).execute().data or []
         except Exception:
             return None
 
@@ -163,7 +171,10 @@ def discover():
         attach_repost_of(sb, posts)
     else:
         # Fallback: eski çok-sorgulu yol (davranış birebir aynı) — migration
-        # henüz uygulanmamışsa veya RPC başarısızsa çalışır
+        # henüz uygulanmamışsa veya RPC başarısızsa çalışır.
+        # NOT: Fallback yolu TÜM 7 günlük veriyi Python'a çeker, bellekte sıralama
+        # yapar — ölçek büyürse bu yavaş kalır ama fallback zaten "migration henüz
+        # uygulanmamışsa" durumu için var, kabul edilebilir.
         exclude_ids = followed_and_self_ids(sb, me)
         blocked_ids = blocked_user_ids(sb, me)
 
@@ -213,11 +224,15 @@ def discover():
         for p in posts:
             p["_score"] = (p.get("like_count") or 0) + (p.get("comment_count") or 0)
         posts.sort(key=lambda p: p["_score"], reverse=True)
-        posts = posts[:20]
+        posts = posts[offset:offset + PAGE_SIZE]
+
+    # has_more: Postgres'te sayfalama sonrası tam PAGE_SIZE kayıt dönmüşse, daha fazla var demektir
+    has_more = len(posts) == PAGE_SIZE
 
     # Yan paneller feed ile aynı (sol: profil özeti + yakın arkadaşlar,
     # sağ: öneri + gündem + aktivite) — kullanıcı isteği, Sprint 58
     sidebar = fetch_sidebar_context(sb, me)
 
     return render_template("discover.html", posts=posts, me=session.get("user"),
+                           page=page, has_more=has_more,
                            valid_usernames=get_valid_usernames(sb), **sidebar)

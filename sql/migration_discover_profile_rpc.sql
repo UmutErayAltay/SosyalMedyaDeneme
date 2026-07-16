@@ -2,6 +2,13 @@
 -- Keşfet + Profil sayfaları RPC'leri (feed_page_posts deseninin devamı).
 -- enrich_post_json: post ID'sini alarak, uygulamadaki _attach_post_metrics +
 -- attach_polls sonrası dict ile birebir aynı JSON'a çevirir.
+--
+-- VERI SÖZLEŞMESİ: Bu RPC'nin şeması (enrich_post_json dönüş yapısı)
+-- app/routes/_common.py'deki _attach_post_metrics() ve app/polls.py'deki
+-- attach_polls() fonksiyonlarıyla senkron tutulmalıdır. Alanlar uyumsuzsa,
+-- RPC başarılı olduğu zaman (feed/discover/profile sayfaları RPC yolunda) ile
+-- RPC başarısız/migration uygulanmamışken (Python fallback yolu) farklı veri
+-- şeması döner, template _post_card.html'de KeyError/None ortaya çıkar.
 -- ============================================================
 
 -- Post zenginleştirme helper: post_id ve viewer'ın UUID'sini alarak,
