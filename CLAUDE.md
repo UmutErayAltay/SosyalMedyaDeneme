@@ -4,7 +4,7 @@ Flask + Supabase (Postgres/Auth/Storage/Realtime) + Jinja2 + vanilla JS sosyal m
 
 ## Komutlar
 - Her değişiklik sonrası: `python -m py_compile app/*.py app/routes/*.py app/messaging/*.py`
-- Test suite yok — Flask `test_client()` scriptiyle gerçek DB'ye karşı doğrula; UI için Playwright MCP
+- Kalıcı test suite `tests/` altında (`python -m pytest tests/ -v`, `pip install -r requirements-dev.txt`) — auth/2FA/keşfet gibi güvenlik-kritik yollar için gerçek Supabase test kullanıcısıyla (`sb.auth.admin.create_user` + fixture cleanup) çalışır, mock yok. Yeni güvenlik-kritik bir route/akış eklenince oraya da kalıcı test eklenmesi tercih edilir; tek seferlik doğrulama script'leri (Playwright dahil) hâlâ ad-hoc/UI değişiklikleri için kullanılabilir
 - Paket kurulumu HER ZAMAN `python -m pip install` (çıplak `pip` yanlış Python'a kurar)
 - Sunucu: dev `run.py`, canlı `serve.py`; sunucu testinden önce eski python süreçlerini kapat
 - Sembol bazlı arama/yeniden adlandırma işlerinde Serena MCP araçlarını tercih et (`find_symbol`, `find_referencing_symbols`, `rename_symbol`)
