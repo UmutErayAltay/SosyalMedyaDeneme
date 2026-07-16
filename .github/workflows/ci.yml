@@ -48,6 +48,8 @@ jobs:
       # Settings → Secrets and variables → Actions → New repository secret
       # FLASK_SECRET_KEY, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY,
       # SUPABASE_SECRET_KEY (service role), SUPABASE_JWKS_URL
+      # (2026-07-16: secret'lar eklendi, ilk koşumda eksikti — bu commit
+      # secret'lar hazır olduktan sonraki doğrulama koşumunu tetiklemek için.)
       - name: pytest (gerçek Supabase'e karşı)
         env:
           FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
