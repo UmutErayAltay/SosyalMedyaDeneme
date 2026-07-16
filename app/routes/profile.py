@@ -19,7 +19,10 @@ from ..stories import _get_highlights
 @retry_on_connection_error
 def profile(username):
     sb = get_sb()
-    prof = sb.table("profiles").select("*").eq("username", username).execute()
+    # ilike (case-insensitive) — mention linkleri/URL'ler kullanıcının YAZDIĞI
+    # harfle (ör. "@Art") gelebilir, gerçek kullanıcı adı farklı harfte olabilir
+    # ("art") — kullanıcı raporu: "büyük küçük harf farkı olmasın".
+    prof = sb.table("profiles").select("*").ilike("username", username).execute()
     if not prof.data:
         abort(404)
     prof = prof.data[0]

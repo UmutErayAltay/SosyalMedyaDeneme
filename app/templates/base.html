@@ -180,6 +180,10 @@
     {# icons.js diğer TÜM script'lerden ÖNCE — birçoğu window.ICONS.get(...)
        kullanıyor (emoji→SVG dönüşümü, bkz. app/templates/_icons.html). #}
     <script src="{{ url_for('static', filename='js/icons.js') }}"></script>
+    {# --- @etiketleme otomatik tamamlama: sayfa bağımsız, document-level
+       delegation kullanır, ilgili textarea henüz DOM'da olmasa bile hemen
+       yüklenebilir (post composer / yorum-yanıt / mesaj kutusu) --- #}
+    <script src="{{ url_for('static', filename='js/mentionAutocomplete.js') }}"></script>
     <script src="{{ url_for('static', filename='js/pageProgress.js') }}"></script>
     {# --- Dark mode toggle JS (FOUC'suz) --- #}
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>

@@ -180,7 +180,8 @@
     </div>
 </section>
 
-<section class="comment-list" id="comment-list" aria-label="Yorumlar">
+<section class="comment-list" id="comment-list" aria-label="Yorumlar"
+         data-valid-usernames="{{ valid_usernames|tojson|forceescape }}">
     {% for c in comments %}
     <article class="card comment" data-comment-id="{{ c.id }}">
         <div class="comment-meta">

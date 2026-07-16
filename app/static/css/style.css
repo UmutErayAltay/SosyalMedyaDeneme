@@ -929,6 +929,12 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     border-bottom-right-radius: 4px;
 }
 .msg.mine .time { color: rgba(128,128,128,0.8); }
+/* .mention-link varsayılan rengi var(--primary) — .msg.mine'ın arka planı
+   DA var(--primary), yani kendi gönderdiğin mesajdaki etiket metni balonun
+   arka planıyla AYNI renkte kayboluyordu (görünmüyor ama link olduğu için
+   tıklanabiliyordu — kullanıcı raporu). Balonun kendi metin rengini
+   (var(--bg), zaten kontrast için seçilmiş) + altı çizili ayırt edici stil. */
+.msg.mine .mention-link { color: var(--bg); text-decoration: underline; }
 .msg.theirs {
     background: var(--border); border-bottom-left-radius: 4px;
 }
@@ -2382,6 +2388,26 @@ header[role="banner"] {
 .bookmark-picker-item:hover { background: var(--border); }
 .bookmark-picker-new { display: flex; gap: 6px; padding: 6px 4px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
 .bookmark-picker-new input { flex: 1; min-width: 0; font-size: 13px; }
+
+/* @etiketleme otomatik tamamlama dropdown — post composer, yorum/yanıt
+   kutuları ve mesaj kutusu ÜÇÜNDE de ortak (bkz. mentionAutocomplete.js).
+   z-index 1000: .modal-overlay z-index:100 (post-modal İÇİNDE de çalışması
+   gerekiyor) — .msg-react-picker gibi fixed konumlu diğer popover'larla
+   aynı üst katman (bkz. style.css:1091). */
+.mention-autocomplete-dropdown {
+    position: fixed; z-index: 1000; min-width: 180px; max-width: 260px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: 0 4px 16px rgba(43, 36, 32, 0.18);
+    padding: 6px; max-height: 220px; overflow-y: auto;
+}
+.mention-autocomplete-dropdown[hidden] { display: none; }
+.mention-autocomplete-item {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 6px 8px; border-radius: var(--radius-sm); border: none;
+    background: none; cursor: pointer; text-align: left; font-family: inherit;
+}
+.mention-autocomplete-item:hover { background: var(--border); }
+.mention-autocomplete-username { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* === WebRTC 1:1 Sesli/Görüntülü Arama === */
 

@@ -44,7 +44,7 @@
     // geçişinde currentValidUsernames'i panel'in data-valid-usernames'inden
     // tazeler; mentions.py'deki MENTION_RE ile birebir aynı desen (Unicode
     // harf/rakam/nokta/tire).
-    var currentValidUsernames = new Set();
+    var currentValidUsernames = new Map(); // kucuk_harfli -> gercek_kullanici_adi
     var MENTION_RE_JS = /@([\p{L}\p{N}_.-]+)/gu;
 
     function linkifyMentionsClient(text) {
@@ -55,9 +55,13 @@
         MENTION_RE_JS.lastIndex = 0;
         while ((match = MENTION_RE_JS.exec(text)) !== null) {
             var uname = match[1];
-            if (!currentValidUsernames.has(uname.toLowerCase())) continue;
+            var realUname = currentValidUsernames.get(uname.toLowerCase());
+            if (realUname === undefined) continue;
             result += escapeHtml(text.slice(lastIndex, match.index));
-            result += '<a href="/u/' + encodeURIComponent(uname) + '" class="mention-link">@' + escapeHtml(uname) + '</a>';
+            // Büyük/küçük harf farkı olsa da gerçek kullanıcı adının kendi
+            // harflerine otomatik düzeltilir (kullanıcı isteği) — sunucu
+            // tarafındaki mentions.py:linkify_mentions ile aynı davranış.
+            result += '<a href="/u/' + encodeURIComponent(realUname) + '" class="mention-link">@' + escapeHtml(realUname) + '</a>';
             lastIndex = match.index + match[0].length;
         }
         result += escapeHtml(text.slice(lastIndex));
@@ -365,9 +369,15 @@
         var memberMap = {};
         try { memberMap = JSON.parse(panel.dataset.memberMap || '{}'); } catch (err) { memberMap = {}; }
         try {
-            var validList = JSON.parse(panel.dataset.validUsernames || '[]');
-            currentValidUsernames = new Set(validList.map(function (u) { return u.toLowerCase(); }));
-        } catch (err) { currentValidUsernames = new Set(); }
+            // data-valid-usernames artık {kucuk_harfli: gercek_kullanici_adi}
+            // objesi (mentions.py get_valid_usernames) — Map'e çevrilir ki
+            // linkifyMentionsClient hem case-insensitive eşleştirsin HEM
+            // görüntülenen metni gerçek harflere otomatik düzeltsin.
+            var validMap = JSON.parse(panel.dataset.validUsernames || '{}');
+            currentValidUsernames = new Map(Object.keys(validMap).map(function (k) {
+                return [k, validMap[k]];
+            }));
+        } catch (err) { currentValidUsernames = new Map(); }
         if (!conversationId || !sendUrl) return;
 
         // Sohbet içi "aktiflik" nabzı — bu sohbeti AÇIK tuttuğumuzu sunucuya

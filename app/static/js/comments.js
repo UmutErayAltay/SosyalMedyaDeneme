@@ -12,6 +12,42 @@
         return meta ? meta.content : '';
     }
 
+    // Sunucu render'ındaki linkify_mentions (mentions.py) filtresinin JS
+    // karşılığı — chat.js:linkifyMentionsClient ile AYNI desen. AJAX ile
+    // eklenen yorum/yanıtlar Jinja'dan GEÇMEZ, bu yüzden burada da
+    // uygulanmazsa @etiket sayfa yenilenene kadar tıklanamaz düz metin
+    // kalırdı (kullanıcı raporu). #comment-list'in data-valid-usernames'i
+    // (post_detail.html, {kucuk_harfli: gercek_kullanici_adi}) tek seferlik
+    // okunur — bu sayfa AJAX ile yeniden yüklenmiyor, panel geçişi yok.
+    var validUsernamesMap = new Map();
+    (function initValidUsernames() {
+        var list = document.getElementById('comment-list');
+        if (!list) return;
+        try {
+            var obj = JSON.parse(list.dataset.validUsernames || '{}');
+            validUsernamesMap = new Map(Object.keys(obj).map(function (k) { return [k, obj[k]]; }));
+        } catch (err) { validUsernamesMap = new Map(); }
+    })();
+    var MENTION_RE_JS = /@([\p{L}\p{N}_.-]+)/gu;
+
+    function linkifyMentionsClient(text) {
+        if (!text || validUsernamesMap.size === 0) return escapeHtml(text || '');
+        var result = '';
+        var lastIndex = 0;
+        var match;
+        MENTION_RE_JS.lastIndex = 0;
+        while ((match = MENTION_RE_JS.exec(text)) !== null) {
+            var uname = match[1];
+            var realUname = validUsernamesMap.get(uname.toLowerCase());
+            if (realUname === undefined) continue;
+            result += escapeHtml(text.slice(lastIndex, match.index));
+            result += '<a href="/u/' + encodeURIComponent(realUname) + '" class="mention-link">@' + escapeHtml(realUname) + '</a>';
+            lastIndex = match.index + match[0].length;
+        }
+        result += escapeHtml(text.slice(lastIndex));
+        return result;
+    }
+
     // --- Otomatik büyüyen textarea (chat.js #msg-input deseniyle aynı) ---
     // Document-level delegation: yanıt formları dinamik olarak eklenir/açılır,
     // her birine ayrı listener bağlamaya gerek yok. Kullanıcı isteği: önceden
@@ -84,7 +120,7 @@
         return '<div class="comment-meta">' + avatarHtml +
             '<a href="/u/' + encodeURIComponent(username) + '" class="username">' + escapeHtml(username) + '</a>' +
             '<span class="time">şimdi</span></div>' +
-            '<p>' + escapeHtml(content) + '</p>';
+            '<p>' + linkifyMentionsClient(content) + '</p>';
     }
 
     // --- GIF Panel — Ana yorum formu ---

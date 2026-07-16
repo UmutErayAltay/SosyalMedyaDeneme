@@ -59,11 +59,17 @@ def notify_mentions(sb, *, actor_id: str, content: str,
         pass
 
 
-def linkify_mentions(content, valid_usernames: set | None = None):
-    """@kullanıcı adlarını profiline link yapar; SADECE valid_usernames kümesinde
-    (küçük harfli) bulunan, yani gerçekten var olan kullanıcı adları linklenir —
-    aksi halde rastgele "@" içeren metinler (ör. bir e-posta parçası) yanlışlıkla
-    linklenmiş olurdu.
+def linkify_mentions(content, valid_usernames: dict | None = None):
+    """@kullanıcı adlarını profiline link yapar; SADECE valid_usernames'te
+    (küçük harfli anahtar -> gerçek kullanıcı adı) bulunan, yani gerçekten var
+    olan kullanıcı adları linklenir — aksi halde rastgele "@" içeren metinler
+    (ör. bir e-posta parçası) yanlışlıkla linklenmiş olurdu.
+
+    Büyük/küçük harf FARKI GÖZETİLMEZ: yazan "@Art" yazsa da gerçek kullanıcı
+    "art" olsa da eşleşir, VE görüntülenen/linklenen metin HER ZAMAN gerçek
+    kullanıcı adının kendi harflerine (valid_usernames'teki değere) otomatik
+    düzeltilir — kullanıcı raporu: "kullanıcı adını yazarken büyük küçük harf
+    farkı olmasın, gönderirken otomatik düzeltsin".
 
     `content` ham metin de olabilir, `linkify_hashtags` çıktısı (zaten Markup)
     da olabilir — her iki durumda da güvenli: Markup dilimleri zaten güvenli
@@ -72,29 +78,33 @@ def linkify_mentions(content, valid_usernames: set | None = None):
     """
     if not content:
         return ""
-    valid = valid_usernames or set()
+    valid = valid_usernames or {}
 
     parts = []
     last_end = 0
     for m in MENTION_RE.finditer(content):
         uname = m.group(1)
-        if uname.lower() not in valid:
+        real_uname = valid.get(uname.lower())
+        if real_uname is None:
             continue
         parts.append(escape(content[last_end:m.start()]))
-        url = url_for("routes.profile", username=uname)
-        parts.append(Markup('<a href="{}" class="mention-link">@{}</a>').format(url, uname))
+        url = url_for("routes.profile", username=real_uname)
+        parts.append(Markup('<a href="{}" class="mention-link">@{}</a>').format(url, real_uname))
         last_end = m.end()
     parts.append(escape(content[last_end:]))
 
     return Markup("").join(parts)
 
 
-def get_valid_usernames(sb) -> set:
-    """Tüm kullanıcı adlarını küçük harfle döner — sayfa başına TEK sorgu,
-    mention linkify'ın her postta ayrı bir DB sorgusu yapmasını önler (N+1).
-    60 saniye TTL ile cache'lenir."""
+def get_valid_usernames(sb) -> dict:
+    """Tüm kullanıcı adlarını {küçük harfli: gerçek_kullanıcı_adı} olarak döner
+    — sayfa başına TEK sorgu, mention linkify'ın her postta ayrı bir DB
+    sorgusu yapmasını önler (N+1). Gerçek casing'i sakladığı için
+    linkify_mentions bunu hem eşleştirme (case-insensitive) HEM görüntülenen
+    metni doğru harflere otomatik düzeltmek için kullanır. 60 saniye TTL ile
+    cache'lenir."""
     from .cache import get_cached
     def _fetch():
         rows = sb.table("profiles").select("username").execute().data
-        return {r["username"].lower() for r in rows if r.get("username")}
+        return {r["username"].lower(): r["username"] for r in rows if r.get("username")}
     return get_cached("valid_usernames", 60, _fetch)

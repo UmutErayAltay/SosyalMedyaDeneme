@@ -4,7 +4,7 @@ from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .notifications import notify
 from .mentions import notify_mentions
-from .blocks import is_blocked_either_way
+from .blocks import is_blocked_either_way, blocked_user_ids
 
 bp = Blueprint("social", __name__)
 
@@ -500,6 +500,81 @@ def reject_follow_request(follower_id):
         return jsonify(ok=True)
     flash("Takip isteği reddedildi.", "success")
     return redirect(request.referrer or url_for("social.list_follow_requests"))
+
+
+# ----------------------- @ETİKETLEME OTOMATİK TAMAMLAMA -----------------------
+
+@bp.route("/mentions/search")
+@login_required
+@retry_on_connection_error
+def search_mentions():
+    """@etiketleme otomatik tamamlama: prefix eşleşen (case-insensitive)
+    kullanıcı adları, takip ilişkisine göre sıralı döner (en olası önce) —
+    kullanıcı isteği: "art yazınca art ile başlayanlar sıralanacak ama önce
+    takipçisi/takip ettiği biri üst sırada olacak, herkesi listelemeyecek,
+    3 kişi yeterli."
+
+    Sıralama: karşılıklı takip > ben takip ediyorum > beni takip ediyor >
+    diğerleri, sonra kullanıcı adına göre alfabetik. Engellenen kullanıcılar
+    (iki yönlü) hiç dönmez.
+    """
+    sb = get_sb()
+    me = session["user"]["id"]
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify(users=[])
+
+    blocked = blocked_user_ids(sb, me)
+
+    try:
+        candidates = sb.table("profiles").select("id, username, avatar_url").ilike(
+            "username", q + "%"
+        ).eq("is_banned", False).limit(20).execute().data
+    except Exception:
+        candidates = []
+
+    candidates = [c for c in candidates if c["id"] != me and c["id"] not in blocked]
+    if not candidates:
+        return jsonify(users=[])
+
+    candidate_ids = [c["id"] for c in candidates]
+
+    # Takip ilişkisi: iki toplu sorgu (N+1 yasak) — adaylar arasında ben
+    # kimi takip ediyorum + kim beni takip ediyor.
+    following_ids = set()
+    follower_ids = set()
+    try:
+        following_ids = {
+            r["following_id"] for r in sb.table("follows").select("following_id")
+            .eq("follower_id", me).eq("status", "accepted")
+            .in_("following_id", candidate_ids).execute().data
+        }
+        follower_ids = {
+            r["follower_id"] for r in sb.table("follows").select("follower_id")
+            .eq("following_id", me).eq("status", "accepted")
+            .in_("follower_id", candidate_ids).execute().data
+        }
+    except Exception:
+        pass
+
+    def rank(c):
+        cid = c["id"]
+        is_following = cid in following_ids
+        is_follower = cid in follower_ids
+        if is_following and is_follower:
+            return 0  # karşılıklı takip — en olası
+        if is_following:
+            return 1
+        if is_follower:
+            return 2
+        return 3
+
+    candidates.sort(key=lambda c: (rank(c), c["username"].lower()))
+    top = candidates[:3]
+
+    return jsonify(users=[
+        {"username": c["username"], "avatar_url": c.get("avatar_url")} for c in top
+    ])
 
 
 # ----------------------- KAYDEDİLENLER (bookmarks) -----------------------
