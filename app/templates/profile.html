@@ -317,14 +317,8 @@
     // Profil gizliyse, takip butonunun metni değiştirilecek
     window._isPrivate = {{ is_private|tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/follow.js') }}"></script>
-<script src="{{ url_for('static', filename='js/likes.js') }}"></script>
-<script src="{{ url_for('static', filename='js/polls.js') }}"></script>
-<script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
-<script src="{{ url_for('static', filename='js/collections.js') }}"></script>
-<script src="{{ url_for('static', filename='js/profileTabs.js') }}"></script>
-<script src="{{ url_for('static', filename='js/storyHighlights.js') }}"></script>
-<script src="{{ url_for('static', filename='js/stickers.js') }}"></script>
+<script src="{{ url_for('static', filename='dist/post-interactions.bundle.js') }}"></script>
+<script src="{{ url_for('static', filename='dist/profile-extra.bundle.js') }}"></script>
 <script>
     // Çıkartmalar sekmesi: her tıklamada yükle. ÖNCEKİ sürüm "aria-selected
     // zaten true ise yükleme" diyordu ama sekme script'i aria-selected'ı bu

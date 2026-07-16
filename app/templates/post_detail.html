@@ -379,11 +379,6 @@
     window.POST_ID = "{{ post.id }}";
     window.ME = {{ me|tojson if me else 'null' }};
 </script>
-<script src="{{ url_for('static', filename='js/stickers.js') }}"></script>
-<script src="{{ url_for('static', filename='js/likes.js') }}"></script>
-<script src="{{ url_for('static', filename='js/polls.js') }}"></script>
-<script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
-<script src="{{ url_for('static', filename='js/comments.js') }}"></script>
-{# Sağ sidebar'daki "Takip et" butonları için — yoksa butonlar ölü kalır #}
-<script src="{{ url_for('static', filename='js/follow.js') }}"></script>
+<script src="{{ url_for('static', filename='dist/post-interactions.bundle.js') }}"></script>
+<script src="{{ url_for('static', filename='dist/post-detail-extra.bundle.js') }}"></script>
 {% endblock %}

@@ -176,30 +176,14 @@
         <a href="#" class="lightbox-goto" id="lightbox-goto">Gönderiyi gör</a>
     </div>
 
-    {# --- Sayfa geçişi ilerleme çubuğu JS --- #}
-    {# icons.js diğer TÜM script'lerden ÖNCE — birçoğu window.ICONS.get(...)
-       kullanıyor (emoji→SVG dönüşümü, bkz. app/templates/_icons.html). #}
-    <script src="{{ url_for('static', filename='js/icons.js') }}"></script>
-    {# --- @etiketleme otomatik tamamlama: sayfa bağımsız, document-level
-       delegation kullanır, ilgili textarea henüz DOM'da olmasa bile hemen
-       yüklenebilir (post composer / yorum-yanıt / mesaj kutusu) --- #}
-    <script src="{{ url_for('static', filename='js/mentionAutocomplete.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/pageProgress.js') }}"></script>
-    {# --- Dark mode toggle JS (FOUC'suz) --- #}
-    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
-    {# --- Mobil menü toggle JS --- #}
-    <script src="{{ url_for('static', filename='js/navbar.js') }}"></script>
-    {# --- Özel onay modal (tüm confirm() çağrıları için) --- #}
-    <script src="{{ url_for('static', filename='js/confirmModal.js') }}"></script>
-
-    {# --- YENİ EKLENEN KISIM: Share JS --- #}
-    <script src="{{ url_for('static', filename='js/shareModal.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/repost.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/postMore.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/lightbox.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/postClick.js') }}"></script>
-    {% if me %}<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>{% endif %}
-    {% if me %}<script src="{{ url_for('static', filename='js/messagesBadge.js') }}"></script>{% endif %}
+    {# --- Ortak script bundle'ı (icons/mentionAutocomplete/pageProgress/theme/
+       navbar/confirmModal/shareModal/repost/postMore/lightbox/postClick —
+       11 dosya, sıra korunarak birleştirilip minify edildi). Kaynak sırası
+       ve içeriği için bkz. scripts/build-js.mjs MANIFEST.common —
+       `npm run build:js` (veya `watch:js`) ile üretilir, app/static/js/
+       altındaki kaynak değişince YENİDEN BUILD edilmesi gerekir. #}
+    <script src="{{ url_for('static', filename='dist/common.bundle.js') }}"></script>
+    {% if me %}<script src="{{ url_for('static', filename='dist/common-auth.bundle.js') }}"></script>{% endif %}
 
     {# --- Supabase Realtime + arama sistemi: HER sayfada (akış/profil dahil)
        gelen arama modalı çalışsın diye global (kullanıcı isteği) --- #}

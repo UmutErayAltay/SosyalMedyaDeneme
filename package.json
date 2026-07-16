@@ -6,10 +6,13 @@
   "description": "Flask + Supabase sosyal medya uygulaması — Node tarafı sadece geliştirme araçları için (Playwright E2E testleri, ileride esbuild bundler)",
   "scripts": {
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "build:js": "node scripts/build-js.mjs",
+    "watch:js": "node scripts/build-js.mjs --watch"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "esbuild": "^0.28.1"
   }
 }

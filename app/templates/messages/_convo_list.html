@@ -53,14 +53,7 @@
         </div>
     </div>
 </div>
-<script src="{{ url_for('static', filename='js/groupChat.js') }}"></script>
-{# groupAdmin.js: yönetim modalı _conversation_panel.html içinde (AJAX ile
-   yeniden oluşuyor), bu yüzden script burada bir kez yüklenip document-level
-   delegation ile çalışıyor — bkz. groupAdmin.js başındaki not. #}
-<script src="{{ url_for('static', filename='js/groupAdmin.js') }}"></script>
-{# groupCall.js: grup sesli/görüntülü arama (LiveKit) — panel AJAX ile
-   yeniden oluştuğu için document-level delegation ve initCallBar ile çalışır. #}
-<script src="{{ url_for('static', filename='js/groupCall.js') }}"></script>
-{# msgMedia.js: paylaşılan medya galerisi modalı, groupAdmin.js ile aynı
-   sebepten document-level delegation kullanır. #}
-<script src="{{ url_for('static', filename='js/msgMedia.js') }}"></script>
+{# groupChat/groupAdmin/groupCall/msgMedia — hepsi document-level delegation
+   kullanıyor (AJAX ile yeniden oluşan panel içeriğiyle çalışmaları gerektiği
+   için), tek bundle'da birleştirildi. #}
+<script src="{{ url_for('static', filename='dist/messages-convo-list.bundle.js') }}"></script>

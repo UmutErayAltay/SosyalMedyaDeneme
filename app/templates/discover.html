@@ -54,9 +54,5 @@
     {{ sc.activity_card(recent_activity) }}
 </aside>
 
-<script src="{{ url_for('static', filename='js/likes.js') }}"></script>
-<script src="{{ url_for('static', filename='js/polls.js') }}"></script>
-<script src="{{ url_for('static', filename='js/bookmarks.js') }}"></script>
-{# Sağ sidebar'daki "Takip et" butonları için — yoksa butonlar ölü kalır #}
-<script src="{{ url_for('static', filename='js/follow.js') }}"></script>
+<script src="{{ url_for('static', filename='dist/post-interactions.bundle.js') }}"></script>
 {% endblock %}

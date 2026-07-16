@@ -8,6 +8,8 @@ Flask + Supabase (Postgres/Auth/Storage/Realtime) + Jinja2 + vanilla JS sosyal m
 - Paket kurulumu HER ZAMAN `python -m pip install` (çıplak `pip` yanlış Python'a kurar)
 - Sunucu: dev `run.py`, canlı `serve.py`; sunucu testinden önce eski python süreçlerini kapat
 - Sembol bazlı arama/yeniden adlandırma işlerinde Serena MCP araçlarını tercih et (`find_symbol`, `find_referencing_symbols`, `rename_symbol`)
+- `app/static/js/*.js` DEĞİŞTİRİLDİĞİNDE `npm run build:js` ÇALIŞTIRILMADAN etkisi görünmez — template'ler artık ham dosyaları değil `app/static/dist/*.bundle.js`'i yüklüyor (bkz. `scripts/build-js.mjs` MANIFEST). Aktif geliştirmede `npm run watch:js` açık bırakılabilir (dosya değişince otomatik rebuild, debounce'lı). Yeni bir JS dosyası eklenip bir sayfaya bağlanacaksa MANIFEST'e de eklenmesi gerekir.
+- UI/JS değişikliklerini `npm run test:e2e` (Playwright, gerçek sunucuya karşı — `.env`'de `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD` gerekir) ile doğrula, özellikle bundle/script-yükleme ile ilgili bir değişiklikten sonra ZORUNLU (bkz. `e2e/` — bir sayfanın script'i eksik/yanlış bundle'da kalırsa `py_compile`/`node --check` bunu YAKALAMAZ, sadece bu suite yakalar)
 
 ## Kısıtlar
 - `.env` okunmaz ve commit edilmez; `.context/` commit edilmez ama içeriği serbestçe güncellenir
