@@ -470,22 +470,31 @@ label input { margin-top: 6px; }
 .settings-page > h1 { font-family: var(--font-display); font-size: 28px; margin-bottom: var(--space-1); }
 .settings-intro { color: var(--muted); margin-bottom: var(--space-6); }
 
+/* Gizlilik'in içeriği (2 checkbox + 2 uzun açıklama + 2 link) Güvenlik/
+   Hesap'tan (buton+form, kısa) BELİRGİN daha fazla — 3 (ve 2fr/1fr) eşit
+   sütuna bölündüğünde HER İKİSİNDE de sıkışıyordu (kullanıcı raporu, 2 kez
+   tekrarlandı). Kesin çözüm: Gizlilik, Profil Bilgileri/Aktif Oturumlar
+   gibi TAM GENİŞLİK kendi satırında (hiç bölünmüyor, sıkışma imkansız);
+   Güvenlik+Hesap (ikisi de kısa/benzer boyda içerik) kendi 2-sütunlu
+   satırlarında yan yana. */
 .settings-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: var(--space-4);
-    align-items: start;
+    align-items: stretch;
 }
 /* <form>'un kendi kutusu grid akışını bozmasın diye display:contents —
    Profil Bilgileri + Gizlilik kartları AYNI form'a ait (tek POST), ama
    ızgarada iki ayrı hücre olarak görünürler. */
 .settings-form-group { display: contents; }
 
+.settings-card-wide { grid-column: 1 / -1; }
+
 .settings-card {
     background: var(--card-bg); border: 1px solid var(--card-border);
     border-radius: var(--card-radius); padding: var(--space-6);
+    display: flex; flex-direction: column;
 }
-.settings-card-wide { grid-column: 1 / -1; }
 .settings-card h2 {
     font-size: 16px; display: flex; align-items: center; gap: var(--space-2);
     margin-bottom: var(--space-1);
@@ -501,6 +510,7 @@ label input { margin-top: 6px; }
 .settings-card-actions { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
 .settings-card-actions-column { flex-direction: column; align-items: flex-start; }
 .settings-card-links { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-4); }
+.settings-card-links-row { flex-direction: row; gap: var(--space-6); }
 
 .settings-inline-form { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 .settings-inline-form input[type="password"] {
@@ -511,9 +521,6 @@ label input { margin-top: 6px; }
 
 .settings-sessions-list { margin-top: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
 
-@media (max-width: 1100px) {
-    .settings-grid { grid-template-columns: repeat(2, 1fr); }
-}
 @media (max-width: 720px) {
     .settings-grid { grid-template-columns: 1fr; }
     .settings-field-row { flex-direction: column; gap: 0; }

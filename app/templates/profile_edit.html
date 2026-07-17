@@ -46,23 +46,28 @@
                 </div>
             </div>
 
-            <div class="settings-card">
+            <div class="settings-card settings-card-wide">
                 <h2>{{ icons.icon('lock', size=16) }} Gizlilik</h2>
                 <p class="settings-card-desc">Profilini ve son görülme bilgini kimin görebileceğini seç.</p>
 
-                <label class="checkbox-label">
-                    <input type="checkbox" name="is_private" {% if profile.is_private %}checked{% endif %}>
-                    Gizli hesap
-                </label>
-                <p class="muted settings-checkbox-hint">Profilini ve gönderilerini sadece onayladığın takipçiler görür.</p>
+                <div class="settings-field-row">
+                    <div>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="is_private" {% if profile.is_private %}checked{% endif %}>
+                            Gizli hesap
+                        </label>
+                        <p class="muted settings-checkbox-hint">Profilini ve gönderilerini sadece onayladığın takipçiler görür.</p>
+                    </div>
+                    <div>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="hide_last_seen" {% if profile.hide_last_seen %}checked{% endif %}>
+                            Son görülme bilgimi gizle
+                        </label>
+                        <p class="muted settings-checkbox-hint">Sohbetlerde çevrimiçi/son görülme durumun kimseye gösterilmez.</p>
+                    </div>
+                </div>
 
-                <label class="checkbox-label">
-                    <input type="checkbox" name="hide_last_seen" {% if profile.hide_last_seen %}checked{% endif %}>
-                    Son görülme bilgimi gizle
-                </label>
-                <p class="muted settings-checkbox-hint">Sohbetlerde çevrimiçi/son görülme durumun kimseye gösterilmez.</p>
-
-                <div class="settings-card-links">
+                <div class="settings-card-links settings-card-links-row">
                     <a href="{{ url_for('close_friends.close_friends_list') }}">{{ icons.heart_filled(size=14) }} Yakın Arkadaşlar</a>
                     <a href="{{ url_for('blocks.blocked_list') }}">{{ icons.icon('slash-circle', size=14) }} Engellenen kullanıcılar</a>
                 </div>
