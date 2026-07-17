@@ -2,135 +2,149 @@
 {% import "_icons.html" as icons %}
 {% block title %}Profili Düzenle{% endblock %}
 {% block content %}
-<div class="auth-card">
+<div class="settings-page">
     <h1>Profili Düzenle</h1>
-    <form method="post" enctype="multipart/form-data">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="avatar-preview-row">
-            <img id="avatar-preview"
-                 src="{{ profile.avatar_url if profile.avatar_url else '' }}"
-                 class="avatar large"
-                 {% if not profile.avatar_url %}style="display:none"{% endif %}>
-            <div id="avatar-placeholder" class="avatar large avatar-placeholder"
-                 {% if profile.avatar_url %}style="display:none"{% endif %}></div>
-            <label class="avatar-upload-label">
-                <input type="file" name="avatar" accept="image/png,image/jpeg,image/gif,image/webp"
-                       id="avatar-input" style="display:none">
-                <span class="btn btn-ghost">Avatar Seç</span>
-            </label>
-        </div>
+    <p class="settings-intro">Hesabının görünürlüğünü, güvenliğini ve oturumlarını buradan yönet.</p>
 
-        <label>Kullanıcı adı
-            <input type="text" name="username" value="{{ profile.username }}" required minlength="3">
-        </label>
-        <label>Ad Soyad
-            <input type="text" name="full_name" value="{{ profile.full_name or '' }}">
-        </label>
-        <label>Biyografi
-            <textarea name="bio" rows="3" placeholder="Kendinden bahset...">{{ profile.bio or '' }}</textarea>
-        </label>
-
-        <hr style="margin: 24px 0;">
-
-        <h2 style="font-size: 16px; margin-bottom: 12px;">{{ icons.icon('lock', size=16) }} Gizlilik</h2>
-        <label class="checkbox-label">
-            <input type="checkbox" name="is_private" {% if profile.is_private %}checked{% endif %}>
-            Gizli hesap
-        </label>
-        <p class="muted" style="margin-bottom: 16px;">Profilini ve gönderilerini sadece onayladığın takipçiler görür.</p>
-
-        <label class="checkbox-label">
-            <input type="checkbox" name="hide_last_seen" {% if profile.hide_last_seen %}checked{% endif %}>
-            Son görülme bilgimi gizle
-        </label>
-        <p class="muted" style="margin-bottom: 16px;">Sohbetlerde çevrimiçi/son görülme durumun kimseye gösterilmez.</p>
-
-        <button type="submit" class="btn btn-primary">Kaydet</button>
-        <a href="{{ url_for('routes.profile', username=profile.username) }}" class="btn btn-ghost">İptal</a>
-    </form>
-    <p class="muted" style="margin-top: 16px;">
-        <a href="{{ url_for('close_friends.close_friends_list') }}">{{ icons.heart_filled(size=14) }} Yakın Arkadaşlar</a>
-        <br>
-        <a href="{{ url_for('blocks.blocked_list') }}">{{ icons.icon('slash-circle', size=14) }} Engellenen kullanıcılar</a>
-    </p>
-
-    <hr style="margin: 24px 0;">
-
-    <h2 style="font-size: 16px; margin-bottom: 12px;">2FA (İki Faktörlü Doğrulama)</h2>
-    <p class="muted">Hesabını authenticator uygulaması ile ekstra koruma sağla.</p>
-
-    <div style="margin-top: 12px;">
-        <form method="get" action="{{ url_for('auth.mfa_enroll') }}" style="display: inline;">
-            <button type="submit" class="btn btn-primary" onclick="this.form.method='get'">2FA'yı Etkinleştir</button>
-        </form>
-
-        <form method="post" action="{{ url_for('auth.mfa_disable') }}" style="display: inline; vertical-align: top;">
+    <div class="settings-grid">
+        <form method="post" enctype="multipart/form-data" class="settings-form-group">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            {# Google-only hesaplarda şifre yok — alan zorunlu gösterilirse
-               formu hiç gönderemezler (bkz. routes/profile.py has_password). #}
-            {% if has_password %}
-            <input type="password" name="password" placeholder="Şifreni gir" required style="width: 200px; padding: 6px 8px; margin-right: 8px; vertical-align: middle;">
-            {% endif %}
-            <button type="submit" class="btn btn-ghost" style="vertical-align: middle;">2FA'yı Kapat</button>
-        </form>
-    </div>
 
-    <hr style="margin: 24px 0;">
+            <div class="settings-card settings-card-wide">
+                <h2>{{ icons.icon('user', size=16) }} Profil Bilgileri</h2>
+                <p class="settings-card-desc">Adın, kullanıcı adın ve profil fotoğrafın herkese görünür.</p>
 
-    <h2 style="font-size: 16px; margin-bottom: 12px;">Hesap Deaktivasyonu</h2>
-    <p class="muted">Hesabını geçici olarak deaktive edebilirsin — profilin ve gönderilerinin başkalarına görünmez olur. Tekrar giriş yaparak istediğin zaman aktifleştirebilirsin.</p>
-
-    <div style="margin-top: 12px;">
-        <form method="post" action="{{ url_for('routes.deactivate_account') }}" style="display: inline;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            {% if has_password %}
-            <input type="password" name="password" placeholder="Şifreni gir" required style="width: 200px; padding: 6px 8px; margin-right: 8px; vertical-align: middle;">
-            {% endif %}
-            <button type="submit" class="btn btn-ghost" style="vertical-align: middle;" onclick="return confirm('Hesabını deaktive etmek istediğine emin misin?')">Hesabı Deaktive Et</button>
-        </form>
-    </div>
-
-    <hr style="margin: 24px 0;">
-
-    <h2 style="font-size: 16px; margin-bottom: 12px;">{{ icons.icon('smartphone', size=16) }} Aktif Oturumlar</h2>
-    <p class="muted">Hesabına giriş yapılmış cihazlar. Tanımadığın bir oturum varsa sonlandır.</p>
-
-    {% if active_sessions %}
-        <div style="margin-top: 16px;">
-            {% for s in active_sessions %}
-                <div class="session-row">
-                    <div class="session-info">
-                        {% set browser = 'Chrome' if 'Chrome' in s.user_agent else ('Firefox' if 'Firefox' in s.user_agent else ('Safari' if 'Safari' in s.user_agent else 'Tarayıcı')) if s.user_agent else 'Tarayıcı' %}
-                        {% set os = 'Windows' if 'Windows' in s.user_agent else ('Android' if 'Android' in s.user_agent else ('iPhone' if 'iPhone' in s.user_agent else ('iPad' if 'iPad' in s.user_agent else ('Mac' if 'Macintosh' in s.user_agent else 'Bilinmeyen')))) if s.user_agent else 'Bilinmeyen' %}
-                        <span class="session-device">{{ browser }} · {{ os }}</span>
-                        {% if s.is_current %}
-                            <span class="session-current-badge">Bu cihaz</span>
-                        {% endif %}
-                        <br>
-                        <span class="muted" style="font-size: 12px;">
-                            {{ s.ip }}
-                            {% if s.last_active_at %}
-                                — son aktif: {{ s.last_active_at|relative_time }}
-                            {% endif %}
-                        </span>
-                    </div>
-                    {% if not s.is_current %}
-                        <button type="button" class="btn btn-ghost danger session-revoke-btn" data-session-id="{{ s.id }}">
-                            Oturumu kapat
-                        </button>
-                    {% endif %}
+                <div class="avatar-preview-row">
+                    <img id="avatar-preview"
+                         src="{{ profile.avatar_url if profile.avatar_url else '' }}"
+                         class="avatar large"
+                         {% if not profile.avatar_url %}style="display:none"{% endif %}>
+                    <div id="avatar-placeholder" class="avatar large avatar-placeholder"
+                         {% if profile.avatar_url %}style="display:none"{% endif %}></div>
+                    <label class="avatar-upload-label">
+                        <input type="file" name="avatar" accept="image/png,image/jpeg,image/gif,image/webp"
+                               id="avatar-input" style="display:none">
+                        <span class="btn btn-ghost">Avatar Seç</span>
+                    </label>
                 </div>
-            {% endfor %}
+
+                <div class="settings-field-row">
+                    <label>Kullanıcı adı
+                        <input type="text" name="username" value="{{ profile.username }}" required minlength="3">
+                    </label>
+                    <label>Ad Soyad
+                        <input type="text" name="full_name" value="{{ profile.full_name or '' }}">
+                    </label>
+                </div>
+                <label>Biyografi
+                    <textarea name="bio" rows="3" placeholder="Kendinden bahset...">{{ profile.bio or '' }}</textarea>
+                </label>
+
+                <div class="settings-card-actions">
+                    <button type="submit" class="btn btn-primary">Kaydet</button>
+                    <a href="{{ url_for('routes.profile', username=profile.username) }}" class="btn btn-ghost">İptal</a>
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h2>{{ icons.icon('lock', size=16) }} Gizlilik</h2>
+                <p class="settings-card-desc">Profilini ve son görülme bilgini kimin görebileceğini seç.</p>
+
+                <label class="checkbox-label">
+                    <input type="checkbox" name="is_private" {% if profile.is_private %}checked{% endif %}>
+                    Gizli hesap
+                </label>
+                <p class="muted settings-checkbox-hint">Profilini ve gönderilerini sadece onayladığın takipçiler görür.</p>
+
+                <label class="checkbox-label">
+                    <input type="checkbox" name="hide_last_seen" {% if profile.hide_last_seen %}checked{% endif %}>
+                    Son görülme bilgimi gizle
+                </label>
+                <p class="muted settings-checkbox-hint">Sohbetlerde çevrimiçi/son görülme durumun kimseye gösterilmez.</p>
+
+                <div class="settings-card-links">
+                    <a href="{{ url_for('close_friends.close_friends_list') }}">{{ icons.heart_filled(size=14) }} Yakın Arkadaşlar</a>
+                    <a href="{{ url_for('blocks.blocked_list') }}">{{ icons.icon('slash-circle', size=14) }} Engellenen kullanıcılar</a>
+                </div>
+            </div>
+        </form>
+
+        <div class="settings-card">
+            <h2>{{ icons.icon('check-circle', size=16) }} Güvenlik (2FA)</h2>
+            <p class="settings-card-desc">Hesabını authenticator uygulaması ile ekstra koruma altına al.</p>
+
+            <div class="settings-card-actions settings-card-actions-column">
+                <form method="get" action="{{ url_for('auth.mfa_enroll') }}">
+                    <button type="submit" class="btn btn-primary">2FA'yı Etkinleştir</button>
+                </form>
+
+                <form method="post" action="{{ url_for('auth.mfa_disable') }}" class="settings-inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {# Google-only hesaplarda şifre yok — alan zorunlu gösterilirse
+                       formu hiç gönderemezler (bkz. routes/profile.py has_password). #}
+                    {% if has_password %}
+                    <input type="password" name="password" placeholder="Şifreni gir" required>
+                    {% endif %}
+                    <button type="submit" class="btn btn-ghost">2FA'yı Kapat</button>
+                </form>
+            </div>
         </div>
 
-        {% if active_sessions|length > 1 %}
-            <button type="button" class="btn btn-ghost danger" id="revoke-others-btn" style="margin-top: 16px;">
-                Diğer tüm oturumları kapat
-            </button>
-        {% endif %}
-    {% else %}
-        <p class="muted" style="margin-top: 12px;">Henüz oturum kaydı yok — bir sonraki girişte görünür.</p>
-    {% endif %}
+        <div class="settings-card">
+            <h2>{{ icons.icon('archive', size=16) }} Hesap Deaktivasyonu</h2>
+            <p class="settings-card-desc">Hesabını geçici olarak deaktive edebilirsin — profilin ve gönderilerin başkalarına görünmez olur. Tekrar giriş yaparak istediğin zaman aktifleştirebilirsin.</p>
+
+            <form method="post" action="{{ url_for('routes.deactivate_account') }}" class="settings-inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if has_password %}
+                <input type="password" name="password" placeholder="Şifreni gir" required>
+                {% endif %}
+                <button type="submit" class="btn btn-ghost" onclick="return confirm('Hesabını deaktive etmek istediğine emin misin?')">Hesabı Deaktive Et</button>
+            </form>
+        </div>
+
+        <div class="settings-card settings-card-wide">
+            <h2>{{ icons.icon('smartphone', size=16) }} Aktif Oturumlar</h2>
+            <p class="settings-card-desc">Hesabına giriş yapılmış cihazlar. Tanımadığın bir oturum varsa sonlandır.</p>
+
+            {% if active_sessions %}
+                <div class="settings-sessions-list">
+                    {% for s in active_sessions %}
+                        <div class="session-row">
+                            <div class="session-info">
+                                {% set browser = 'Chrome' if 'Chrome' in s.user_agent else ('Firefox' if 'Firefox' in s.user_agent else ('Safari' if 'Safari' in s.user_agent else 'Tarayıcı')) if s.user_agent else 'Tarayıcı' %}
+                                {% set os = 'Windows' if 'Windows' in s.user_agent else ('Android' if 'Android' in s.user_agent else ('iPhone' if 'iPhone' in s.user_agent else ('iPad' if 'iPad' in s.user_agent else ('Mac' if 'Macintosh' in s.user_agent else 'Bilinmeyen')))) if s.user_agent else 'Bilinmeyen' %}
+                                <span class="session-device">{{ browser }} · {{ os }}</span>
+                                {% if s.is_current %}
+                                    <span class="session-current-badge">Bu cihaz</span>
+                                {% endif %}
+                                <br>
+                                <span class="muted" style="font-size: 12px;">
+                                    {{ s.ip }}
+                                    {% if s.last_active_at %}
+                                        — son aktif: {{ s.last_active_at|relative_time }}
+                                    {% endif %}
+                                </span>
+                            </div>
+                            {% if not s.is_current %}
+                                <button type="button" class="btn btn-ghost danger session-revoke-btn" data-session-id="{{ s.id }}">
+                                    Oturumu kapat
+                                </button>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+
+                {% if active_sessions|length > 1 %}
+                    <button type="button" class="btn btn-ghost danger" id="revoke-others-btn" style="margin-top: 16px;">
+                        Diğer tüm oturumları kapat
+                    </button>
+                {% endif %}
+            {% else %}
+                <p class="muted" style="margin-top: 12px;">Henüz oturum kaydı yok — bir sonraki girişte görünür.</p>
+            {% endif %}
+        </div>
+    </div>
 </div>
 <script>
     // Avatar önizleme

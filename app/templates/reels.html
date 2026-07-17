@@ -7,6 +7,11 @@
 {% block container_class %}reels-page{% endblock %}
 
 {% block content %}
+<nav class="feed-tabs" aria-label="Akış sekmeleri">
+    <a href="{{ url_for('routes.feed') }}" class="feed-tab">Akış</a>
+    <a href="{{ url_for('routes.reels') }}" class="feed-tab active" aria-current="page">{{ icons.icon('video', size=16) }} Reels</a>
+    <a href="{{ url_for('routes.discover') }}" class="feed-tab">{{ icons.icon('compass', size=16) }} Keşfet</a>
+</nav>
 <div class="reels-feed" id="reels-feed">
     {% if posts %}
         {% for p in posts %}

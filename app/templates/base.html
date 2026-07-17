@@ -74,7 +74,6 @@
 
         <div class="nav-links" id="nav-links">
             <a href="{{ url_for('routes.feed') }}" aria-label="Akış">Akış</a>
-            <a href="{{ url_for('routes.reels') }}" aria-label="Reels">{{ icons.icon('video', size=16) }} Reels</a>
             <a href="{{ url_for('messaging.inbox') }}" class="nav-messages-link" id="messages-nav-link"
                aria-label="Mesajlar{% if unread_messages %}, {{ unread_messages }} okunmamış{% endif %}">
                 Mesajlar

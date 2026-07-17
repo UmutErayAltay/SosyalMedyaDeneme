@@ -17,6 +17,7 @@
 <div class="feed-layout">
     <nav class="feed-tabs" aria-label="Akış sekmeleri">
         <a href="{{ url_for('routes.feed') }}" class="feed-tab">Akış</a>
+        <a href="{{ url_for('routes.reels') }}" class="feed-tab">{{ icons.icon('video', size=18) }} Reels</a>
         <a href="{{ url_for('routes.discover') }}" class="feed-tab active" aria-current="page">{{ icons.icon('compass', size=18) }} Keşfet</a>
     </nav>
 
