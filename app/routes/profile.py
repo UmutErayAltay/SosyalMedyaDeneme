@@ -1,17 +1,19 @@
 """Profil sayfası, takipçi/takip listeleri, profil düzenleme, istatistikler."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from flask import render_template, request, redirect, url_for, session, abort, flash
+from flask import render_template, request, redirect, url_for, session, abort, flash, current_app
+from supabase import create_client
 from . import bp
 from ._common import _my_id, _profile, _attach_post_metrics, attach_repost_of
 from ..decorators import login_required
-from ..supabase_client import get_sb, retry_on_connection_error
+from ..supabase_client import get_sb, retry_on_connection_error, call_with_ssl_retry
 from ..storage_helper import upload_image
 from ..mentions import get_valid_usernames
 from ..visibility import followed_and_self_ids, close_friend_author_ids, filter_visible
 from ..blocks import blocked_user_ids, filter_not_blocked, has_blocked
 from ..polls import attach_polls
 from ..stories import _get_highlights
+from ..rate_limit import is_rate_limited
 
 
 @bp.route("/u/<username>")
@@ -29,6 +31,10 @@ def profile(username):
 
     me = _my_id()
     is_self = me == prof["id"]
+
+    # Deaktif profil gizleme (enumeration önleme) — sahibi hariç
+    if prof.get("is_deactivated") and not is_self:
+        return render_template("profile/deactivated.html", me=session.get("user"))
 
     # Engelleme: ONLAR beni engellemişse profil hiç yokmuş gibi davran
     # (enumeration önleme). BEN onları engellemişsem profili YİNE DE
@@ -655,3 +661,82 @@ def revoke_other_sessions():
         return jsonify(ok=True)
     except Exception:
         abort(500)
+
+
+@bp.route("/profile/deactivate", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def deactivate_account():
+    """Hesabı deaktive et — şifre doğrulaması gerekli.
+
+    Başarılıysa: profil deaktif hâle gelir, tüm oturumlar kapatılır, login'e yönlendir.
+    """
+    me = _my_id()
+    user_email = session.get("user", {}).get("email")
+    password = request.form.get("password", "").strip()
+
+    # Google-only hesaplarda (hiç şifre yok) reverifikasyon adımı atlanır —
+    # mfa_disable()'daki BİREBİR aynı desen (bkz. app/auth.py
+    # _user_has_password_identity docstring'i): aksi halde bu kullanıcı
+    # segmenti hesabını hiç deaktive edemezdi.
+    from ..auth import _user_has_password_identity
+    if _user_has_password_identity(session.get("access_token")):
+        if not password:
+            flash("Hesabını deaktive etmek için şifreni gir.", "error")
+            return redirect(url_for("routes.profile_edit"))
+
+        # Rate limit — 5 deneme / 300 saniye
+        if is_rate_limited(f"deactivate:{me}", 5, 300):
+            flash("Çok fazla deaktivasyon denemesi yaptın. Lütfen biraz sonra tekrar dene.", "error")
+            return redirect(url_for("routes.profile_edit"))
+
+        try:
+            tmp_auth = create_client(
+                current_app.config["SUPABASE_URL"],
+                current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+            )
+            call_with_ssl_retry(
+                lambda: tmp_auth.auth.sign_in_with_password({
+                    "email": user_email,
+                    "password": password,
+                })
+            )
+        except Exception as e:
+            msg = str(e)
+            if "Invalid login credentials" in msg:
+                flash("Şifre yanlış.", "error")
+            else:
+                flash(f"Şifre doğrulama hatası: {msg}", "error")
+            return redirect(url_for("routes.profile_edit"))
+
+    # Şifre doğru (veya hesap zaten şifresiz) — profili deaktif et
+    try:
+        sb = get_sb()
+        sb.table("profiles").update({"is_deactivated": True}).eq("id", me).execute()
+    except Exception as e:
+        flash(f"Deactivate hatası: {e}", "error")
+        return redirect(url_for("routes.profile_edit"))
+
+    # Logout: tek kullanımlık client ile BU cihazın oturumunu kapat
+    access_token = session.get("access_token")
+    refresh_token = session.get("refresh_token")
+    if access_token:
+        try:
+            tmp = create_client(
+                current_app.config["SUPABASE_URL"],
+                current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+            )
+            tmp.auth.set_session(access_token, refresh_token)
+            tmp.auth.sign_out()
+        except Exception:
+            pass
+
+    # Oturum kaydını sil (varsa)
+    session_record_id = session.get("session_record_id")
+    if session_record_id:
+        from ..user_sessions import delete_session_record
+        delete_session_record(session_record_id)
+
+    session.clear()
+    flash("Hesabın deaktive edildi. Tekrar giriş yaparak aktifleştirebilirsin.", "success")
+    return redirect(url_for("auth.login"))

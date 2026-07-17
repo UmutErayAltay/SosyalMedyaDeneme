@@ -25,4 +25,4 @@ from ._common import _attach_post_metrics  # noqa: E402,F401
 # Alt modüller `from . import bp` ile bu paketin `bp`sine route ekler —
 # import edilmeleri (yan etkili) bu satırlarda tetiklenir, en sonda olmalı
 # (yukarıdaki `bp` tanımından SONRA, aksi halde döngüsel import patlar).
-from . import posts, profile, discovery  # noqa: E402,F401
+from . import posts, profile, discovery, reels  # noqa: E402,F401

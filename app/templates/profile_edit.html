@@ -77,6 +77,21 @@
 
     <hr style="margin: 24px 0;">
 
+    <h2 style="font-size: 16px; margin-bottom: 12px;">Hesap Deaktivasyonu</h2>
+    <p class="muted">Hesabını geçici olarak deaktive edebilirsin — profilin ve gönderilerinin başkalarına görünmez olur. Tekrar giriş yaparak istediğin zaman aktifleştirebilirsin.</p>
+
+    <div style="margin-top: 12px;">
+        <form method="post" action="{{ url_for('routes.deactivate_account') }}" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if has_password %}
+            <input type="password" name="password" placeholder="Şifreni gir" required style="width: 200px; padding: 6px 8px; margin-right: 8px; vertical-align: middle;">
+            {% endif %}
+            <button type="submit" class="btn btn-ghost" style="vertical-align: middle;" onclick="return confirm('Hesabını deaktive etmek istediğine emin misin?')">Hesabı Deaktive Et</button>
+        </form>
+    </div>
+
+    <hr style="margin: 24px 0;">
+
     <h2 style="font-size: 16px; margin-bottom: 12px;">{{ icons.icon('smartphone', size=16) }} Aktif Oturumlar</h2>
     <p class="muted">Hesabına giriş yapılmış cihazlar. Tanımadığın bir oturum varsa sonlandır.</p>
 

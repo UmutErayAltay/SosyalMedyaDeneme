@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Hesap deaktif{% endblock %}
+{% block content %}
+<div class="auth-card" style="max-width: 450px; text-align: center;">
+    <h1>Bu hesap şu anda deaktif</h1>
+    <p class="muted">Bu kullanıcı hesabını geçici olarak deaktive etti. Profili ve gönderileri şu an görüntülenemiyor.</p>
+    <a href="{{ url_for('routes.feed') }}" class="btn btn-primary">Akışa dön</a>
+</div>
+{% endblock %}

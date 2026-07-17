@@ -1,7 +1,7 @@
 """Arama ve algoritmik keşfet."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from flask import render_template, request, session, redirect, url_for
+from flask import render_template, request, session, redirect, url_for, flash
 from . import bp
 from ._common import _my_id, _attach_post_metrics, attach_repost_of, fetch_sidebar_context
 from ..decorators import login_required
@@ -23,6 +23,17 @@ def _recent_searches(sb, me):
         return []
 
 
+def _saved_searches(sb, me):
+    """Kayıtlı aramalar — saved_searches migration'ı henüz uygulanmamışsa boş
+    liste döner, sayfa render'ı kırılmaz."""
+    try:
+        return sb.table("saved_searches").select("*").eq(
+            "user_id", me
+        ).order("created_at", desc=True).limit(20).execute().data
+    except Exception:
+        return []
+
+
 @bp.route("/search")
 @login_required
 @retry_on_connection_error
@@ -38,7 +49,8 @@ def search():
         return render_template(
             "search.html", q=q, users=[], posts=[], hashtags=[],
             search_type=search_type, date_from=date_from, date_to=date_to,
-            recent_searches=_recent_searches(sb, me), me=session.get("user"),
+            recent_searches=_recent_searches(sb, me),
+            saved_searches=_saved_searches(sb, me), me=session.get("user"),
             valid_usernames=get_valid_usernames(sb),
         )
 
@@ -111,7 +123,8 @@ def search():
     return render_template(
         "search.html", q=q, users=users, posts=posts, hashtags=hashtags,
         search_type=search_type, date_from=date_from, date_to=date_to,
-        recent_searches=_recent_searches(sb, me), me=session.get("user"),
+        recent_searches=_recent_searches(sb, me),
+        saved_searches=_saved_searches(sb, me), me=session.get("user"),
         valid_usernames=get_valid_usernames(sb),
     )
 
@@ -132,6 +145,40 @@ def delete_search_history_item(item_id):
 def clear_search_history():
     me = _my_id()
     get_sb().table("search_history").delete().eq("user_id", me).execute()
+    return redirect(url_for("routes.search", q=request.form.get("q", "")))
+
+
+@bp.route("/search/save", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def save_search():
+    """Kullanıcının aramasını saved_searches tablosuna kaydet."""
+    me = _my_id()
+    q = request.form.get("q", "").strip()
+    label = request.form.get("label", "").strip() or None
+
+    if not q:
+        return redirect(url_for("routes.search", q=""))
+
+    sb = get_sb()
+    sb.table("saved_searches").insert({
+        "user_id": me,
+        "query": q,
+        "label": label,
+    }).execute()
+
+    flash("Arama kaydedildi.", "success")
+    return redirect(url_for("routes.search", q=q))
+
+
+@bp.route("/search/saved/<item_id>/delete", methods=["POST"])
+@login_required
+@retry_on_connection_error
+def delete_saved_search_item(item_id):
+    """Kayıtlı aramayı sil."""
+    me = _my_id()
+    # Uygulama katmanı sahiplik kontrolü: sadece kendi kayıtlı aramasını sil
+    get_sb().table("saved_searches").delete().eq("id", item_id).eq("user_id", me).execute()
     return redirect(url_for("routes.search", q=request.form.get("q", "")))
 
 

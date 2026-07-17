@@ -1485,6 +1485,32 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 }
 .search-history-delete-btn:hover { background: var(--bg); color: var(--text); }
 
+/* Kayıtlı aramalar — search-history ile aynı desen */
+.search-saved-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.search-saved-chip {
+    display: flex; align-items: center; gap: 4px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 6px 6px 14px;
+}
+.search-saved-chip a { color: var(--text); text-decoration: none; font-size: 14px; }
+.search-saved-chip a:hover { color: var(--primary); }
+.search-saved-delete-form { display: inline-flex; }
+.search-saved-delete-btn {
+    border: none; background: none; color: var(--muted); cursor: pointer;
+    font-size: 16px; line-height: 1; padding: 4px 8px; border-radius: 50%;
+}
+.search-saved-delete-btn:hover { background: var(--bg); color: var(--text); }
+
+/* Aramayı kaydet formu — arama sonuçlarında görünen inline form */
+.search-save-form {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+}
+.search-save-label-input {
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+    border-radius: 4px; font-size: 14px; padding: 6px 8px;
+}
+.search-save-label-input:focus { outline: none; border-color: var(--primary); }
+
 /* Takipçi/Takip listesi (follow_list.html) — search-user'ı satır olarak paylaşır,
    sağda takip butonu için justify-content ekler */
 .follow-list { display: flex; flex-direction: column; gap: 8px; }
@@ -3583,3 +3609,166 @@ header[role="banner"] {
     border: 1px solid var(--border);
 }
 .google-login-btn:hover { background: var(--card-hover); }
+
+/* ========================= REELS (Dikey kısa video akışı) ========================= */
+.reels-page {
+    padding: 0 !important; /* navbar'ın altında tam genişlik */
+}
+
+.reels-feed {
+    height: 100vh; /* Tam ekran yüksekliği (navbar hariç) */
+    overflow-y: scroll;
+    scroll-snap-type: y mandatory;
+    scroll-behavior: smooth;
+    position: relative;
+}
+
+.reel-item {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    scroll-snap-align: start;
+    position: relative;
+    background: var(--bg);
+}
+
+.reel-video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    cursor: pointer;
+}
+
+/* Sağ kenarda dikey aksiyon çubuğu */
+.reel-actions {
+    position: absolute;
+    right: var(--space-3);
+    bottom: 120px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    z-index: 10;
+}
+
+.reel-actions .btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: 12px;
+    padding: var(--space-2);
+    color: var(--text);
+}
+
+.reel-actions .like-count,
+.reel-actions .comment-count {
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    min-width: 24px;
+}
+
+/* Yazar bilgisi — reel-actions içinde sıralama */
+.reel-author {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+}
+
+.reel-author-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-full);
+    object-fit: cover;
+    border: 2px solid var(--card);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.reel-author-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+    text-align: center;
+    max-width: 50px;
+    word-break: break-all;
+    transition: opacity 0.2s;
+}
+.reel-author-name:hover { opacity: 0.7; }
+
+/* Alt kısımda caption */
+.reel-caption {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: var(--space-4);
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent);
+    color: white;
+    font-size: 14px;
+    line-height: 1.4;
+    max-height: 100px;
+    overflow: hidden;
+    z-index: 9;
+}
+
+.reel-caption p {
+    margin: 0;
+    word-wrap: break-word;
+}
+
+.reel-caption a {
+    color: #7FD8F7;
+    text-decoration: none;
+}
+.reel-caption a:hover { text-decoration: underline; }
+
+/* Sayfalama */
+.reel-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    font-size: 14px;
+}
+
+.reel-page-info {
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.reel-pagination .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    font-size: 14px;
+}
+
+/* Boş durum */
+.reel-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    color: var(--muted);
+    font-size: 18px;
+}
+
+/* Koyu tema ayarlamaları */
+@media (prefers-color-scheme: dark) {
+    :root[data-theme="dark"] .reel-caption {
+        background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+    }
+    :root[data-theme="dark"] .reel-author-avatar {
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    }
+}

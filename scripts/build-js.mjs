@@ -48,6 +48,9 @@ const MANIFEST = {
   // ÖNCE, realtime SONRA) — modülerlik korunsun diye 2 ayrı bundle.
   'messages-convo-list': ['groupChat.js', 'groupAdmin.js', 'groupCall.js', 'msgMedia.js'],
   'messages-realtime': ['stickers.js', 'voiceWaveform.js', 'chat.js', 'messagesPanel.js'],
+
+  // Reels: dikey kısa video akışı
+  'reels': ['reels.js'],
 };
 
 async function buildBundle(name, files) {

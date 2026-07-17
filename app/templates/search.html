@@ -25,6 +25,12 @@
 
     {% if q %}
     <h2>"{{ q }}" için sonuçlar</h2>
+    <form method="post" action="{{ url_for('routes.save_search') }}" class="search-save-form" style="margin-bottom: 24px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="q" value="{{ q }}">
+        <input type="text" name="label" placeholder="Bu aramayı adlandır (opsiyonel)" class="search-save-label-input" style="padding: 6px 8px; margin-right: 8px; width: 250px;">
+        <button type="submit" class="btn btn-primary" style="vertical-align: middle;">💾 Kaydet</button>
+    </form>
     {% else %}
     <h2>Arama</h2>
     <p class="muted">Aramak için en az 2 karakter yaz.</p>
@@ -47,6 +53,25 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-ghost">Tümünü temizle</button>
         </form>
+    </section>
+    {% endif %}
+
+    {% if saved_searches %}
+    <section class="search-section search-saved-section">
+        <h3>Kayıtlı Aramalarım</h3>
+        <div class="search-saved-list">
+            {% for s in saved_searches %}
+            <div class="search-saved-chip">
+                <a href="{{ url_for('routes.search', q=s.query) }}" title="{{ s.query }}">
+                    {% if s.label %}{{ s.label }}{% else %}{{ s.query }}{% endif %}
+                </a>
+                <form method="post" action="{{ url_for('routes.delete_saved_search_item', item_id=s.id) }}" class="search-saved-delete-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="search-saved-delete-btn" aria-label="Bu aramayı kayıtlılardan sil" title="Sil">×</button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
     </section>
     {% endif %}
     {% endif %}

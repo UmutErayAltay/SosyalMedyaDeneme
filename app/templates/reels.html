@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icons %}
+
+{% block title %}Reels{% endblock %}
+{% block description %}Kısa dikey videolar — Reels akışı.{% endblock %}
+
+{% block container_class %}reels-page{% endblock %}
+
+{% block content %}
+<div class="reels-feed" id="reels-feed">
+    {% if posts %}
+        {% for p in posts %}
+        <section class="reel-item" data-post-id="{{ p.id }}">
+            <video
+                src="{{ p.video_url }}"
+                class="reel-video"
+                loop
+                playsinline
+                muted
+                data-post-id="{{ p.id }}"
+                loading="lazy">
+            </video>
+
+            {# Sağ kenarda dikey aksiyon çubuğu #}
+            <div class="reel-actions">
+                {# Beğeni butonu #}
+                <button type="button"
+                        class="btn btn-ghost like-btn {{ 'liked' if p.liked_by_me }}"
+                        data-liked="{{ '1' if p.liked_by_me else '0' }}"
+                        data-reaction="{{ p.my_reaction or '' }}"
+                        data-like-url="{{ url_for('social.toggle_like', post_id=p.id) }}"
+                        aria-label="{{ 'Reaksiyonunu kaldır' if p.liked_by_me else 'Reaksiyon ekle (basılı tutarak seç)' }}"
+                        title="Beğeni">
+                    <span class="reaction-icon {{ 'is-like-active' if p.liked_by_me and (not p.my_reaction or p.my_reaction == 'like') }}">{{ icons.icon('thumbs-up', size=20) }}</span>
+                    <span class="like-count">{{ p.like_count or 0 }}</span>
+                </button>
+
+                {# Yorum butonu #}
+                <a href="{{ url_for('routes.post_detail', post_id=p.id) }}"
+                   class="btn btn-ghost"
+                   aria-label="Yorumlar"
+                   title="Yorumlar">
+                    {{ icons.icon('message-circle', size=20) }}
+                    <span class="comment-count">{{ p.comment_count or 0 }}</span>
+                </a>
+
+                {# Kaydet butonu #}
+                <button type="button"
+                        class="btn btn-ghost bookmark-btn {{ 'bookmarked' if p.bookmarked_by_me }}"
+                        data-bookmarked="{{ '1' if p.bookmarked_by_me else '0' }}"
+                        data-bookmark-url="{{ url_for('social.toggle_bookmark', post_id=p.id) }}"
+                        aria-label="{{ 'Kaydedilenlerden kaldır' if p.bookmarked_by_me else 'Kaydet' }}"
+                        title="Kaydet">
+                    {{ icons.icon('bookmark', size=20) }}
+                </button>
+
+                {# Yazar bilgisi #}
+                <div class="reel-author">
+                    {% if p.profiles.avatar_url %}
+                        <img src="{{ p.profiles.avatar_url }}" class="reel-author-avatar" alt="" loading="lazy" width="40" height="40">
+                    {% else %}
+                        <div class="avatar avatar-placeholder reel-author-avatar" aria-hidden="true"></div>
+                    {% endif %}
+                    <a href="{{ url_for('routes.profile', username=p.profiles.username) }}"
+                       class="reel-author-name"
+                       aria-label="{{ p.profiles.username }} profiline git">
+                        {{ p.profiles.username }}
+                    </a>
+                </div>
+            </div>
+
+            {# Alt kısımda caption #}
+            {% if p.content %}
+            <div class="reel-caption">
+                <p>{{ p.content|linkify_hashtags|linkify_mentions(valid_usernames) }}</p>
+            </div>
+            {% endif %}
+        </section>
+        {% endfor %}
+
+        {# Sayfalama: önceki/sonraki #}
+        <nav class="reel-pagination" aria-label="Sayfalar">
+            {% if page > 1 %}
+                <a href="{{ url_for('routes.reels', page=page-1) }}" class="btn btn-ghost" rel="prev">{{ icons.icon('chevron-up', size=16) }} Önceki</a>
+            {% endif %}
+            <span class="reel-page-info">Sayfa {{ page }}</span>
+            {% if has_more %}
+                <a href="{{ url_for('routes.reels', page=page+1) }}" class="btn btn-ghost" rel="next">Sonraki {{ icons.icon('chevron-down', size=16) }}</a>
+            {% endif %}
+        </nav>
+    {% else %}
+        <div class="reel-empty">
+            <p>Henüz hiç reel yok.</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='dist/post-interactions.bundle.js') }}"></script>
+<script src="{{ url_for('static', filename='dist/reels.bundle.js') }}"></script>
+{% endblock %}

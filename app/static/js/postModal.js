@@ -249,15 +249,22 @@
     // eklenebilir (kullanıcı isteğiyle mutual-exclusive kısıtlama kaldırıldı,
     // backend de aynı şekilde routes.create_post()'ta güncellendi). ---
     if (videoInput && videoPreview) {
+        var isReelLabel = document.getElementById('is-reel-label');
+        var isReelCheckbox = document.getElementById('is-reel-checkbox');
         videoInput.addEventListener('change', function (e) {
             var file = e.target.files[0];
             if (!file) {
                 videoPreview.style.display = 'none';
                 videoPreview.removeAttribute('src');
+                if (isReelLabel) isReelLabel.hidden = true;
+                if (isReelCheckbox) isReelCheckbox.checked = false;
                 return;
             }
             videoPreview.src = URL.createObjectURL(file);
             videoPreview.style.display = 'block';
+            // Reel toggle'ı SADECE video seçiliyken görünür — reel video
+            // gerektirir (backend routes.create_post() da bunu zorunlu kılar).
+            if (isReelLabel) isReelLabel.hidden = false;
         });
     }
 
@@ -402,6 +409,10 @@
             videoInput.value = '';
             videoPreview.style.display = 'none';
             videoPreview.removeAttribute('src');
+            var isReelLabel = document.getElementById('is-reel-label');
+            var isReelCheckbox = document.getElementById('is-reel-checkbox');
+            if (isReelLabel) isReelLabel.hidden = true;
+            if (isReelCheckbox) isReelCheckbox.checked = false;
         }
         resetGifPanel();
     }

@@ -148,6 +148,10 @@
 
             <div id="post-image-preview" class="image-preview-grid" aria-live="polite"></div>
             <video id="post-video-preview" class="post-video-preview" controls style="display:none"></video>
+            <label class="checkbox-label" id="is-reel-label" hidden>
+                <input type="checkbox" name="is_reel" id="is-reel-checkbox">
+                {{ icons.icon('video', size=14) }} Reel olarak paylaş
+            </label>
             <div id="poll-options-container" class="poll-options-container" hidden>
                 <input type="text" name="poll_option_1" placeholder="Seçenek 1" maxlength="80">
                 <input type="text" name="poll_option_2" placeholder="Seçenek 2" maxlength="80">

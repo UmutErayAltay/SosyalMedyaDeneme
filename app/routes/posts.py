@@ -311,6 +311,12 @@ def create_post():
         flash("Boş post paylaşılamaz.", "error")
         return redirect(url_for("routes.feed"))
 
+    # Reel için video zorunlu
+    is_reel = request.form.get("is_reel") == "on"
+    if is_reel and not has_video:
+        flash("Reel için video gerekli.", "error")
+        return redirect(url_for("routes.feed"))
+
     image_urls = []
     video_url = None
     gif_url = request.form.get("gif_url", "").strip()
@@ -373,7 +379,7 @@ def create_post():
     try:
         # sql/migration_post_visibility.sql, migration_video_posts.sql,
         # migration_drafts.sql, migration_post_scheduling.sql,
-        # migration_post_location.sql henüz uygulanmamışsa ilgili kolon(lar) yok —
+        # migration_post_location.sql, migration_reels.sql henüz uygulanmamışsa ilgili kolon(lar) yok —
         # post paylaşımı bundan etkilenmesin diye kolonsuz (eski) haliyle dene
         full_data = {**insert_data, "visibility": visibility, "is_draft": is_draft}
         if video_url:
@@ -387,6 +393,8 @@ def create_post():
                 full_data["location_lat"] = location_lat
             if location_lng is not None:
                 full_data["location_lng"] = location_lng
+        if is_reel:
+            full_data["is_reel"] = is_reel
         inserted = sb.table("posts").insert(full_data).execute()
     except Exception:
         inserted = sb.table("posts").insert(insert_data).execute()

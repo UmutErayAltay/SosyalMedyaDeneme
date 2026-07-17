@@ -174,11 +174,15 @@ def register():
                         "password": password,
                     })
                 )
-                _save_session(login_res)
-                from .cache import invalidate
-                invalidate("valid_usernames")
-                flash(f"Hoş geldin {username}!", "success")
-                return redirect(url_for("routes.feed"))
+                if _save_session(login_res) is True:
+                    user = getattr(login_res, "user", None)
+                    if user and _reactivate_if_needed(user.id):
+                        flash("Hesabın tekrar aktifleştirildi, hoş geldin!", "success")
+                    else:
+                        flash(f"Hoş geldin {username}!", "success")
+                    from .cache import invalidate
+                    invalidate("valid_usernames")
+                    return redirect(url_for("routes.feed"))
             except Exception:
                 # Giriş başarısız -> login sayfasına yönlendir
                 flash("Hesap oluşturuldu! Giriş yap.", "success")
@@ -250,6 +254,8 @@ def login():
                 return redirect(url_for("auth.mfa_verify"))
 
             # 2FA yok — normal session kurulumu
+            if _reactivate_if_needed(res.user.id):
+                flash("Hesabın tekrar aktifleştirildi, hoş geldin!", "success")
             _finalize_login(res.user.id, res.user.email, res.session.access_token, getattr(res.session, "refresh_token", None))
             return redirect(url_for("routes.feed"))
 
@@ -388,6 +394,8 @@ def google_complete():
         session["mfa_pending_refresh_token"] = refresh_token
         return jsonify(ok=True, redirect=url_for("auth.mfa_verify"))
 
+    if _reactivate_if_needed(user.id):
+        flash("Hesabın tekrar aktifleştirildi, hoş geldin!", "success")
     _finalize_login(user.id, user.email, access_token, refresh_token)
     return jsonify(ok=True, redirect=url_for("routes.feed"))
 
@@ -492,7 +500,10 @@ def mfa_verify():
             # Tam session kurulumu (profile verisi dahil)
             _finalize_login(user_id, email, access_token, refresh_token)
 
-            flash("2FA doğrulandı, hoş geldin!", "success")
+            if _reactivate_if_needed(user_id):
+                flash("Hesabın tekrar aktifleştirildi, hoş geldin!", "success")
+            else:
+                flash("2FA doğrulandı, hoş geldin!", "success")
             return redirect(url_for("routes.feed"))
 
         except Exception as e:
@@ -524,6 +535,25 @@ def _user_has_password_identity(access_token: str) -> bool:
         return any(getattr(i, "provider", None) == "email" for i in identities)
     except Exception:
         return True
+
+
+def _reactivate_if_needed(user_id: str) -> bool:
+    """Kullanıcı profili deaktif ise aktifleştir.
+
+    True döndürürse: deaktif profil yeni aktifleştirildi (flash mesajı gerekir).
+    False döndürürse: zaten aktif.
+    """
+    try:
+        prof = get_sb().table("profiles").select("is_deactivated").eq("id", user_id).execute()
+        prof_data = prof.data[0] if prof.data else {}
+        if prof_data.get("is_deactivated"):
+            # Deaktif — aktifleştir
+            get_sb().table("profiles").update({"is_deactivated": False}).eq("id", user_id).execute()
+            return True
+        return False
+    except Exception:
+        # Şema/sorgu hatası — reactivation atlanır, normal giriş devam eder
+        return False
 
 
 @bp.route("/2fa/enroll", methods=["GET", "POST"])
