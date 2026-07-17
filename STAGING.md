@@ -1,63 +1,45 @@
-# Staging/prod Supabase ayrımı — runbook
+# Tek Supabase projesi kararı (staging ayrımı YAPILMAYACAK)
 
-## Neden gerekli
+## Karar (2026-07-17)
 
-Şu an geliştirme, test (pytest + Playwright suite'leri — gerçek Supabase'e
-karşı çalışıyorlar) ve üretim (`serve.py`) AYNI (tek) Supabase projesini
-paylaşıyor. Bunun somut belirtisi: `auth.users` tablosunda haftalardır
-birikmiş onlarca test kullanıcısı (`test_*@example.com`,
-`*@sosyal-test.local` vb.) — testler gerçek/üretim verisiyle aynı ortamda
-çalışıyor demek.
+Bu proje küçük ölçekte (aktif kullanım az) çalıştığı için geliştirme,
+test (pytest + Playwright suite'leri) ve üretim **AYNI (tek) Supabase
+projesini kullanmaya devam ediyor** — ayrı bir staging/test projesi
+KURULMAYACAK. Gerekçe: iki proje arasında şema senkronize tutmanın
+(`sql/MIGRATIONS.md`'deki disiplin, HER migration'ı iki yere uygulama)
+operasyonel maliyeti, bu ölçekte test verisinin izolasyonundan doğacak
+faydadan daha ağır basıyor. Tek projenin risksiz kalması için tek şart:
+**test verisi güvenilir şekilde temizlenmesi** — bu zaten mevcut
+konvansiyon (`sb.auth.admin.create_user` + fixture cleanup, bkz.
+`tests/conftest.py`).
 
-## Neden otomatik yapılamadı
+Aşağıdaki (önceki karar döneminden kalan) ayrı-proje planı artık
+GEÇERLİ DEĞİL — referans/tarihsel kayıt olarak bırakıldı, uygulanmayacak.
 
-Bu ayrımı kurmak **hesap seviyesinde** bir işlem gerektiriyor (yeni bir
-Supabase projesi oluşturmak) — Claude'un elindeki hiçbir MCP aracı
-(`apply_migration`, `execute_sql`, `list_tables` vb.) bunu yapamaz, hepsi
-VAR OLAN tek proje üzerinde çalışır. Supabase'in "branching" özelliği
-(`list_branches`/`create_branch`) da denendi, bu proje için
-`"Project reference is missing when validating permissions"` hatasıyla
-başarısız oldu — muhtemelen mevcut plan (free tier) branching'i
-desteklemiyor.
+## Test verisi hijyeni — asıl önemli olan bu
 
-**Kod tarafı zaten hazır**: `app/config.py` ve `app/supabase_client.py`
-hiçbir yerde proje URL'i/anahtarı HARDCODE etmiyor, hepsi `.env`'den
-okunuyor (doğrulandı, 2026-07-17). Yani ayrı bir Supabase projesine
-geçmek için TEK gereken şey `.env`'deki 3 değeri değiştirmek — kod
-değişikliği gerekmiyor.
+- `tests/conftest.py`'deki `test_user_factory` fixture'ı zaten HER testin
+  kendi kullanıcısını oluşturup (`sb.auth.admin.create_user`) test sonunda
+  sildiğini garantiliyor (`yield` sonrası cleanup) — yeni testler bu
+  fixture'ı kullanmaya devam etmeli, kendi ad-hoc create/delete mantığı
+  yazılmamalı.
+- Playwright E2E suite'i (`e2e/`) kalıcı bir test kullanıcısı KULLANIYOR
+  (`.env`'deki `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`) — bu hesap
+  SİLİNMEMELİ, kalıcı test altyapısının bir parçası (login state'i tekrar
+  tekrar kullanılıyor).
+- Tek seferlik/ad-hoc doğrulama script'leri (scratchpad'te yazılıp silinen
+  türden) HER ZAMAN `try/finally` ile temizlik yapmalı — bu oturumda
+  yazılan script'lerin hepsi bu deseni izledi.
+- **2026-07-17 denetimi**: `auth.users` tablosunda önceki oturumlardan
+  (bu disiplin oturt-ulmadan ÖNCE) kalma ~20 kalıntı test hesabı bulundu
+  (`test_*@example.com`, `*@sosyal-test.local`, `storytest@test.com`,
+  `testuser@test.com` vb.) — bunlar HENÜZ temizlenmedi, kullanıcı onayı
+  bekleniyor (bkz. sohbet).
 
-## Sizin yapmanız gereken adımlar
+## CI/CD notu
 
-1. **Yeni (ücretsiz) bir Supabase projesi oluşturun** (dashboard'dan,
-   "New Project") — bunu "staging/test" projesi olarak kullanın.
-2. **Şemayı senkronize edin**: `sql/` klasöründeki TÜM `migration_*.sql`
-   dosyalarını (68+ dosya, `ls sql/migration_*.sql | sort` ile
-   kronolojik-ish sırayla) yeni projede çalıştırın — Supabase MCP'nin
-   proje referansını (bağlı olduğu proje) staging projesine çevirip
-   `apply_migration` ile, ya da doğrudan yeni projenin SQL editor'ünden
-   elle. `sql/MIGRATIONS.md`'deki denetim sürecini yeni projede de
-   uygulayın (`supabase_migrations.schema_migrations` karşılaştırması).
-3. **Yeni projenin bilgilerini alın**: Settings → API → Project URL,
-   anon/publishable key, service_role key.
-4. **`.env`'i güncelleyin** (yerel geliştirme + testler İÇİN):
-   `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`,
-   `SUPABASE_JWKS_URL`'i staging projesinin değerleriyle değiştirin.
-   Üretim (`serve.py`'nin çalıştığı sunucu) kendi `.env`'inde ESKİ
-   (gerçek) proje bilgilerini KORUMALI — iki ortam artık farklı `.env`
-   dosyalarına sahip olacak.
-5. **GitHub Actions secret'larını güncelleyin** (`SUPABASE_URL`,
-   `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`,
-   `SUPABASE_JWKS_URL`, `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`) — CI'daki
-   pytest/Playwright artık staging projesine karşı çalışsın, üretime değil.
-6. **Staging'de kendi test kullanıcınızı oluşturun** (2FA/discover/vb.
-   testlerin kullandığı e-posta+şifre) ve `E2E_ADMIN_EMAIL`/
-   `E2E_ADMIN_PASSWORD`'ü buna göre güncelleyin.
-
-## Devam eden maliyet (bilinçli tradeoff)
-
-Bundan sonra YENİ bir migration yazıldığında **iki projeye de**
-uygulanması gerekecek (staging + production) — `sql/MIGRATIONS.md`'deki
-kayıt/senkron disiplini bu yüzden daha da önemli hale geliyor. Bu, ayrımın
-getirdiği gerçek bir operasyonel yük; tek-proje modelinin basitliğinden
-vazgeçilmiş oluyor ama karşılığında test/geliştirme artık üretim verisini
-kirletmiyor.
+`.github/workflows/ci.yml` her push'ta gerçek (tek) projeye karşı pytest
+çalıştırıyor — bu, "test verisi yükleniyor ve düzgün siliniyor" varsayımına
+dayanıyor. Fixture cleanup'ın güvenilirliği bu yüzden kritik: bir testin
+cleanup adımı sessizce başarısız olursa (örn. exception fixture'ın
+`yield` sonrası bloğunda yutulursa) kalıntı birikmeye devam eder.
