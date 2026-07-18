@@ -79,7 +79,7 @@ def feed():
 
     if posts is None:
         # Fallback: eski çok-sorgulu yol (davranış birebir aynı)
-        select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url), "
+        select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url, is_private, is_deactivated), "
                        "likes(count), comments(count)")
         blocked_ids_fb = blocked_user_ids(sb, me)
         muted_ids_fb = muted_user_ids(sb, me)
@@ -99,20 +99,25 @@ def feed():
                 "created_at", desc=True
             ).range(offset, offset + PAGE_SIZE).execute().data
 
-        # Gizli profil kontrolü (Python fallback): is_private=true ve viewer accepted değilse gösterme
+        # Gizli profil ve deaktif kullanıcı kontrolü (Python fallback)
         visible_author_ids = followed_and_self_ids(sb, me)
         if posts:
-            # Yazar is_private durumunu toplu çek
+            # Yazar is_private ve is_deactivated durumunu toplu çek
             author_ids = {p.get("user_id") for p in posts if p.get("user_id")}
             is_private_map = {}
+            is_deactivated_map = {}
             if author_ids:
                 try:
-                    profiles = sb.table("profiles").select("id, is_private").in_("id", list(author_ids)).execute().data
+                    profiles = sb.table("profiles").select("id, is_private, is_deactivated").in_("id", list(author_ids)).execute().data
                     is_private_map = {p["id"]: p.get("is_private", False) for p in profiles}
+                    is_deactivated_map = {p["id"]: p.get("is_deactivated", False) for p in profiles}
                 except Exception:
                     pass
-            # is_private filtresi: gizli profil ve viewer accepted değilse ele
-            posts = [p for p in posts if not (is_private_map.get(p.get("user_id"), False) and p.get("user_id") != me and p.get("user_id") not in visible_author_ids)]
+            # Filtreleme: gizli profil (viewer accepted değilse) veya deaktif profil gösterme
+            posts = [p for p in posts if not (
+                is_deactivated_map.get(p.get("user_id"), False) or
+                (is_private_map.get(p.get("user_id"), False) and p.get("user_id") != me and p.get("user_id") not in visible_author_ids)
+            )]
 
         has_next = len(posts) > PAGE_SIZE
         posts = posts[:PAGE_SIZE]

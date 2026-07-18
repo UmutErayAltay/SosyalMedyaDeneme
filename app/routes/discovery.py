@@ -64,11 +64,12 @@ def search():
         # bulamıyordu; PostgREST or_ syntax'ı virgülle ayrılmış koşullar alır).
         q_escaped = q.replace(",", "").replace(")", "")
         users = sb.table("profiles").select(
-            "id, username, full_name, avatar_url"
+            "id, username, full_name, avatar_url, is_deactivated"
         ).or_(
             f"username.ilike.%{q_escaped}%,full_name.ilike.%{q_escaped}%"
         ).limit(20).execute().data
-        users = [u for u in users if u["id"] not in blocked_ids]
+        # Engellenen ve deaktif kullanıcıları filtrele
+        users = [u for u in users if u["id"] not in blocked_ids and not u.get("is_deactivated", False)]
 
     posts = []
     if search_type in ("all", "posts"):
@@ -77,7 +78,7 @@ def search():
         # gibi opsiyonel kolonlar henüz migration'ı çalıştırılmamışsa bile PostgREST
         # hata vermez — açık isimle istenen var olmayan bir kolon HATA verirdi.
         posts_query = sb.table("posts").select(
-            "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+            "*, profiles!posts_user_id_fkey(username, avatar_url, is_deactivated), likes(count), comments(count)"
         ).ilike("content", f"%{q}%").eq("is_draft", False).eq("is_archived", False)
         if date_from:
             posts_query = posts_query.gte("created_at", date_from)
@@ -86,6 +87,8 @@ def search():
             posts_query = posts_query.lte("created_at", f"{date_to}T23:59:59")
         posts = posts_query.order("created_at", desc=True).limit(50).execute().data
         posts = [p for p in posts if not p.get("is_draft")]  # taslaklar aramada görünmez (fallback koruma)
+        # Deaktif kullanıcıların postlarını filtrele
+        posts = [p for p in posts if not (p.get("profiles") and p["profiles"].get("is_deactivated"))]
         posts = filter_visible(sb, posts, followed_and_self_ids(sb, me), close_friend_author_ids(sb, me), me)
         posts = filter_not_blocked(posts, blocked_ids)
         _attach_post_metrics(sb, posts, me)
@@ -235,7 +238,7 @@ def discover():
         blocked_ids = blocked_user_ids(sb, me)
 
         cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-        select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url), "
+        select_cols = ("*, profiles!posts_user_id_fkey(username, avatar_url, is_private, is_deactivated), "
                        "likes(count), comments(count)")
         try:
             posts = sb.table("posts").select(select_cols).gte(
@@ -249,19 +252,24 @@ def discover():
         posts = filter_visible(sb, posts, exclude_ids, close_friend_ids, me)
         posts = filter_not_blocked(posts, blocked_ids)
 
-        # Gizli profil kontrolü (Python fallback): is_private=true ve viewer accepted değilse gösterme
+        # Gizli profil ve deaktif kullanıcı kontrolü (Python fallback)
         if posts:
-            # Yazar is_private durumunu toplu çek
+            # Yazar is_private ve is_deactivated durumunu toplu çek
             author_ids = {p.get("user_id") for p in posts if p.get("user_id")}
             is_private_map = {}
+            is_deactivated_map = {}
             if author_ids:
                 try:
-                    profiles = sb.table("profiles").select("id, is_private").in_("id", list(author_ids)).execute().data
+                    profiles = sb.table("profiles").select("id, is_private, is_deactivated").in_("id", list(author_ids)).execute().data
                     is_private_map = {p["id"]: p.get("is_private", False) for p in profiles}
+                    is_deactivated_map = {p["id"]: p.get("is_deactivated", False) for p in profiles}
                 except Exception:
                     pass
-            # is_private filtresi: gizli profil ve viewer accepted değilse ele
-            posts = [p for p in posts if not (is_private_map.get(p.get("user_id"), False) and p.get("user_id") != me and p.get("user_id") not in exclude_ids)]
+            # Filtreleme: gizli profil (viewer accepted değilse) veya deaktif profil gösterme
+            posts = [p for p in posts if not (
+                is_deactivated_map.get(p.get("user_id"), False) or
+                (is_private_map.get(p.get("user_id"), False) and p.get("user_id") != me and p.get("user_id") not in exclude_ids)
+            )]
 
         # Paralel: post metrics ve polls çek
         def _attach_metrics():

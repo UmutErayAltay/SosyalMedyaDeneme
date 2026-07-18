@@ -89,6 +89,40 @@ class TestAccountDeactivation:
         body = resp.data.decode("utf-8", errors="ignore")
         assert "deaktif" in body.lower()
 
+    def test_deactivated_users_posts_hidden_from_feed_and_discover(self, app, client, logged_in_session):
+        """Deaktif bir kullanıcının postları, başkasının feed/discover'ında
+        görünmemeli (RPC + Python fallback filtreleri, sql/migration_hide_
+        deactivated_users_posts_from_feed_discover.sql + _discover_3arg_overload.sql)."""
+        author, _ = logged_in_session(
+            email="deact_post_author@example.com",
+            password="TestPass123!"
+        )
+        with app.app_context():
+            sb = get_sb()
+            sb.table("posts").insert({
+                "user_id": author["id"],
+                "content": "Deaktif olacak yazarın public postu",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute()
+            sb.table("profiles").update({"is_deactivated": True}).eq("id", author["id"]).execute()
+
+        viewer, _ = logged_in_session(
+            email="deact_post_viewer@example.com",
+            password="TestPass123!"
+        )
+
+        resp = client.get("/", follow_redirects=False)
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8", errors="ignore")
+        assert "Deaktif olacak yazarın public postu" not in body
+
+        resp = client.get("/kesfet", follow_redirects=False)
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8", errors="ignore")
+        assert "Deaktif olacak yazarın public postu" not in body
+
     def test_login_reactivates_deactivated_account(self, app, client, logged_in_session):
         """Deaktif bir hesap normal şifreyle login olduğunda is_deactivated
         otomatik False'a döner (silme değil, tekrar giriş = reaktivasyon)."""
