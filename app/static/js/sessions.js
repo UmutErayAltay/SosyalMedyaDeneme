@@ -99,14 +99,13 @@
     // Diğer tüm oturumları kapat butonu
     var revokeOthersBtn = document.getElementById('revoke-others-btn');
     if (revokeOthersBtn) {
-        revokeOthersBtn.addEventListener('click', function() {
+        revokeOthersBtn.addEventListener('click', async function() {
             // appConfirm var mı kontrol et, yoksa native confirm
             if (typeof window.appConfirm === 'function') {
-                window.appConfirm('Diğer tüm oturumları kapatmak istediğinizden emin misiniz?', function(confirmed) {
-                    if (confirmed) {
-                        revokeOthers();
-                    }
-                });
+                var confirmed = await window.appConfirm('Diğer tüm oturumları kapatmak istediğinizden emin misiniz?');
+                if (confirmed) {
+                    revokeOthers();
+                }
             } else {
                 if (confirm('Diğer tüm oturumları kapatmak istediğinizden emin misiniz?')) {
                     revokeOthers();
