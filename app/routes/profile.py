@@ -714,7 +714,7 @@ def deactivate_account():
         sb = get_sb()
         sb.table("profiles").update({"is_deactivated": True}).eq("id", me).execute()
     except Exception as e:
-        flash(f"Deactivate hatası: {e}", "error")
+        flash(f"Deaktivasyon hatası: {e}", "error")
         return redirect(url_for("routes.profile_edit"))
 
     # Logout: tek kullanımlık client ile BU cihazın oturumunu kapat
