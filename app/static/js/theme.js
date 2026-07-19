@@ -8,12 +8,15 @@
     var root = document.documentElement;
     var sun = toggle.querySelector('.icon-sun');
     var moon = toggle.querySelector('.icon-moon');
+    var label = toggle.querySelector('.theme-toggle-label');
 
     function syncIcons() {
         var isDark = root.getAttribute('data-theme') === 'dark';
         if (sun) sun.style.display = isDark ? 'inline' : 'none';
         if (moon) moon.style.display = isDark ? 'none' : 'inline';
-        toggle.setAttribute('aria-label', isDark ? 'Aydınlık moda geç' : 'Karanlık moda geç');
+        var text = isDark ? 'Aydınlık moda geç' : 'Karanlık moda geç';
+        toggle.setAttribute('aria-label', text);
+        if (label) label.textContent = text;
     }
 
     syncIcons();
