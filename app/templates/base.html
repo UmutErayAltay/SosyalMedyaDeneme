@@ -73,10 +73,10 @@
         </button>
 
         <div class="nav-links" id="nav-links">
-            <a href="{{ url_for('routes.feed') }}" aria-label="Akış"><span aria-hidden="true">🏠</span> Akış</a>
+            <a href="{{ url_for('routes.feed') }}" aria-label="Akış">{{ icons.icon('home', size=16) }} Akış</a>
             <a href="{{ url_for('messaging.inbox') }}" class="nav-messages-link" id="messages-nav-link"
                aria-label="Mesajlar{% if unread_messages %}, {{ unread_messages }} okunmamış{% endif %}">
-                <span aria-hidden="true">💬</span> Mesajlar
+                {{ icons.icon('message-circle', size=16) }} Mesajlar
                 <span class="notif-badge{{ '' if unread_messages else ' hidden' }}"
                       id="messages-badge" aria-hidden="true">{{ unread_messages or '' }}</span>
             </a>
@@ -104,7 +104,7 @@
                 <span class="icon-sun">{{ icons.icon('sun', size=16) }}</span><span class="icon-moon">{{ icons.icon('moon', size=16) }}</span>
                 <span class="theme-toggle-label">Karanlık moda geç</span>
             </button>
-            <a href="{{ url_for('auth.logout') }}" class="logout" aria-label="Çıkış yap"><span aria-hidden="true">🚪</span> Çıkış</a>
+            <a href="{{ url_for('auth.logout') }}" class="logout" aria-label="Çıkış yap">{{ icons.icon('log-out', size=16) }} Çıkış</a>
         </div>
     </nav>
     </header>

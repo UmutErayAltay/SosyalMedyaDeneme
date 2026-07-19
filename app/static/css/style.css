@@ -891,6 +891,11 @@ body.navbar-hidden .feed-sidebar { top: 16px; }
 @media (max-width: 900px) {
     main.feed-page { grid-template-columns: 1fr; max-width: var(--max-width); }
     .feed-sidebar { display: none; }
+    /* Tek kolona düşünce feed-layout hâlâ grid-column:2'de kalıyordu (satır
+       813) — tanımlı tek kolonun (1fr) SAĞINDA örtük/implicit bir 2. kolona
+       yerleşip postları sağa yaslıyordu (kullanıcı raporu: "postlar sağa
+       yakın"). Tek kolonda içerik kendi kolonuna (1) dönmeli. */
+    main.feed-page .feed-layout { grid-column: 1; }
 }
 
 /* Post detay sayfası — feed'deki 3 sütun grid deseni */
@@ -918,6 +923,9 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 @media (max-width: 900px) {
     main.post-detail-page { grid-template-columns: 1fr; max-width: var(--max-width); }
     .post-detail-sidebar { display: none; }
+    /* feed-page ile aynı bug: tek kolona düşünce .post-detail-layout hâlâ
+       grid-column:2'de kalıp içeriği sağa yaslıyordu. */
+    main.post-detail-page .post-detail-layout { grid-column: 1; }
 }
 
 .messages-layout {
