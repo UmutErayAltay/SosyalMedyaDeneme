@@ -333,15 +333,34 @@ textarea:focus-visible, select:focus-visible {
     .nav-search { order: 3; max-width: none; flex-basis: 100%; margin-top: 8px; }
     .nav-toggle { display: block; order: 2; }
     .nav-links {
-        order: 4; flex-basis: 100%;
+        position: absolute;
+        top: 64px; left: 0; right: 0;
+        width: 100%;
+        background: var(--card);
+        border-bottom: 1px solid var(--border);
+        z-index: 9;
         flex-direction: column; align-items: stretch;
         max-height: 0; overflow: hidden;
         transition: max-height 0.25s ease;
+        order: unset;
+        flex-basis: unset;
     }
     .nav-links.open { max-height: 400px; }
     .nav-links a { margin-left: 0; padding: 10px 8px; border-radius: 6px; }
     .nav-profile { justify-content: flex-start; }
     .theme-toggle { margin-left: 0; align-self: flex-start; }
+
+    /* Bildirim zili masaüstünde ikon-only (dairesel buton) ama mobil
+       dropdown'da diğer linkler gibi metin etiketiyle tam genişlik
+       görünmeli — aksi halde listede tek başına yuvarlak bir ikon gibi
+       kopuk duruyordu. */
+    .nav-links .nav-bell {
+        width: 100%; height: auto;
+        justify-content: flex-start; gap: 8px;
+        padding: 10px 8px; margin-left: 0; border-radius: 6px;
+    }
+    .nav-links .nav-bell::after { content: "Bildirimler"; }
+    .nav-links .notif-badge { position: static; margin-left: auto; }
 
     /* Post kartı aksiyon satırı dar ekranda 6 ikon+"⋯"u tek satıra sığdıramıyor
        (kullanıcı raporu: sil/⋯ butonu kart dışına taşıyordu) — "Gönder"
@@ -924,6 +943,19 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     .messages-panel { display: none; }
     .messages-layout.showing-panel .messages-sidebar { display: none; }
     .messages-layout.showing-panel .messages-panel { display: flex; }
+
+    /* Konuşma başlığı: geri linki + isim + durum + 5 aksiyon ikonu (sessize
+       al/ara/medya/sesli/görüntülü arama) tek satıra sığmıyor, sayfa genelinde
+       yatay scroll'a yol açıyordu (kullanıcı raporu) — isim/durum bir satırda
+       kısaltılabilir kalıyor, aksiyon ikonları alt satıra sarıyor, hiçbir
+       buton gizlenmiyor/kaybolmuyor. */
+    .conv-header { flex-wrap: wrap; row-gap: 8px; }
+    .conv-header h2 {
+        flex: 1 1 auto; min-width: 0;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .conv-presence { flex-shrink: 0; }
+    .conv-call-buttons, .conv-manage-btn { flex-basis: 100%; justify-content: flex-end; margin-left: 0; }
 }
 
 .conv-header { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
@@ -2104,17 +2136,25 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     border-radius: 8px;
 }
 
-/* Profil sekmeleri (ARIA tablist) */
+/* Profil sekmeleri (ARIA tablist) — dar ekranda 5 sekme (Gönderiler/Medya/
+   Beğenilenler/Kaydedilenler/Arşiv) sayfa genelinde yatay scroll'a yol
+   açıyordu (kullanıcı raporu); tablist'in kendisi yatayda kaydırılabilir
+   yapıldı, taşma sayfaya sızmıyor. */
 .tablist {
     display: flex; gap: 4px;
     border-bottom: 1px solid var(--border);
     margin: 16px 0 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
 }
+.tablist::-webkit-scrollbar { display: none; }
 .tab-btn {
     background: none; border: none; cursor: pointer;
     padding: 10px 16px; font-size: 14px; font-weight: 600;
     color: var(--muted); border-bottom: 2px solid transparent;
     margin-bottom: -1px;
+    flex-shrink: 0; white-space: nowrap;
 }
 .tab-btn[aria-selected="true"] { color: var(--text); border-bottom-color: var(--primary); }
 .tab-btn:hover { color: var(--text); }
