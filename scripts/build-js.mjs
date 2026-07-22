@@ -37,7 +37,7 @@ const MANIFEST = {
   // (likes/polls/bookmarks/follow document-level delegation kullanıyor —
   // ilgili DOM elemanı olmayan sayfada sessizce hiçbir şey yapmaz, bu yüzden
   // TÜM bu sayfalarda güvenle aynı bundle kullanılabilir)
-  'post-interactions': ['likes.js', 'polls.js', 'bookmarks.js', 'follow.js'],
+  'post-interactions': ['likes.js', 'polls.js', 'bookmarks.js', 'follow.js', 'postMuteButton.js'],
 
   'feed-extra': ['postModal.js', 'stories.js', 'storyHighlights.js', 'infiniteScroll.js'],
   'profile-extra': ['collections.js', 'profileTabs.js', 'storyHighlights.js', 'stickers.js'],
@@ -46,7 +46,7 @@ const MANIFEST = {
   // messages/_convo_list.html ve messages/_realtime_init.html AYRI partial'lar
   // (inbox.html + conversation.html ikisi de include ediyor, sıra: convo-list
   // ÖNCE, realtime SONRA) — modülerlik korunsun diye 2 ayrı bundle.
-  'messages-convo-list': ['groupChat.js', 'groupAdmin.js', 'groupCall.js', 'msgMedia.js'],
+  'messages-convo-list': ['groupChat.js', 'groupAdmin.js', 'groupCall.js', 'msgMedia.js', 'messagesSearch.js'],
   'messages-realtime': ['stickers.js', 'voiceWaveform.js', 'chat.js', 'messagesPanel.js'],
 
   // Reels: dikey kısa video akışı

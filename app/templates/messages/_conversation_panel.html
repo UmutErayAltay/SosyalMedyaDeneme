@@ -242,6 +242,7 @@
                    olarak kullanılır (controls YOK — özel play/seek arayüzü). #}
                 <div class="voice-player" data-voice-player>
                     <button type="button" class="voice-play-btn" aria-label="Sesli mesajı oynat">{{ icons.icon('play', size=14) }}</button>
+                    <button type="button" class="voice-speed-btn" title="Oynatma hızını değiştir" aria-label="Oynatma hızı">1x</button>
                     <div class="voice-waveform" aria-hidden="true"></div>
                     <span class="voice-duration">0:00</span>
                     <audio src="{{ m.audio_url }}" class="msg-audio" preload="metadata" hidden></audio>

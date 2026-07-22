@@ -255,6 +255,7 @@ def create_app() -> Flask:
     from .stories import bp as stories_bp
     from .close_friends import bp as close_friends_bp
     from .mutes import bp as mutes_bp
+    from .post_mutes import bp as post_mutes_bp
     from .gifs import bp as gifs_bp
     from .stickers import bp as stickers_bp
     from .push import bp as push_bp
@@ -283,6 +284,7 @@ def create_app() -> Flask:
     app.register_blueprint(stories_bp)
     app.register_blueprint(close_friends_bp)
     app.register_blueprint(mutes_bp)
+    app.register_blueprint(post_mutes_bp)
     app.register_blueprint(gifs_bp)
     app.register_blueprint(stickers_bp)
     app.register_blueprint(push_bp)

@@ -5,6 +5,24 @@
         <h1>Mesajlar</h1>
         <button type="button" class="btn btn-ghost" id="open-new-group-modal">{{ icons.icon('plus', size=14) }} Yeni Grup</button>
     </div>
+    {# Global mesaj araması — tüm sohbetlerde ara #}
+    <div class="global-msg-search" id="global-msg-search" hidden>
+        <div class="global-msg-search-input-wrapper">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="search" id="global-msg-search-input" placeholder="Tüm mesajlarda ara..."
+                   autocomplete="off" aria-label="Tüm mesajlarda ara">
+            <button type="button" id="global-msg-search-close-btn" aria-label="Aramayı kapat">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="global-msg-search-results" id="global-msg-search-results"></div>
+    </div>
     <div class="inbox-list" id="inbox-list">
         {% for c in convos %}
         {# Aktif sohbette unread gösterilmez: okundu yazımı arka plan havuzunda

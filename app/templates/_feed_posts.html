@@ -143,6 +143,13 @@
             <div class="post-more-wrap">
                 <button type="button" class="btn btn-ghost post-more-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Daha fazla seçenek">{{ icons.icon('more-horizontal', size=16) }}</button>
                 <div class="post-more-menu" role="menu" hidden>
+                    <form action="{{ url_for('post_mutes.toggle_mute_post', post_id=p.id) }}" method="post" class="inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="post-more-item" role="menuitem">
+                            {{ icons.icon('bell-off' if p.muted_by_me else 'bell', size=14) }}
+                            {{ 'Bildirimleri Aç' if p.muted_by_me else 'Bildirimleri Sessize Al' }}
+                        </button>
+                    </form>
                     <a href="{{ url_for('routes.edit_post', post_id=p.id) }}" class="post-more-item" role="menuitem">{{ icons.icon('edit-2', size=14) }} Düzenle</a>
                     <form action="{{ url_for('routes.delete_post', post_id=p.id) }}" method="post" class="inline"
                         data-confirm="Bu postu silmek istiyor musun?">
@@ -152,6 +159,12 @@
                 </div>
             </div>
         {% else %}
+            <form action="{{ url_for('post_mutes.toggle_mute_post', post_id=p.id) }}" method="post" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-ghost mute-post-btn" aria-label="{{ 'Bildirimleri Aç' if p.muted_by_me else 'Bildirimleri Sessize Al' }}" data-muted="{{ '1' if p.muted_by_me else '0' }}">
+                    {{ icons.icon('bell-off' if p.muted_by_me else 'bell', size=16) }}
+                </button>
+            </form>
             <form action="{{ url_for('reports.create_report') }}" method="post" class="inline"
                   data-confirm="Bu postu şikayet etmek istiyor musun?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

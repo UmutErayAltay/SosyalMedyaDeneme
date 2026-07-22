@@ -385,6 +385,56 @@ def search_conversation_messages(conversation_id):
     return jsonify(results=results, has_next=has_next, next_offset=next_offset)
 
 
+@bp.route("/search")
+@login_required
+@retry_on_connection_error
+def search_all_messages():
+    """TÜM sohbetler arasında mesaj arama (search_conversation_messages'ın
+    global versiyonu) — kullanıcı hangi sohbette olduğunu hatırlamıyorsa.
+
+    Sonuçlar en yeniden eskiye, `conversation_id` eklenerek chat.js'in doğru
+    sohbete yönlendirebilmesi için.
+    """
+    sb = get_sb()
+    me = session["user"]["id"]
+    q = request.args.get("q", "").strip()
+    offset = request.args.get("offset", 0, type=int)
+
+    # Kullanıcının katıldığı TÜM sohbetlerin ID'lerini çek
+    parts = sb.table("conversation_participants").select("conversation_id").eq(
+        "user_id", me
+    ).execute().data
+    cids = [p["conversation_id"] for p in parts]
+    if not cids:
+        return jsonify(results=[], has_next=False)
+
+    if len(q) < 2:
+        return jsonify(results=[], has_next=False)
+
+    # Sayfalama: 31 satır çek (31. satırın varlığı has_next'i belirtir)
+    rows = sb.table("messages").select(
+        "id, conversation_id, content, created_at, sender_id, "
+        "profiles!messages_sender_id_fkey(username)"
+    ).in_("conversation_id", cids).ilike(
+        "content", f"%{q}%"
+    ).order("created_at", desc=True).limit(31).offset(offset).execute().data
+
+    has_next = len(rows) > 30
+    results_30 = rows[:30]
+
+    results = [{
+        "id": r["id"],
+        "conversation_id": r["conversation_id"],
+        "content": r["content"] or "",
+        "created_at": r["created_at"],
+        "mine": r["sender_id"] == me,
+        "sender": (r.get("profiles") or {}).get("username") or "?",
+    } for r in results_30]
+
+    next_offset = offset + 30 if has_next else None
+    return jsonify(results=results, has_next=has_next, next_offset=next_offset)
+
+
 @bp.route("/<conversation_id>/media")
 @login_required
 @retry_on_connection_error

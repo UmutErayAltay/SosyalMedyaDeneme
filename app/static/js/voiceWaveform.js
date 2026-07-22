@@ -67,6 +67,7 @@
 
         var audio = wrapper.querySelector('audio.msg-audio');
         var playBtn = wrapper.querySelector('.voice-play-btn');
+        var speedBtn = wrapper.querySelector('.voice-speed-btn');
         var waveform = wrapper.querySelector('.voice-waveform');
         var durationEl = wrapper.querySelector('.voice-duration');
         if (!audio || !playBtn || !waveform || !durationEl) return;
@@ -111,6 +112,21 @@
                 audio.pause();
             }
         });
+
+        // Oynatma hızı kontrolü: 1x → 1.5x → 2x → 1x döngüsü
+        if (speedBtn) {
+            var speeds = [1, 1.5, 2];
+            var currentSpeedIndex = 0;
+
+            speedBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                currentSpeedIndex = (currentSpeedIndex + 1) % speeds.length;
+                var newSpeed = speeds[currentSpeedIndex];
+                audio.playbackRate = newSpeed;
+                speedBtn.textContent = newSpeed === 1 ? '1x' : newSpeed + 'x';
+            });
+        }
 
         audio.addEventListener('play', function () {
             playBtn.innerHTML = window.ICONS ? window.ICONS.get('pause', { size: 14 }) : '⏸';

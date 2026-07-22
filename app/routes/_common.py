@@ -262,7 +262,7 @@ def _attach_post_metrics(sb, posts: list, me: str) -> None:
     yapılır (N+1 önlenir).
 
     VERI SÖZLEŞMESİ: Bu fonksiyonun eklediği alanlar (like_count, comment_count,
-    liked_by_me, my_reaction, bookmarked_by_me, repost_of) AYNEN
+    liked_by_me, my_reaction, bookmarked_by_me, muted_by_me, repost_of) AYNEN
     sql/migration_discover_profile_rpc.sql'deki enrich_post_json() RPC'sinin
     döndürdüğü JSON şemasıyla EŞLEŞMELİDİR. RPC yolu (feed/discover/profile RPC
     başarılıyken) ile Python fallback yolu (RPC başarısız/migration henüz
@@ -278,6 +278,7 @@ def _attach_post_metrics(sb, posts: list, me: str) -> None:
     post_ids = [p["id"] for p in posts]
     my_reactions: dict = {}
     my_bookmarks: set = set()
+    my_muted_posts: set = set()
 
     if post_ids:
         my_reactions = {
@@ -293,6 +294,14 @@ def _attach_post_metrics(sb, posts: list, me: str) -> None:
         except Exception:
             pass  # sql/migration_bookmarks.sql henüz uygulanmamışsa sessizce atla
 
+        try:
+            my_muted_posts = {
+                m["post_id"] for m in sb.table("muted_posts").select("post_id")
+                .eq("user_id", me).in_("post_id", post_ids).execute().data
+            }
+        except Exception:
+            pass  # sql/migration_muted_posts.sql henüz uygulanmamışsa sessizce atla
+
     attach_repost_of(sb, posts)
 
     for p in posts:
@@ -301,3 +310,4 @@ def _attach_post_metrics(sb, posts: list, me: str) -> None:
         p["liked_by_me"] = p["id"] in my_reactions
         p["my_reaction"] = my_reactions.get(p["id"])
         p["bookmarked_by_me"] = p["id"] in my_bookmarks
+        p["muted_by_me"] = p["id"] in my_muted_posts

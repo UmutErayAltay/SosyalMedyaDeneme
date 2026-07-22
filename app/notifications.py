@@ -108,6 +108,16 @@ def notify(sb, *, recipient_id: str, actor_id: str, type_: str,
     except Exception:
         pass
 
+    # Alıcı bu gönderiyi mute etmişse bildirimi atla (post-bazlı sessize alma).
+    # Migration henüz uygulanmamışsa sorgu patlar ve normal akışa düşülür (fail-open).
+    if post_id:
+        try:
+            from .post_mutes import muted_post_ids
+            if post_id in muted_post_ids(sb, recipient_id):
+                return
+        except Exception:
+            pass
+
     if type_ == "message":
         # Mesaj bildirimleri sohbet başına TEK satırda toplanır ("Ali sana N
         # mesaj gönderdi") — her mesaj için ayrı satır açmak hem bildirim
