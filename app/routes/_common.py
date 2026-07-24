@@ -20,7 +20,20 @@ def fetch_stats_and_bio(sb, me: str) -> tuple[dict, str | None]:
     (paralel de olsa 4 ayrı round-trip); RPC henüz uygulanmamışsa veya
     başarısız olursa eski çok-sorgulu yola (fallback) düşülür. feed(),
     discover() ve post_detail() sidebar'ları HEPSİ bu tek helper'ı kullanır.
-    """
+
+    20 saniye TTL ile kullanıcı-bazlı cache'lenir (`sidebar:<user_id>`,
+    `unread:<user_id>` ile aynı TTL) — feed/discover/post_detail art arda
+    gezinirken her sayfa geçişinde aynı RPC'yi tekrar atmasın diye. Post
+    sayısı/bio gibi alanlar 20sn eski görünebilir (kabul edilebilir), ama
+    değiştiren her mutasyon noktası (post oluşturma/silme/yayınlama, takip/
+    takipten çıkma/istek kabul, bio güncelleme) `invalidate(f"sidebar:{me}")`
+    çağırır ki KENDİ aksiyonunun sonucu hemen görünsün."""
+    from ..cache import get_cached
+    return get_cached(f"sidebar:{me}", 20, lambda: _fetch_stats_and_bio(sb, me))
+
+
+def _fetch_stats_and_bio(sb, me: str) -> tuple[dict, str | None]:
+    """fetch_stats_and_bio()'nun cache'lenmeyen asıl sorgu mantığı."""
     try:
         data = sb.rpc("sidebar_stats", {"p_me": me}).execute().data or {}
         return {

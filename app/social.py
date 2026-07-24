@@ -5,6 +5,7 @@ from .supabase_client import get_sb, retry_on_connection_error
 from .notifications import notify
 from .mentions import notify_mentions
 from .blocks import is_blocked_either_way, blocked_user_ids
+from .cache import invalidate
 
 bp = Blueprint("social", __name__)
 
@@ -416,6 +417,12 @@ def toggle_follow(username):
             is_pending = False
             notify(sb, recipient_id=target_id, actor_id=me, type_="follow")
 
+    # sidebar_stats RPC'si follows satırlarını status'e BAKMADAN sayıyor
+    # (bkz. sql/migration_sidebar_stats_rpc.sql) — pending istek de dahil her
+    # insert/delete iki tarafın da takipçi/takip sayısını değiştirir.
+    invalidate(f"sidebar:{me}")
+    invalidate(f"sidebar:{target_id}")
+
     # AJAX isteği ise JSON dön, değilse redirect
     if request.headers.get("X-Requested-With") == "fetch":
         # followers_count: accepted olan takipçi sayısı (pending sayılmaz)
@@ -495,6 +502,10 @@ def reject_follow_request(follower_id):
     sb.table("follows").delete().eq("follower_id", follower_id).eq(
         "following_id", me
     ).execute()
+
+    # toggle_follow'daki gerekçenin aynısı: satır silindi, sayaçlar değişti.
+    invalidate(f"sidebar:{me}")
+    invalidate(f"sidebar:{follower_id}")
 
     if request.headers.get("X-Requested-With") == "fetch":
         return jsonify(ok=True)

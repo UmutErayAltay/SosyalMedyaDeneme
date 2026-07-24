@@ -453,6 +453,7 @@ def profile_edit():
             sb.table("profiles").update(core_data).eq("id", me).execute()
         from ..cache import invalidate
         invalidate("valid_usernames")
+        invalidate(f"sidebar:{me}")  # bio değişti, sidebar_stats cache'i bayat kaldı
 
         # Session'daki kullanıcı bilgilerini senkronize et (navbar avatarı için)
         session["user"]["username"] = username

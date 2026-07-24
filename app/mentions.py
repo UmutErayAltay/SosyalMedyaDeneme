@@ -46,13 +46,38 @@ def notify_mentions(sb, *, actor_id: str, content: str,
     if not usernames:
         return
     try:
+        # 1) Önce bildirim ALACAK adayları topla (profil çözümleme hâlâ
+        # kullanıcı-başına ayrı sorgu — pre-existing, bu fonksiyonun kapsamı
+        # farklı bir N+1 olduğu için burada dokunulmuyor).
+        recipient_ids: list[str] = []
         for uname in usernames:
             prof = sb.table("profiles").select("id").ilike("username", uname).execute().data
             if not prof or prof[0]["id"] == actor_id:
                 continue
             if allowed_ids is not None and prof[0]["id"] not in allowed_ids:
                 continue
-            notify(sb, recipient_id=prof[0]["id"], actor_id=actor_id,
+            recipient_ids.append(prof[0]["id"])
+        if not recipient_ids:
+            return
+
+        # 2) post_id verilmişse, notify() zaten HER çağrıda tek tek attığı
+        # muted_posts sorgusunu burada TOPLU (tek IN sorgusu) çözüp mute
+        # etmiş olanları eleyelim — 5 mention'lı bir postta notify()'ın
+        # kendi içinde 5 ayrı muted_post_ids() sorgusu atmasını önler.
+        muted_ids: set = set()
+        if post_id:
+            try:
+                muted_ids = {
+                    r["user_id"] for r in sb.table("muted_posts").select("user_id")
+                    .eq("post_id", post_id).in_("user_id", recipient_ids).execute().data
+                }
+            except Exception:
+                pass  # migration henüz uygulanmamışsa boş küme (fail-open)
+
+        for recipient_id in recipient_ids:
+            if recipient_id in muted_ids:
+                continue  # mute etmiş — notify() zaten bildirim üretmeyecekti, sorguyu hiç yapma
+            notify(sb, recipient_id=recipient_id, actor_id=actor_id,
                    type_="mention", post_id=post_id, comment_id=comment_id,
                    conversation_id=conversation_id)
     except Exception:

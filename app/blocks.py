@@ -7,6 +7,7 @@ gibi" davranır (graceful degradation, bookmarks/hashtags ile aynı desen).
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
+from .cache import invalidate
 
 bp = Blueprint("blocks", __name__)
 
@@ -87,6 +88,10 @@ def toggle_block(username):
             # engellenen biri "takipçi" gibi görünmeye devam etmemeli.
             sb.table("follows").delete().eq("follower_id", me).eq("following_id", target_id).execute()
             sb.table("follows").delete().eq("follower_id", target_id).eq("following_id", me).execute()
+            # İki follow satırı da silindi — sidebar_stats sayaçları (bkz. social.py
+            # toggle_follow gerekçesi) her iki kullanıcı için de bayatladı.
+            invalidate(f"sidebar:{me}")
+            invalidate(f"sidebar:{target_id}")
             flash(f"{username} engellendi.", "success")
     except Exception:
         flash("Engelleme özelliği henüz aktif değil (migration uygulanmamış).", "error")

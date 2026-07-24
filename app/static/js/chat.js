@@ -1281,10 +1281,10 @@
                 }).on('broadcast', { event: 'msg-preview' }, function (msg) {
                     // HIZLI YOL alıcı ucu: gönderenin submit ANINDA yolladığı
                     // önizlemeyi hemen göster; gerçek kayıt (INSERT) gelince
-                    // yukarıdaki eşleştirme bu balonu yükseltir. NOT: bu kanal
-                    // şimdilik public (bilinen geçici RLS boşluğu — bkz.
-                    // typingChannel notu); conversation id'ler tahmin edilemez
-                    // UUID, kalıcı çözüm RLS izole testi sonrası.
+                    // yukarıdaki eşleştirme bu balonu yükseltir. Bu kanal da
+                    // yukarıdaki 'channel' nesnesiyle aynı — private:true +
+                    // RLS ile korunuyor (bkz. satır ~1216), sadece bu sohbetin
+                    // katılımcıları abone olabilir/broadcast gönderebilir.
                     var p = msg.payload || {};
                     if (!p.sender_id || p.sender_id === window.ME_ID) return;
                     var key = previewKey(p.sender_id, p.content, p.image_url, p.sticker && p.sticker.id);

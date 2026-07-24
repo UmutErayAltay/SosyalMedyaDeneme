@@ -405,6 +405,10 @@ def create_post():
         inserted = sb.table("posts").insert(insert_data).execute()
     post_id = inserted.data[0]["id"] if inserted.data else None
     # Hashtag/mention işlemleri SADECE yayınlanmış (ve planlı değil) postta yapılır
+    if post_id and not is_draft:
+        # posts_count (sidebar_stats RPC) is_draft=false postları sayıyor —
+        # taslak DEĞİLSE yayınlanan post hemen sayaca yansısın.
+        invalidate(f"sidebar:{_my_id()}")
     if post_id and content and not is_draft:
         sync_post_hashtags(sb, post_id, content)
         invalidate("trending:")  # Gündem cache'i güncelle
@@ -588,6 +592,7 @@ def delete_post(post_id):
     get_sb().table("posts").delete().eq("id", post_id).eq(
         "user_id", _my_id()
     ).execute()
+    invalidate(f"sidebar:{_my_id()}")  # posts_count bayatlamasın
     flash("Post silindi.", "success")
     return redirect(url_for("routes.feed"))
 
@@ -673,6 +678,7 @@ def create_repost(post_id):
         return jsonify(error="unavailable"), 503
 
     new_post_id = inserted.data[0]["id"]
+    invalidate(f"sidebar:{me}")  # repost da posts_count'a giren yeni bir satır
 
     # 6) Bildirim gönder (orijinal yazarım değilsem)
     if notify_author_id != me:
@@ -762,6 +768,7 @@ def publish_draft(post_id):
         sb.table("posts").update({"is_draft": False, "scheduled_at": None}).eq("id", post_id).execute()
     except Exception:
         sb.table("posts").update({"is_draft": False}).eq("id", post_id).execute()
+    invalidate(f"sidebar:{me}")  # is_draft artık false -> posts_count'a girdi
     if post.get("content"):
         sync_post_hashtags(sb, post_id, post["content"])
         invalidate("trending:")  # Gündem cache'i güncelle

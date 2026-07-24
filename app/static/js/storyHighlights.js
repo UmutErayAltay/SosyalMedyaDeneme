@@ -12,6 +12,14 @@
         return meta ? meta.content : '';
     }
 
+    // Kullanıcı girdisi (highlight başlığı) innerHTML'e yazılmadan önce
+    // kaçışlanır — chat.js/comments.js'teki aynı desen (tutarlılık).
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
     // ============================================================
     // --- Öne çıkanlara ekleme picker'ı (sadece feed.html'de var) ---
     // ============================================================
@@ -38,7 +46,7 @@
             row.innerHTML = (h.cover_url
                 ? '<img src="' + h.cover_url + '" class="highlight-cover small" alt="">'
                 : '<div class="highlight-cover small avatar-placeholder" aria-hidden="true"></div>') +
-                '<span>' + h.title + ' <span class="muted">(' + h.item_count + ')</span></span>';
+                '<span>' + escapeHtml(h.title) + ' <span class="muted">(' + h.item_count + ')</span></span>';
             row.addEventListener('click', function () { saveToHighlight({ highlight_id: h.id }); });
             pickerList.appendChild(row);
         });

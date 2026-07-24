@@ -6,6 +6,7 @@ Güvenli dosya yükleme akışı:
 3) Dosya adı çakışmasını önlemek için UUID prefix
 4) Supabase Storage'a yükle, public URL döndür
 """
+import imghdr
 import uuid
 from flask import current_app
 
@@ -40,6 +41,88 @@ def _get_extension(filename: str) -> str:
     return os.path.splitext(filename)[1].lower()
 
 
+# --- Magic-number (gerçek dosya baytı) doğrulaması ---------------------------
+# Uzantı + istemcinin beyan ettiği Content-Type kolayca sahtelenebilir (ör.
+# kötü niyetli bir .php/.svg dosyasını "photo.jpg" diye yeniden adlandırıp
+# Content-Type: image/jpeg başlığıyla göndermek yeterli olurdu). Gerçek dosya
+# baytlarının ilk birkaç düzinesi formatı ele verir — küçük bir proje olduğu
+# için yeni bir bağımlılık (Pillow/python-magic) EKLEMEK yerine stdlib
+# `imghdr` (görseller) + elle yazılmış imza kontrolü (video/ses) kullanılır.
+
+_IMGHDR_TO_EXTS = {
+    "jpeg": {".jpg", ".jpeg"},
+    "png": {".png"},
+    "gif": {".gif"},
+    "webp": {".webp"},
+}
+
+
+def _looks_like_image(header: bytes, ext: str) -> bool:
+    """`imghdr` gerçek formatı baytlardan tespit eder; beyan edilen uzantıyla
+    (ext) eşleşmiyorsa reddedilir."""
+    kind = imghdr.what(None, h=header)
+    return kind is not None and ext in _IMGHDR_TO_EXTS.get(kind, set())
+
+
+def _detect_video_kind(header: bytes) -> str | None:
+    """mp4/mov (ISO base media, 'ftyp' kutusu 4-8. baytlarda) ve webm (EBML
+    imzası \\x1a\\x45\\xdf\\xa3 baştan) için basit bir prefix kontrolü —
+    ffprobe/python-magic gibi ağır bir bağımlılık gerekmeyecek kadar."""
+    if len(header) >= 8 and header[4:8] == b"ftyp":
+        return "iso-base-media"  # mp4 VE mov aynı kutu ailesini kullanır
+    if header[:4] == b"\x1a\x45\xdf\xa3":
+        return "webm"
+    return None
+
+
+_VIDEO_EXT_TO_KIND = {
+    ".mp4": "iso-base-media",
+    ".mov": "iso-base-media",
+    ".webm": "webm",
+}
+
+
+def _looks_like_video(header: bytes, ext: str) -> bool:
+    return _detect_video_kind(header) == _VIDEO_EXT_TO_KIND.get(ext)
+
+
+def _detect_audio_kind(header: bytes) -> str | None:
+    """wav/ogg/mp3/m4a/webm ses dosyaları için bilinen magic byte imzaları."""
+    if header[:4] == b"RIFF" and header[8:12] == b"WAVE":
+        return "wav"
+    if header[:4] == b"OggS":
+        return "ogg"
+    if header[:3] == b"ID3" or header[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return "mp3"
+    if len(header) >= 8 and header[4:8] == b"ftyp":
+        return "m4a"
+    if header[:4] == b"\x1a\x45\xdf\xa3":
+        return "webm"
+    return None
+
+
+_AUDIO_EXT_TO_KIND = {
+    ".wav": "wav",
+    ".ogg": "ogg",
+    ".mp3": "mp3",
+    ".m4a": "m4a",
+    ".webm": "webm",
+}
+
+
+def _looks_like_audio(header: bytes, ext: str) -> bool:
+    return _detect_audio_kind(header) == _AUDIO_EXT_TO_KIND.get(ext)
+
+
+def _read_header(file_storage, n: int = 64) -> bytes:
+    """Stream pozisyonunu KORUYARAK ilk n baytı okur (upload akışı devam
+    edebilsin diye seek(0) ile geri sarılır)."""
+    file_storage.stream.seek(0)
+    header = file_storage.stream.read(n)
+    file_storage.stream.seek(0)
+    return header
+
+
 def upload_image(file_storage, folder: str = "avatars") -> str | None:
     """Flask FileStorage nesnesini Supabase Storage'a yükler.
 
@@ -63,6 +146,11 @@ def upload_image(file_storage, folder: str = "avatars") -> str | None:
     # 2) MIME kontrolü
     mime = file_storage.mimetype or ""
     if mime not in ALLOWED_MIMES:
+        return None
+
+    # 2.5) Magic-number kontrolü — uzantı/Content-Type sadece istemci beyanı,
+    # gerçek baytlar bunlarla eşleşmezse (ör. yeniden adlandırılmış .php) reddet.
+    if not _looks_like_image(_read_header(file_storage), ext):
         return None
 
     # 3) Boyut kontrolü — stream pozisyonunu koru
@@ -111,6 +199,9 @@ def upload_video(file_storage, folder: str = "posts") -> str | None:
     if mime not in ALLOWED_VIDEO_MIMES:
         return None
 
+    if not _looks_like_video(_read_header(file_storage), ext):
+        return None
+
     file_storage.stream.seek(0, 2)
     size = file_storage.stream.tell()
     file_storage.stream.seek(0)
@@ -150,6 +241,9 @@ def upload_audio(file_storage, folder: str = "messages") -> str | None:
 
     mime = file_storage.mimetype or ""
     if mime not in ALLOWED_AUDIO_MIMES:
+        return None
+
+    if not _looks_like_audio(_read_header(file_storage), ext):
         return None
 
     file_storage.stream.seek(0, 2)
