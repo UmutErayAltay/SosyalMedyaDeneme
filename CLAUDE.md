@@ -16,7 +16,7 @@ Flask + Supabase (Postgres/Auth/Storage/Realtime) + Jinja2 + vanilla JS sosyal m
 - DB erişimi her zaman `get_sb()` (service-role); RLS defense-in-depth olarak açık kalır
 - İş bitince SORMADAN commit: mesaj Türkçe, sonu `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`; commit'ten önce `.context/active_context.md` güncellenir
 - Commit'i SADECE ana oturum atar, subagent asla
-- Basit yeniden adlandırma/formatlama işinde kullanıcıya `/model haiku` öner
+- Model seçimi: varsayılan **Sonnet 5** (günlük kodlama, yeterince güçlü + ekonomik). Mimari karar/zor bug/büyük refactor gibi işlerde kullanıcıya `/model opus` öner (~2x kota, daha güçlü). En ağır/uzun soluklu otonom işlerde `/model fable` öner (kullanım maliyeti çok daha yüksek, sadece gerektiğinde). Basit yeniden adlandırma/formatlama işinde `/model haiku` öner.
 
 # Compact instructions
 When compacting, preserve: code changes, test results, error messages, and decisions made. Discard: failed exploration attempts, redundant explanations, successful command outputs.
