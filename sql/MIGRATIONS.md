@@ -50,6 +50,22 @@ pratikte tersine çevrilemez) değerli değil — bunun yerine BUNDAN SONRA
 yazılan migration'larda mümkün olduğunca bir rollback notu eklenmesi
 tercih edilir (aşağıya bak).
 
+## 2026-07-29 notu: discover_page_posts 2-arg overload'u tekrar öksüz kaldı
+
+20260716194855 (`drop_orphaned_discover_page_posts_2arg_overload`) 2-arg
+overload'ı zaten silmişti, ama bir gün sonra
+`migration_hide_deactivated_users_posts_from_feed_discover.sql`
+(20260718103555) deaktif kullanıcı filtresi eklerken YANLIŞLIKLA eski 2-arg
+imzayla `create or replace function` yazdı ve overload'ı yeniden diriltti —
+tam da `.claude/rules/sql.md`'deki "parametre sayısı değişince eski overload
+öksüz kalır" tuzağının kendisi, bu sefer tersinden (silinmiş overload'ı geri
+getirme şeklinde). `migration_drop_discover_page_posts_2arg_overload_final.sql`
+(tracked adı `drop_discover_page_posts_2arg_overload_final`) ile tekrar
+silindi ve `pg_get_function_identity_arguments` ile SADECE 3-arg
+(`p_me uuid, p_limit integer, p_offset integer`) kaldığı doğrulandı. Uygulama
+kodu zaten sadece 3-arg'ı çağırıyordu, drift/güvenlik etkisi yoktu — saf ölü
+kod temizliği.
+
 ## Bundan sonraki convention
 
 1. Migration SQL dosyasını ÖNCE `sql/migration_<isim>.sql` olarak yaz/oku.

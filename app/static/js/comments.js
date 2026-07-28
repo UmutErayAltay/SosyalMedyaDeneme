@@ -1,11 +1,9 @@
 // AJAX yorum gönderme + yanıtlama + beğenme — sayfa yenilenmeden
 
 (function () {
-    function escapeHtml(str) {
-        var div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
+    // domUtils.js'ten (common bundle, her sayfada bu dosyadan ÖNCE yüklenir) —
+    // önceden burada ayrı bir kopyası vardı (bkz. denetim/teknik borç).
+    var escapeHtml = window.escapeHtml;
 
     function csrfToken() {
         var meta = document.querySelector('meta[name="csrf-token"]');

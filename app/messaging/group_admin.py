@@ -160,23 +160,14 @@ def leave_group(conversation_id):
     ).eq("user_id", me).execute().data
     if not me_row:
         return jsonify(error="Bu grupta değilsin."), 404
-    was_admin = bool(me_row[0].get("is_admin"))
 
-    sb.table("conversation_participants").delete().eq(
-        "conversation_id", conversation_id
-    ).eq("user_id", me).execute()
-
-    remaining = sb.table("conversation_participants").select("user_id, is_admin").eq(
-        "conversation_id", conversation_id
-    ).order("created_at").execute().data
-
-    if not remaining:
-        # Grupta kimse kalmadı, konuşma satırını da temizle.
-        sb.table("conversations").delete().eq("id", conversation_id).execute()
-    elif was_admin and not any(r.get("is_admin") for r in remaining):
-        oldest = remaining[0]["user_id"]
-        sb.table("conversation_participants").update({"is_admin": True}).eq(
-            "conversation_id", conversation_id
-        ).eq("user_id", oldest).execute()
+    # Ayrılma + boş grup temizliği + admin devri TEK bir Postgres fonksiyon
+    # çağrısında (dolayısıyla tek transaction'da, advisory lock ile
+    # serialize edilmiş) yapılır — iki üye/admin aynı anda ayrılırsa eski
+    # 3 ayrı round-trip'lik (delete -> select remaining -> update) desen
+    # race condition'a açıktı (bkz. sql/migration_leave_group_atomic_rpc.sql).
+    sb.rpc("leave_group_and_reassign_admin", {
+        "p_conversation_id": conversation_id, "p_user_id": me
+    }).execute()
 
     return jsonify(ok=True, redirect=url_for("messaging.inbox"))

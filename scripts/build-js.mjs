@@ -26,7 +26,7 @@ const OUT_DIR = path.join(__dirname, '..', 'app', 'static', 'dist');
 const MANIFEST = {
   // base.html — HER sayfada (giriş yapılmamış dahil)
   'common': [
-    'icons.js', 'mentionAutocomplete.js', 'pageProgress.js', 'theme.js',
+    'domUtils.js', 'icons.js', 'mentionAutocomplete.js', 'pageProgress.js', 'theme.js',
     'navbar.js', 'confirmModal.js', 'shareModal.js', 'repost.js',
     'postMore.js', 'lightbox.js', 'postClick.js',
   ],

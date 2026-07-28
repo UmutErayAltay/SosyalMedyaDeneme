@@ -13,12 +13,9 @@
     }
 
     // Kullanıcı girdisi (highlight başlığı) innerHTML'e yazılmadan önce
-    // kaçışlanır — chat.js/comments.js'teki aynı desen (tutarlılık).
-    function escapeHtml(str) {
-        var div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
+    // kaçışlanır — domUtils.js'ten (common bundle, her sayfada bu dosyadan
+    // ÖNCE yüklenir); önceden burada ayrı bir kopyası vardı.
+    var escapeHtml = window.escapeHtml;
 
     // ============================================================
     // --- Öne çıkanlara ekleme picker'ı (sadece feed.html'de var) ---

@@ -7,11 +7,9 @@
 // eski Supabase Realtime kanalı her seferinde kapatılıp yenisi açılır.
 
 (function () {
-    function escapeHtml(str) {
-        var div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
+    // domUtils.js'ten (common bundle, her sayfada bu dosyadan ÖNCE yüklenir) —
+    // önceden burada ayrı bir kopyası vardı (bkz. denetim/teknik borç).
+    var escapeHtml = window.escapeHtml;
 
     var REACT_EMOJIS = ['❤️', '😂', '👍', '😮', '😢', '🔥'];
 

@@ -1,0 +1,35 @@
+{# Repost (yeniden paylaşım) gömme kartı — _feed_posts.html, _post_card.html
+   ve post_detail.html içinde BİREBİR aynı şekilde 3 kez tekrarlanıyordu
+   (denetimde çıkan teknik borç). Bu dosya SADECE makro içerir, {% extends %}
+   YOK — proje kuralı gereği (bkz. .claude/rules/frontend.md): sayfa
+   template'inden makro import etmek Jinja'yı çökertir.
+
+   Kullanım: {% import "_repost_embed.html" as re %}{{ re.repost_embed(p) }}
+   `post` parametresi repost EDEN gönderi (repost_of alanı olan) — orijinal
+   (paylaşılan) gönderiye `post.repost_of` üzerinden erişilir. Üç çağrı
+   yerinde de değişken adı farklıydı (feed'de `p`, post_detail'de `post`),
+   makro parametre adıyla bundan bağımsız. #}
+{% import "_icons.html" as icons %}
+{% macro repost_embed(post) %}
+{% if post.repost_of %}
+<div class="repost-embed" data-post-url="{{ url_for('routes.post_detail', post_id=post.repost_of.id) }}">
+    <div class="repost-embed-header">
+        {% if post.repost_of.profiles and post.repost_of.profiles.avatar_url %}
+            <img src="{{ post.repost_of.profiles.avatar_url }}" class="avatar" alt="" loading="lazy">
+        {% else %}
+            <div class="avatar avatar-placeholder" aria-hidden="true"></div>
+        {% endif %}
+        <span class="username">{{ post.repost_of.profiles.username if post.repost_of.profiles else 'Bilinmeyen' }}</span>
+        <span class="time muted">{{ post.repost_of.created_at|local_time }}</span>
+    </div>
+    {% if post.repost_of.content %}<p class="repost-embed-content">{{ post.repost_of.content }}</p>{% endif %}
+    {% if post.repost_of.image_urls and post.repost_of.image_urls|length > 0 %}
+        <img src="{{ post.repost_of.image_urls[0] }}" class="repost-embed-image" alt="Görseli" loading="lazy">
+    {% elif post.repost_of.image_url %}
+        <img src="{{ post.repost_of.image_url }}" class="repost-embed-image" alt="Görseli" loading="lazy">
+    {% elif post.repost_of.video_url %}
+        <p class="muted small">{{ icons.icon('video', size=14) }} Video içeriği</p>
+    {% endif %}
+</div>
+{% endif %}
+{% endmacro %}
