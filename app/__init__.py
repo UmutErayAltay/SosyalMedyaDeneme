@@ -150,6 +150,14 @@ def create_app() -> Flask:
     @app.before_request
     def csrf_protect():
         if request.method == "POST":
+            # api_v1.* (app/api_v1.py) Bearer token ile doğrulanır, session
+            # cookie'si HİÇ kullanmaz — CSRF, tarayıcının bir isteğe OTOMATİK
+            # ambient credential (cookie) eklemesinden doğan bir saldırıdır;
+            # Authorization header'ı üçüncü-parti bir site/form tarafından
+            # otomatik eklenemez, bu yüzden bu endpoint'ler doğaları gereği
+            # CSRF'e bağışıktır. Muafiyet SADECE api_v1. prefix'iyle sınırlı.
+            if request.endpoint and request.endpoint.startswith("api_v1."):
+                return
             expected = session.get("_csrf_token")
             sent = (request.form.get("csrf_token")
                     or request.headers.get("X-CSRF-Token"))
@@ -277,6 +285,7 @@ def create_app() -> Flask:
     from .gifs import bp as gifs_bp
     from .stickers import bp as stickers_bp
     from .push import bp as push_bp
+    from .api_v1 import bp as api_v1_bp
 
     # Emoji reaksiyon ikonları şablonlarda {{ REACTIONS['love'] }} olarak kullanılabilir
     app.jinja_env.globals["REACTIONS"] = REACTIONS
@@ -306,5 +315,8 @@ def create_app() -> Flask:
     app.register_blueprint(gifs_bp)
     app.register_blueprint(stickers_bp)
     app.register_blueprint(push_bp)
+    # Faz 1 (native Android yol haritası): token tabanlı JSON REST API,
+    # web mimarisinden tamamen izole (bkz. app/api_v1.py başlık dokümantasyonu)
+    app.register_blueprint(api_v1_bp, url_prefix="/api/v1")
 
     return app
