@@ -6,7 +6,6 @@ Güvenli dosya yükleme akışı:
 3) Dosya adı çakışmasını önlemek için UUID prefix
 4) Supabase Storage'a yükle, public URL döndür
 """
-import imghdr
 import uuid
 from flask import current_app
 
@@ -46,22 +45,43 @@ def _get_extension(filename: str) -> str:
 # kötü niyetli bir .php/.svg dosyasını "photo.jpg" diye yeniden adlandırıp
 # Content-Type: image/jpeg başlığıyla göndermek yeterli olurdu). Gerçek dosya
 # baytlarının ilk birkaç düzinesi formatı ele verir — küçük bir proje olduğu
-# için yeni bir bağımlılık (Pillow/python-magic) EKLEMEK yerine stdlib
-# `imghdr` (görseller) + elle yazılmış imza kontrolü (video/ses) kullanılır.
+# için yeni bir bağımlılık (Pillow/python-magic) EKLEMEK yerine elle yazılmış
+# imza kontrolü kullanılır (video/ses ile aynı desen).
+#
+# ÖNCEDEN burada stdlib `imghdr` kullanılıyordu — Python 3.13'te KALDIRILDI
+# (PEP 594), sadece deprecated değil. Render'ın build image'ı Python 3.14'e
+# geçince (render.yaml'daki PYTHON_VERSION=3.11.9 pin'i her nedense honour
+# edilmedi/edilmiyor) `import imghdr` modül yükleme anında ModuleNotFoundError
+# fırlatıp TÜM uygulamanın başlamasını engelledi (build başarılı, "Deploying"
+# sonrası "cause could not be determined" — 2026-07-29). Elle yazılmış magic-byte
+# kontrolü hiçbir stdlib/3.parti bağımlılığa dayanmadığı için Python sürümünden
+# tamamen bağımsız, bir daha bu sınıf hataya açık değil.
+def _detect_image_kind(header: bytes) -> str | None:
+    """png/jpeg/gif/webp için bilinen magic byte imzaları."""
+    if header[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if header[:3] == b"\xff\xd8\xff":
+        return "jpeg"
+    if header[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return "webp"
+    return None
 
-_IMGHDR_TO_EXTS = {
-    "jpeg": {".jpg", ".jpeg"},
-    "png": {".png"},
-    "gif": {".gif"},
-    "webp": {".webp"},
+
+_IMAGE_EXT_TO_KIND = {
+    ".png": "png",
+    ".jpg": "jpeg",
+    ".jpeg": "jpeg",
+    ".gif": "gif",
+    ".webp": "webp",
 }
 
 
 def _looks_like_image(header: bytes, ext: str) -> bool:
-    """`imghdr` gerçek formatı baytlardan tespit eder; beyan edilen uzantıyla
+    """Gerçek dosya baytlarından formatı tespit eder; beyan edilen uzantıyla
     (ext) eşleşmiyorsa reddedilir."""
-    kind = imghdr.what(None, h=header)
-    return kind is not None and ext in _IMGHDR_TO_EXTS.get(kind, set())
+    return _detect_image_kind(header) == _IMAGE_EXT_TO_KIND.get(ext)
 
 
 def _detect_video_kind(header: bytes) -> str | None:
