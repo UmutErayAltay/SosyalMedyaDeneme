@@ -313,6 +313,8 @@
     </div>
 </div>
 
+{% endblock %}
+{% block scripts %}
 <script>
     // Profil gizliyse, takip butonunun metni değiştirilecek
     window._isPrivate = {{ is_private|tojson }};

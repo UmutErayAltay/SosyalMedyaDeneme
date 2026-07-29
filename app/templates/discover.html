@@ -55,5 +55,7 @@
     {{ sc.activity_card(recent_activity) }}
 </aside>
 
+{% endblock %}
+{% block scripts %}
 <script src="{{ url_for('static', filename='dist/post-interactions.bundle.js') }}"></script>
 {% endblock %}

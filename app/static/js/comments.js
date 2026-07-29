@@ -10,6 +10,27 @@
         return meta ? meta.content : '';
     }
 
+    // Sunucu artık add_comment()/reply_comment() için IDEMPOTENT (aynı
+    // kullanıcının aynı post'a/parent'a 10sn içinde attığı BİREBİR AYNI
+    // içerikli bir istek, ikinci satır eklemek yerine mevcut yorumu
+    // döndürür — bkz. backend _find_recent_duplicate_comment). Bu sayede
+    // yavaş/kesintili mobil bağlantıda fetch'in kendisi (ağ hatası, sunucu
+    // yanıtı dönmeden önce) patlarsa TEK SEFERE mahsus güvenli bir tekrar
+    // deneme yapılabilir — kullanıcı raporu: mobilde "gönderilemedi" hatası
+    // gösteriliyordu ama yorum aslında ekleniyordu (sunucu idempotent oldu,
+    // ama istemci hâlâ İLK denemede vazgeçip hata alert'i basıyordu).
+    // SADECE fetch'in kendisi (ağ hatası) reddedilirse tekrar dener — sunucu
+    // gerçek bir HTTP hata kodu (400/500) dönerse retry ETMEZ, o gerçek bir
+    // hata.
+    async function fetchWithRetry(url, options, retries) {
+        try {
+            return await fetch(url, options);
+        } catch (err) {
+            if (retries > 0) return fetchWithRetry(url, options, retries - 1);
+            throw err;
+        }
+    }
+
     // Sunucu render'ındaki linkify_mentions (mentions.py) filtresinin JS
     // karşılığı — chat.js:linkifyMentionsClient ile AYNI desen. AJAX ile
     // eklenen yorum/yanıtlar Jinja'dan GEÇMEZ, bu yüzden burada da
@@ -247,10 +268,10 @@
             try {
                 var formData = new FormData(form);
                 formData.set('content', content);
-                var res = await fetch('/social/comment/' + postId, {
+                var res = await fetchWithRetry('/social/comment/' + postId, {
                     method: 'POST', body: formData,
                     headers: { 'X-Requested-With': 'fetch', 'X-CSRF-Token': csrfToken() },
-                });
+                }, 1);
                 if (!res.ok) throw new Error('İstek başarısız');
                 var data = await res.json();
                 var emptyMsg = list.querySelector('.muted');
@@ -472,10 +493,10 @@
             formData.append('content', content);
             if (replyStickerVal) formData.append('sticker_id', replyStickerVal);
             if (replyGifVal) formData.append('gif_url', replyGifVal);
-            var res = await fetch('/social/comment/' + postId + '/reply/' + parentId, {
+            var res = await fetchWithRetry('/social/comment/' + postId + '/reply/' + parentId, {
                 method: 'POST', body: formData,
                 headers: { 'X-Requested-With': 'fetch', 'X-CSRF-Token': csrfToken() },
-            });
+            }, 1);
             if (!res.ok) throw new Error('İstek başarısız');
             var data = await res.json();
 

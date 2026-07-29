@@ -355,6 +355,8 @@
     {{ sc.trending_card(trending_tags) }}
 </aside>
 
+{% endblock %}
+{% block scripts %}
 <script>
     // AJAX yorum gönderme için post ID ve kullanıcı bilgisi
     window.POST_ID = "{{ post.id }}";
