@@ -1,4 +1,5 @@
 """Sosyal etkileşimler: beğeni, yorum, takip."""
+from concurrent.futures import ThreadPoolExecutor
 from flask import Blueprint, request, redirect, url_for, session, flash, abort, jsonify, render_template
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
@@ -8,6 +9,17 @@ from .blocks import is_blocked_either_way, blocked_user_ids
 from .cache import invalidate
 
 bp = Blueprint("social", __name__)
+
+# Yorum/yanıt bildirim YAZMALARI (notify + notify_mentions) yanıtı bekletmesin
+# diye kalıcı arka plan havuzu (messaging/views.py _write_pool ile aynı desen).
+# Yavaş/kesintili mobil bağlantıda add_comment()/reply_comment() ekleme
+# öncesi 4-5 ardışık Supabase turu (insert + post/parent sorgusu + notify +
+# notify_mentions + profil) bazen istemcinin fetch'i "başarısız" sanıp yorum
+# ASLINDA eklenmişken "gönderilemedi" hatası göstermesine yol açıyordu
+# (kullanıcı raporu: F5'te yorum zaten oradaydı). Bildirimler client'ın
+# beklediği yanıtın parçası değil — arkaplana alınca yanıt 2 tur daha az
+# bekler.
+_notify_pool = ThreadPoolExecutor(max_workers=2)
 
 # Emoji reaksiyon türleri (likes.reaction_type) — bkz. sql/migration_reactions.sql
 REACTIONS = {"like": "👍", "love": "❤️", "haha": "😂", "wow": "😮", "sad": "😢"}
@@ -122,11 +134,13 @@ def add_comment(post_id):
         res = sb.table("comments").insert(insert_data).execute()
     comment_id = res.data[0]["id"] if res.data else None
 
-    post = sb.table("posts").select("user_id").eq("id", post_id).execute().data
-    if post:
-        notify(sb, recipient_id=post[0]["user_id"], actor_id=me["id"],
-               type_="comment", post_id=post_id, comment_id=comment_id)
-    notify_mentions(sb, actor_id=me["id"], content=content, post_id=post_id, comment_id=comment_id)
+    def _send_comment_notifications():
+        post = sb.table("posts").select("user_id").eq("id", post_id).execute().data
+        if post:
+            notify(sb, recipient_id=post[0]["user_id"], actor_id=me["id"],
+                   type_="comment", post_id=post_id, comment_id=comment_id)
+        notify_mentions(sb, actor_id=me["id"], content=content, post_id=post_id, comment_id=comment_id)
+    _notify_pool.submit(_send_comment_notifications)
 
     # Profil bilgisini çek (avatar + username)
     prof = sb.table("profiles").select("username, avatar_url").eq("id", me["id"]).execute()
@@ -342,11 +356,13 @@ def reply_comment(post_id, parent_id):
         res = sb.table("comments").insert(insert_data).execute()
     comment_id = res.data[0]["id"] if res.data else None
 
-    parent = sb.table("comments").select("user_id").eq("id", parent_id).execute().data
-    if parent:
-        notify(sb, recipient_id=parent[0]["user_id"], actor_id=me["id"],
-               type_="reply", post_id=post_id, comment_id=comment_id)
-    notify_mentions(sb, actor_id=me["id"], content=content, post_id=post_id, comment_id=comment_id)
+    def _send_reply_notifications():
+        parent = sb.table("comments").select("user_id").eq("id", parent_id).execute().data
+        if parent:
+            notify(sb, recipient_id=parent[0]["user_id"], actor_id=me["id"],
+                   type_="reply", post_id=post_id, comment_id=comment_id)
+        notify_mentions(sb, actor_id=me["id"], content=content, post_id=post_id, comment_id=comment_id)
+    _notify_pool.submit(_send_reply_notifications)
 
     prof = sb.table("profiles").select("username, avatar_url").eq("id", me["id"]).execute()
     prof_data = prof.data[0] if prof.data else {}
