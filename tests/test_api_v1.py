@@ -631,3 +631,54 @@ class TestApiV1Profile:
 
         with app.app_context():
             get_sb().table("api_tokens").delete().eq("user_id", viewer["id"]).execute()
+
+
+class TestApiV1Reels:
+    def test_reels_without_token_returns_401(self, client):
+        resp = client.get("/api/v1/reels")
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_reels_only_returns_video_reel_posts_not_normal_posts(self, app, client, test_user_factory):
+        # reels() sadece is_reel=true + video_url dolu, herkese açık postları
+        # döner — normal (video'suz/is_reel=false) bir post ASLA görünmemeli.
+        viewer = test_user_factory(email="apiv1_reels_viewer@example.com", password="TestPass123!")
+        author = test_user_factory(email="apiv1_reels_author@example.com", password="TestPass123!")
+        token = _api_token_for(app, viewer["id"])
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("posts").insert({
+                "user_id": author["id"],
+                "content": "api_v1 reels testi — gerçek reel",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+                "is_reel": True,
+                "video_url": "https://example.com/test-reel.mp4",
+            }).execute()
+            sb.table("posts").insert({
+                "user_id": author["id"],
+                "content": "api_v1 reels testi — normal post (reels'te görünmemeli)",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute()
+
+        resp = client.get(
+            "/api/v1/reels?page=1",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert "posts" in body and "has_more" in body and body.get("page") == 1
+        contents = [p.get("content") for p in body["posts"]]
+        assert "api_v1 reels testi — gerçek reel" in contents
+        assert "api_v1 reels testi — normal post (reels'te görünmemeli)" not in contents
+        reel_post = next(p for p in body["posts"] if p.get("content") == "api_v1 reels testi — gerçek reel")
+        assert "like_count" in reel_post and "comment_count" in reel_post
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", viewer["id"]).execute()
+            sb.table("posts").delete().eq("user_id", author["id"]).execute()
