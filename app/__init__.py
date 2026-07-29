@@ -2,7 +2,7 @@
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
-from flask import Flask, session, request, abort, send_from_directory, redirect, url_for
+from flask import Flask, session, request, abort, send_from_directory, redirect, url_for, jsonify
 from .config import Config
 
 # Sabit UTC+3 — Türkiye 2016'dan beri yaz saati uygulamıyor, bu yüzden
@@ -200,6 +200,24 @@ def create_app() -> Flask:
         response.headers["Content-Type"] = "application/javascript"
         response.headers["Cache-Control"] = "no-cache"
         return response
+
+    # Play Store TWA (Trusted Web Activity) doğrulaması: Chrome bu dosyayı TAM
+    # OLARAK domain KÖKÜNDE (`/.well-known/...`) bulamazsa Digital Asset Links
+    # doğrulamasını geçemez ve TWA'yı tam güvenilir modda değil, adres çubuklu
+    # bir Custom Tab gibi gösterir — `static/` altına konsaydı bu yoldan asla
+    # erişilemezdi, bu yüzden sw.js gibi doğrudan app kökünde route edilir.
+    @app.route("/.well-known/assetlinks.json")
+    def assetlinks():
+        return jsonify([{
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": "com.umuterayaltay.sosyal",
+                "sha256_cert_fingerprints": [
+                    "11:50:D0:F6:4F:50:20:30:5D:F3:89:E3:C7:86:EF:9C:03:1E:63:65:77:09:52:18:02:6B:B6:09:2B:77:BB:9B"
+                ]
+            }
+        }])
 
     # Navbar zil rozeti: her sayfada okunmamış bildirim sayısını enjekte eder.
     # Supabase geçici olarak erişilemezse rozet sessizce 0 gösterir — sayfa
