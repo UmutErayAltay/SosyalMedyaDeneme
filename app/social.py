@@ -2,7 +2,8 @@
 from concurrent.futures import ThreadPoolExecutor
 from flask import Blueprint, request, redirect, url_for, session, flash, abort, jsonify, render_template
 from .decorators import login_required
-from .supabase_client import get_sb, retry_on_connection_error
+from datetime import datetime, timedelta, timezone
+from .supabase_client import get_sb, retry_on_connection_error, _CONNECTION_ERRORS
 from .notifications import notify
 from .mentions import notify_mentions
 from .blocks import is_blocked_either_way, blocked_user_ids
@@ -23,6 +24,30 @@ _notify_pool = ThreadPoolExecutor(max_workers=2)
 
 # Emoji reaksiyon türleri (likes.reaction_type) — bkz. sql/migration_reactions.sql
 REACTIONS = {"like": "👍", "love": "❤️", "haha": "😂", "wow": "😮", "sad": "😢"}
+
+
+def _find_recent_duplicate_comment(sb, post_id, user_id, content, sticker_id, gif_url, parent_id=None):
+    """add_comment()/reply_comment() içindeki insert, `retry_on_connection_error`
+    (bağlantı hatasında TÜM view fonksiyonunu yeniden çalıştırır) veya insert'in
+    kendi şema-fallback except'i yüzünden İKİ KEZ çalışabilir — sunucu ilk
+    denemede insert'i commit edip YANITI dönerken bağlantı koparsa, istemci
+    hata sanıp bir daha denemez ama olası bir retry (bizim tarafımızda) aynı
+    yorumu tekrar eklerdi (kullanıcı raporu: "hata gösterdi ama yorum zaten
+    vardı"). Son 10 saniyede AYNI kullanıcının AYNI post'a (yanıtsa AYNI
+    parent'a) attığı birebir aynı içerikli bir yorum varsa onu döndürür —
+    insert atlanır, idempotent olur."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=10)).isoformat()
+    recent = sb.table("comments").select("*").eq("post_id", post_id).eq(
+        "user_id", user_id).gte("created_at", cutoff).order(
+        "created_at", desc=True).execute().data
+    for row in recent:
+        if (row.get("parent_comment_id")) != parent_id:
+            continue
+        if (row.get("content") or "") == (content or "") and \
+           (row.get("sticker_id") or "") == (sticker_id or "") and \
+           (row.get("gif_url") or "") == (gif_url or ""):
+            return row
+    return None
 
 
 # ----------------------- BEĞENİ / REAKSİYON -----------------------
@@ -116,22 +141,36 @@ def add_comment(post_id):
         flash("Boş yorum yapılamaz.", "error")
         return redirect(url_for("routes.post_detail", post_id=post_id))
 
-    # Insert data
-    insert_data = {
-        "post_id": post_id,
-        "user_id": me["id"],
-        "content": content,
-    }
-    try:
-        # Opsiyonel kolonlar: sticker_id, gif_url
-        data = dict(insert_data)
-        if sticker_id:
-            data["sticker_id"] = sticker_id
-        if gif_url:
-            data["gif_url"] = gif_url
-        res = sb.table("comments").insert(data).execute()
-    except Exception:
-        res = sb.table("comments").insert(insert_data).execute()
+    # Insert ÖNCESİ: aynı içerikli bir yorum yakın zamanda zaten eklenmiş mi
+    # (bkz. _find_recent_duplicate_comment docstring — retry senaryosu).
+    dup = _find_recent_duplicate_comment(sb, post_id, me["id"], content, sticker_id, gif_url)
+    if dup:
+        res = type("_Res", (), {"data": [dup]})()
+    else:
+        # Insert data
+        insert_data = {
+            "post_id": post_id,
+            "user_id": me["id"],
+            "content": content,
+        }
+        try:
+            # Opsiyonel kolonlar: sticker_id, gif_url
+            data = dict(insert_data)
+            if sticker_id:
+                data["sticker_id"] = sticker_id
+            if gif_url:
+                data["gif_url"] = gif_url
+            res = sb.table("comments").insert(data).execute()
+        except _CONNECTION_ERRORS:
+            # Gerçek bağlantı hatası — sessizce ikinci bir insert DENEME (çift
+            # yorum riski), dıştaki retry_on_connection_error zaten TÜM
+            # fonksiyonu yeniden çalıştırıp yukarıdaki dup kontrolüyle
+            # (varsa) idempotent şekilde devam edecek.
+            raise
+        except Exception:
+            # Şema fallback: sticker_id/gif_url kolonu henüz yoksa (migration
+            # öncesi) onlarsız tekrar dene.
+            res = sb.table("comments").insert(insert_data).execute()
     comment_id = res.data[0]["id"] if res.data else None
 
     def _send_comment_notifications():
@@ -337,23 +376,29 @@ def reply_comment(post_id, parent_id):
         flash("Boş yorum yapılamaz.", "error")
         return redirect(url_for("routes.post_detail", post_id=post_id))
 
-    # Insert data
-    insert_data = {
-        "post_id": post_id,
-        "user_id": me["id"],
-        "content": content,
-        "parent_comment_id": parent_id,
-    }
-    try:
-        # Opsiyonel kolonlar: sticker_id, gif_url
-        data = dict(insert_data)
-        if sticker_id:
-            data["sticker_id"] = sticker_id
-        if gif_url:
-            data["gif_url"] = gif_url
-        res = sb.table("comments").insert(data).execute()
-    except Exception:
-        res = sb.table("comments").insert(insert_data).execute()
+    dup = _find_recent_duplicate_comment(sb, post_id, me["id"], content, sticker_id, gif_url, parent_id=parent_id)
+    if dup:
+        res = type("_Res", (), {"data": [dup]})()
+    else:
+        # Insert data
+        insert_data = {
+            "post_id": post_id,
+            "user_id": me["id"],
+            "content": content,
+            "parent_comment_id": parent_id,
+        }
+        try:
+            # Opsiyonel kolonlar: sticker_id, gif_url
+            data = dict(insert_data)
+            if sticker_id:
+                data["sticker_id"] = sticker_id
+            if gif_url:
+                data["gif_url"] = gif_url
+            res = sb.table("comments").insert(data).execute()
+        except _CONNECTION_ERRORS:
+            raise  # bkz. add_comment() aynı desen — dıştaki retry idempotent devam eder
+        except Exception:
+            res = sb.table("comments").insert(insert_data).execute()
     comment_id = res.data[0]["id"] if res.data else None
 
     def _send_reply_notifications():

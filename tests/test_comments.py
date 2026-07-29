@@ -132,3 +132,82 @@ class TestComments:
                 sb.table("comments").delete().eq("post_id", post_id).execute()
                 sb.table("notifications").delete().eq("post_id", post_id).execute()
                 sb.table("posts").delete().eq("id", post_id).execute()
+
+
+class TestCommentIdempotency:
+    """Kök neden: add_comment()/reply_comment() içindeki insert bir bağlantı
+    hatası sonrası retry_on_connection_error tarafından (veya insert'in kendi
+    şema-fallback except'i tarafından) İKİ KEZ çalıştırılabiliyordu — sunucu
+    ilk denemede insert'i commit edip yanıtı dönerken bağlantı koparsa,
+    istemci hata sanıyordu ama olası bir retry aynı yorumu tekrar eklerdi.
+    _find_recent_duplicate_comment() bunu önler: aynı kullanıcının aynı
+    post'a (yanıtsa aynı parent'a) çok yakın zamanda attığı birebir aynı
+    içerikli bir yorum/yanıt varsa, yeni satır eklemek yerine mevcut olanı
+    döndürür (aynı comment id, DB'de tek satır)."""
+
+    def test_duplicate_comment_submission_returns_same_id_no_extra_row(self, app, client, logged_in_session):
+        owner, _ = logged_in_session(email="dup_cmt_owner@example.com", password="TestPass123!")
+        commenter, session_client = logged_in_session(email="dup_cmt_user@example.com", password="TestPass123!")
+
+        with app.app_context():
+            sb = get_sb()
+            post_res = sb.table("posts").insert({
+                "user_id": owner["id"], "content": "test post", "visibility": "public"
+            }).execute()
+            post_id = post_res.data[0]["id"]
+
+        try:
+            payload = {"content": "aynı yorum tekrar denemesi", "csrf_token": "test-csrf-token"}
+            headers = {"X-Requested-With": "fetch", "X-CSRF-Token": "test-csrf-token"}
+
+            r1 = session_client.post(f"/social/comment/{post_id}", data=payload, headers=headers)
+            r2 = session_client.post(f"/social/comment/{post_id}", data=payload, headers=headers)
+            assert r1.status_code == 200 and r2.status_code == 200
+            assert r1.get_json()["id"] == r2.get_json()["id"]
+
+            with app.app_context():
+                sb = get_sb()
+                rows = sb.table("comments").select("*").eq("post_id", post_id).eq(
+                    "content", "aynı yorum tekrar denemesi"
+                ).execute().data
+                assert len(rows) == 1, "Aynı içerik iki kez eklenmiş (idempotency guard çalışmadı)"
+        finally:
+            with app.app_context():
+                sb = get_sb()
+                sb.table("comments").delete().eq("post_id", post_id).execute()
+                sb.table("notifications").delete().eq("post_id", post_id).execute()
+                sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_different_content_same_user_same_post_both_saved(self, app, client, logged_in_session):
+        """Guard yanlışlıkla FARKLI içerikli ardışık yorumları da engellemiyor."""
+        owner, _ = logged_in_session(email="dup_cmt_owner2@example.com", password="TestPass123!")
+        commenter, session_client = logged_in_session(email="dup_cmt_user2@example.com", password="TestPass123!")
+
+        with app.app_context():
+            sb = get_sb()
+            post_res = sb.table("posts").insert({
+                "user_id": owner["id"], "content": "test post", "visibility": "public"
+            }).execute()
+            post_id = post_res.data[0]["id"]
+
+        try:
+            headers = {"X-Requested-With": "fetch", "X-CSRF-Token": "test-csrf-token"}
+            r1 = session_client.post(f"/social/comment/{post_id}",
+                                      data={"content": "birinci yorum", "csrf_token": "test-csrf-token"},
+                                      headers=headers)
+            r2 = session_client.post(f"/social/comment/{post_id}",
+                                      data={"content": "ikinci yorum", "csrf_token": "test-csrf-token"},
+                                      headers=headers)
+            assert r1.status_code == 200 and r2.status_code == 200
+            assert r1.get_json()["id"] != r2.get_json()["id"]
+
+            with app.app_context():
+                sb = get_sb()
+                rows = sb.table("comments").select("*").eq("post_id", post_id).execute().data
+                assert len(rows) == 2
+        finally:
+            with app.app_context():
+                sb = get_sb()
+                sb.table("comments").delete().eq("post_id", post_id).execute()
+                sb.table("notifications").delete().eq("post_id", post_id).execute()
+                sb.table("posts").delete().eq("id", post_id).execute()
