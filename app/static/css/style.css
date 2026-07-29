@@ -211,7 +211,15 @@ textarea:focus-visible, select:focus-visible {
     justify-content: space-between;
     align-items: center;
     gap: 16px;
-    position: sticky; top: 0; z-index: 10;
+    /* width/left/right EXPLICIT: header[role="banner"]{display:contents} +
+       position:sticky kombinasyonu bazı WebView motorlarında (kullanıcı
+       raporu: Samsung One UI Chrome, Oppo'da sorun yok) sticky elemanın
+       containing block genişliğini yanlış/bayat hesaplayıp navbar'ı gerçek
+       viewport genişliğinden DAR göstermesine yol açabiliyor — explicit
+       width:100% + left/right:0, motoru doğru genişliği yeniden
+       hesaplamaya zorlar (normal motorlarda no-op, davranış değişmez). */
+    width: 100%;
+    position: sticky; top: 0; left: 0; right: 0; z-index: 10;
 }
 .brand {
     font-family: var(--font-display);
