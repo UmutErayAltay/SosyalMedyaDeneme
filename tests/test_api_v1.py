@@ -5,6 +5,7 @@ fixture'ı bkz. tests/conftest.py) — auth/token akışı güvenlik-kritik.
 """
 import hashlib
 import secrets
+from io import BytesIO
 
 import pyotp
 import pytest
@@ -730,7 +731,7 @@ class TestApiV1Messaging:
 
         send_resp = client.post(
             f"/api/v1/messages/conversations/{cid}/send",
-            json={"content": "api_v1 mesajlaşma testi - merhaba"},
+            data={"content": "api_v1 mesajlaşma testi - merhaba"},
             headers=headers_a,
         )
         assert send_resp.status_code == 200
@@ -741,7 +742,7 @@ class TestApiV1Messaging:
         # reply_to_id ile B'den cevap
         reply_resp = client.post(
             f"/api/v1/messages/conversations/{cid}/send",
-            json={"content": "api_v1 mesajlaşma testi - cevap", "reply_to_id": sent["id"]},
+            data={"content": "api_v1 mesajlaşma testi - cevap", "reply_to_id": sent["id"]},
             headers=headers_b,
         )
         assert reply_resp.status_code == 200
@@ -790,7 +791,7 @@ class TestApiV1Messaging:
 
         send_resp = client.post(
             f"/api/v1/messages/conversations/{cid}/send",
-            json={"content": "izinsiz mesaj"},
+            data={"content": "izinsiz mesaj"},
             headers=headers_out,
         )
         assert send_resp.status_code == 403
@@ -822,7 +823,7 @@ class TestApiV1Messaging:
 
         client.post(
             f"/api/v1/messages/conversations/{cid}/send",
-            json={"content": "api_v1 okundu testi"},
+            data={"content": "api_v1 okundu testi"},
             headers=headers_a,
         )
 
@@ -858,13 +859,60 @@ class TestApiV1Messaging:
         for i in range(31):
             resp = client.post(
                 f"/api/v1/messages/conversations/{cid}/send",
-                json={"content": f"rl-mesaj-{i}"},
+                data={"content": f"rl-mesaj-{i}"},
                 headers=headers_a,
             )
             statuses.append(resp.status_code)
 
         assert statuses[:30] == [200] * 30
         assert statuses[30] == 429
+
+        _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
+
+    def test_send_image_message_uploads_and_returns_url(self, app, client, test_user_factory):
+        """Faz 4 medya mesajları — multipart/form-data'ya geçişin (JSON'dan)
+        regresyon testi: content YOKKEN sadece görselle gönderim başarılı
+        olmalı, dönen mesajın image_url'i GERÇEKTEN Supabase Storage'a
+        yüklenmiş bir URL olmalı (mock yok — minimal ama geçerli bir PNG
+        magic-byte header'ı, storage_helper._detect_image_kind()'ı geçer)."""
+        user_a = test_user_factory(email="apiv1_msg_img_a@example.com", password="TestPass123!")
+        user_b = test_user_factory(email="apiv1_msg_img_b@example.com", password="TestPass123!")
+        token_a = _api_token_for(app, user_a["id"])
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+
+        start_resp = client.post(f"/api/v1/messages/start/{user_b['username']}", headers=headers_a)
+        cid = start_resp.get_json()["conversation_id"]
+
+        png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+        resp = client.post(
+            f"/api/v1/messages/conversations/{cid}/send",
+            data={"image": (BytesIO(png_bytes), "photo.png")},
+            headers=headers_a,
+        )
+        assert resp.status_code == 200
+        sent = resp.get_json()["message"]
+        assert sent["content"] == ""
+        assert sent["image_url"]
+        assert sent["image_url"].startswith("http")
+
+        _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
+
+    def test_send_message_without_content_or_image_returns_400(self, app, client, test_user_factory):
+        user_a = test_user_factory(email="apiv1_msg_empty_a@example.com", password="TestPass123!")
+        user_b = test_user_factory(email="apiv1_msg_empty_b@example.com", password="TestPass123!")
+        token_a = _api_token_for(app, user_a["id"])
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+
+        start_resp = client.post(f"/api/v1/messages/start/{user_b['username']}", headers=headers_a)
+        cid = start_resp.get_json()["conversation_id"]
+
+        resp = client.post(
+            f"/api/v1/messages/conversations/{cid}/send",
+            data={},
+            headers=headers_a,
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "empty"
 
         _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
 

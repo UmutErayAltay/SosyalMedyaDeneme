@@ -1557,11 +1557,11 @@ def api_reels():
 
 # ----------------------- MESAJLAŞMA (Faz 3, native Android mesajlaşma ekranı) -----------------------
 # app/messaging/*.py'nin BİLİNÇLİ bir alt kümesi JSON'a taşınır: inbox +
-# konuşma geçmişi (sayfalı) + metin mesajı gönderme (+reply_to) + get-or-create
-# 1:1 konuşma başlatma + okundu işaretleme. KAPSAM DIŞI (bu turda hiç
-# dokunulmadı): grup oluşturma/yönetimi, mesaj düzenleme/silme/sabitleme/
-# iletme/tepki, görsel/ses/sticker/GIF mesaj, WebRTC/LiveKit arama, Supabase
-# Realtime (native taraf basit polling yapacak).
+# konuşma geçmişi (sayfalı) + metin/görsel mesajı gönderme (+reply_to) +
+# get-or-create 1:1 konuşma başlatma + okundu işaretleme + grup oluşturma/
+# yönetimi (Faz 4). KAPSAM DIŞI (hâlâ hiç dokunulmadı): mesaj düzenleme/
+# silme/sabitleme/iletme/tepki, ses/sticker/GIF mesaj, WebRTC/LiveKit arama,
+# Supabase Realtime (native taraf basit polling yapacak).
 
 def _serialize_conversation_summary(c: dict) -> dict:
     """_common.py _build_convos() satırını JSON sözleşmesine çevirir.
@@ -1726,9 +1726,16 @@ def api_message_conversation_detail(conversation_id):
 @bp.route("/messages/conversations/<conversation_id>/send", methods=["POST"])
 @api_login_required
 def api_send_message(conversation_id):
-    """Metin mesajı gönder — messaging/sending.py send_message()'ın SADECE
-    metin+reply_to_id dalı port edildi (görsel/ses/sticker/GIF dalları
-    BİLİNÇLİ olarak atlandı — bu iterasyonun kapsamı dışında).
+    """Mesaj gönder — messaging/sending.py send_message()'ın metin+reply_to_id+
+    GÖRSEL dalları port edildi (ses/sticker/GIF dalları BİLİNÇLİ olarak
+    atlandı — ses RECORD_AUDIO izni+MediaRecorder gerektiriyor, sticker yeni
+    bir katalog endpoint'i, GIF üçüncü-parti Klipy entegrasyonu istiyor, hepsi
+    ayrı birer iterasyon).
+
+    BİLİNÇLİ SAPMA: JSON'dan multipart/form-data'ya geçildi (api_create_post()
+    ile AYNI kodlama deseni) — native henüz gerçek kullanıcıya çıkmadığı için
+    (bkz. proje yol haritası) bu, geriye dönük uyumluluk kaygısı olmadan
+    yapılabilecek bir sözleşme değişikliği.
     """
     sb = get_sb()
     me = request.api_user["id"]
@@ -1752,14 +1759,19 @@ def api_send_message(conversation_id):
     if any(is_blocked_either_way(sb, me, o["user_id"]) for o in others):
         return jsonify(error="blocked"), 403
 
-    data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict):
-        data = {}
-    content = _str_field(data, "content")
-    reply_to_id = _str_field(data, "reply_to_id") or None
+    content = (request.form.get("content") or "").strip()
+    reply_to_id = (request.form.get("reply_to_id") or "").strip() or None
+    image_file = request.files.get("image")
+    has_image = bool(image_file and image_file.filename)
 
-    if not content:
+    if not content and not has_image:
         return jsonify(error="empty"), 400
+
+    image_url = None
+    if has_image:
+        image_url = upload_image(image_file, folder="messages")
+        if not image_url:
+            return jsonify(error="upload_failed"), 400
 
     if reply_to_id:
         # send_message()'daki AYNI doğrulama: farklı konuşmadansa/mevcut
@@ -1770,7 +1782,7 @@ def api_send_message(conversation_id):
         if not reply_msg:
             reply_to_id = None
 
-    insert_data = {"conversation_id": conversation_id, "sender_id": me, "content": content, "image_url": None}
+    insert_data = {"conversation_id": conversation_id, "sender_id": me, "content": content, "image_url": image_url}
     try:
         # reply_to_id opsiyonel kolon — migration_message_reply.sql henüz
         # uygulanmamışsa kolonsuz insert'e düş (send_message()'daki AYNI desen).
