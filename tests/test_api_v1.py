@@ -85,12 +85,11 @@ class TestApiV1Feed:
 
     def test_feed_with_valid_token_returns_posts_shape(self, app, client, test_user_factory):
         user = test_user_factory(email="apiv1_feed_ok@example.com", password="TestPass123!")
-
-        login_resp = client.post(
-            "/api/v1/auth/login",
-            json={"email": user["email"], "password": "TestPass123!"},
-        )
-        token = login_resp.get_json()["token"]
+        # Gerçek /auth/login DEĞİL: bu test login akışını değil feed()'i test
+        # ediyor — dosyadaki TÜM sınıfların gerçek login çağırması IP başına
+        # 10/300sn rate limit'i CI'de aşıp KeyError('token') ile sahte-başarısız
+        # veriyordu (bkz. TestApiV1Profile'daki AYNI çözüm).
+        token = _api_token_for(app, user["id"])
 
         with app.app_context():
             sb = get_sb()
@@ -126,12 +125,10 @@ class TestApiV1Logout:
         isteği hiçbir csrf_token/X-CSRF-Token TAŞIMAZ (sadece Bearer header) —
         eğer muafiyet çalışmasaydı web CSRF middleware'i 400 dönerdi."""
         user = test_user_factory(email="apiv1_logout@example.com", password="TestPass123!")
-
-        login_resp = client.post(
-            "/api/v1/auth/login",
-            json={"email": user["email"], "password": "TestPass123!"},
-        )
-        token = login_resp.get_json()["token"]
+        # Gerçek login DEĞİL — bkz. test_feed_with_valid_token_returns_posts_shape
+        # yorumu (rate-limit birikimi önlemi); logout() token'ın NASIL üretildiğine
+        # bakmaz, sadece hash'in api_tokens'ta var/aktif olmasına bakar.
+        token = _api_token_for(app, user["id"])
 
         # CSRF token'ı OLMADAN POST — muafiyet çalışıyorsa 400 (CSRF) değil,
         # normal iş mantığı (ok=True) dönmeli.
@@ -167,11 +164,8 @@ class TestApiV1Discover:
         viewer = test_user_factory(email="apiv1_discover_viewer@example.com", password="TestPass123!")
         author = test_user_factory(email="apiv1_discover_author@example.com", password="TestPass123!")
 
-        login_resp = client.post(
-            "/api/v1/auth/login",
-            json={"email": viewer["email"], "password": "TestPass123!"},
-        )
-        token = login_resp.get_json()["token"]
+        # Gerçek login DEĞİL — bkz. test_feed_with_valid_token_returns_posts_shape yorumu
+        token = _api_token_for(app, viewer["id"])
 
         with app.app_context():
             sb = get_sb()
@@ -206,11 +200,8 @@ class TestApiV1Discover:
 class TestApiV1Search:
     def test_search_short_query_returns_empty_results_but_history_fields_present(self, app, client, test_user_factory):
         user = test_user_factory(email="apiv1_search_short@example.com", password="TestPass123!")
-        login_resp = client.post(
-            "/api/v1/auth/login",
-            json={"email": user["email"], "password": "TestPass123!"},
-        )
-        token = login_resp.get_json()["token"]
+        # Gerçek login DEĞİL — bkz. test_feed_with_valid_token_returns_posts_shape yorumu
+        token = _api_token_for(app, user["id"])
 
         # q 2 karakterden kısa (tek harf) — asıl arama YAPILMAZ, sadece
         # recent/saved searches alanları döner (discovery.py search() ile aynı davranış).
@@ -238,11 +229,8 @@ class TestApiV1Search:
             username="apiv1uniqsearchtarget",
         )
 
-        login_resp = client.post(
-            "/api/v1/auth/login",
-            json={"email": searcher["email"], "password": "TestPass123!"},
-        )
-        token = login_resp.get_json()["token"]
+        # Gerçek login DEĞİL — bkz. test_feed_with_valid_token_returns_posts_shape yorumu
+        token = _api_token_for(app, searcher["id"])
 
         resp = client.get(
             "/api/v1/search?q=apiv1uniqsearchtarget&type=users",
@@ -261,11 +249,8 @@ class TestApiV1Search:
 class TestApiV1SearchSaveAndHistory:
     def test_save_search_then_delete_saved_search_roundtrip(self, app, client, test_user_factory):
         user = test_user_factory(email="apiv1_search_save@example.com", password="TestPass123!")
-        login_resp = client.post(
-            "/api/v1/auth/login",
-            json={"email": user["email"], "password": "TestPass123!"},
-        )
-        token = login_resp.get_json()["token"]
+        # Gerçek login DEĞİL — bkz. test_feed_with_valid_token_returns_posts_shape yorumu
+        token = _api_token_for(app, user["id"])
         headers = {"Authorization": f"Bearer {token}"}
 
         save_resp = client.post(
@@ -300,11 +285,8 @@ class TestApiV1SearchSaveAndHistory:
 
     def test_save_search_missing_query_returns_400(self, app, client, test_user_factory):
         user = test_user_factory(email="apiv1_search_save_missing@example.com", password="TestPass123!")
-        login_resp = client.post(
-            "/api/v1/auth/login",
-            json={"email": user["email"], "password": "TestPass123!"},
-        )
-        token = login_resp.get_json()["token"]
+        # Gerçek login DEĞİL — bkz. test_feed_with_valid_token_returns_posts_shape yorumu
+        token = _api_token_for(app, user["id"])
 
         resp = client.post(
             "/api/v1/search/save",
@@ -319,11 +301,10 @@ class TestApiV1SearchSaveAndHistory:
 
     def test_clear_search_history_and_delete_history_item(self, app, client, test_user_factory):
         user = test_user_factory(email="apiv1_search_history@example.com", password="TestPass123!")
-        login_resp = client.post(
-            "/api/v1/auth/login",
-            json={"email": user["email"], "password": "TestPass123!"},
-        )
-        token = login_resp.get_json()["token"]
+        # Gerçek login DEĞİL — bkz. test_feed_with_valid_token_returns_posts_shape yorumu
+        # (bu testin kendisi CI'de KeyError('token') ile başarısız olan test'ti —
+        # dosyadaki gerçek login çağrılarının BİRİKİMİ rate limit'i aşmıştı).
+        token = _api_token_for(app, user["id"])
         headers = {"Authorization": f"Bearer {token}"}
 
         # search_history'ye kayıt oluşturmak için gerçek bir arama at (search() endpoint'i
