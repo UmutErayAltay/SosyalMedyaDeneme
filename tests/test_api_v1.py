@@ -5,6 +5,7 @@ fixture'ı bkz. tests/conftest.py) — auth/token akışı güvenlik-kritik.
 """
 import hashlib
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
@@ -1600,6 +1601,214 @@ class TestApiV1NotificationPreferences:
             sb = get_sb()
             sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
             sb.table("notification_preferences").delete().eq("user_id", user["id"]).execute()
+
+
+class TestApiV1Notifications:
+    """notifications.py list_notifications()/unread_count()'un JSON API karşılığı.
+
+    KRİTİK: web'in target_url'ü (url_for ile üretilen bir route string'i)
+    yerine native'in kendi navigasyon kararını verebileceği ham id alanları
+    (post_id/username/conversation_id/hashtag) döner — bu testler o ham
+    alanların DOĞRU tür için DOĞRU değeri taşıdığını doğrular.
+
+    like/follow bildirimleri api_v1.py'de SENKRON (notify() doğrudan çağrılır,
+    arkaplan pool'a submit edilmez) — bu yüzden polling gerekmez. message
+    bildirimi ise _write_pool'a submit edilir (bkz. api_send_message), test
+    test_comments.py'deki AYNI polling desenini kullanır.
+    """
+
+    def test_notifications_without_token_returns_401(self, client):
+        resp = client.get("/api/v1/notifications")
+        assert resp.status_code == 401
+        resp2 = client.get("/api/v1/notifications/unread-count")
+        assert resp2.status_code == 401
+
+    def test_like_notification_has_post_id_and_second_view_marks_read(self, app, client, test_user_factory):
+        author = test_user_factory(email="apiv1_notif_like_author@example.com", password="TestPass123!")
+        liker = test_user_factory(email="apiv1_notif_like_liker@example.com", password="TestPass123!")
+        author_token = _api_token_for(app, author["id"])
+        liker_token = _api_token_for(app, liker["id"])
+        author_headers = {"Authorization": f"Bearer {author_token}"}
+
+        with app.app_context():
+            sb = get_sb()
+            post_row = sb.table("posts").insert({
+                "user_id": author["id"],
+                "content": "api_v1 bildirim testi - beğeni",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute().data[0]
+        post_id = post_row["id"]
+
+        like_resp = client.post(
+            f"/api/v1/posts/{post_id}/like",
+            headers={"Authorization": f"Bearer {liker_token}"},
+        )
+        assert like_resp.status_code == 200
+
+        # like() senkron notify() çağırıyor — bildirim bu noktada zaten DB'de.
+        count_resp = client.get("/api/v1/notifications/unread-count", headers=author_headers)
+        assert count_resp.get_json()["count"] == 1
+
+        list_resp = client.get("/api/v1/notifications", headers=author_headers)
+        assert list_resp.status_code == 200
+        body = list_resp.get_json()
+        entry = next(n for n in body["notifications"] if n["type"] == "like" and n["post_id"] == post_id)
+        assert entry["is_read"] is False
+        assert entry["actor_summary"] == liker["username"]
+        assert entry["username"] is None  # like'ta profile değil post'a gidilir
+        assert entry["conversation_id"] is None
+        assert entry["hashtag"] is None
+        assert entry["text"] == "gönderini beğendi"
+
+        # Görüntüleme okundu işaretlemeliydi — cache invalidate edildi, taze sayım 0 olmalı.
+        count_resp2 = client.get("/api/v1/notifications/unread-count", headers=author_headers)
+        assert count_resp2.get_json()["count"] == 0
+
+        list_resp2 = client.get("/api/v1/notifications", headers=author_headers)
+        entry2 = next(n for n in list_resp2.get_json()["notifications"] if n["type"] == "like" and n["post_id"] == post_id)
+        assert entry2["is_read"] is True
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", author["id"]).execute()
+            sb.table("api_tokens").delete().eq("user_id", liker["id"]).execute()
+            sb.table("notifications").delete().eq("post_id", post_id).execute()
+            sb.table("likes").delete().eq("post_id", post_id).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_two_likes_on_same_post_group_into_one_notification(self, app, client, test_user_factory):
+        """Gerçek gruplama testi: aynı posta 2 farklı kullanıcı like atınca
+        notifications tablosunda 2 AYRI satır olsa bile /notifications tek
+        gruplanmış satır döner, actor_summary 'A ve B' formatında gelir."""
+        author = test_user_factory(email="apiv1_notif_group_author@example.com", password="TestPass123!")
+        liker1 = test_user_factory(email="apiv1_notif_group_liker1@example.com", password="TestPass123!")
+        liker2 = test_user_factory(email="apiv1_notif_group_liker2@example.com", password="TestPass123!")
+        author_token = _api_token_for(app, author["id"])
+        liker1_token = _api_token_for(app, liker1["id"])
+        liker2_token = _api_token_for(app, liker2["id"])
+        author_headers = {"Authorization": f"Bearer {author_token}"}
+
+        with app.app_context():
+            sb = get_sb()
+            post_row = sb.table("posts").insert({
+                "user_id": author["id"],
+                "content": "api_v1 bildirim testi - grup beğeni",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute().data[0]
+        post_id = post_row["id"]
+
+        client.post(f"/api/v1/posts/{post_id}/like", headers={"Authorization": f"Bearer {liker1_token}"})
+        client.post(f"/api/v1/posts/{post_id}/like", headers={"Authorization": f"Bearer {liker2_token}"})
+
+        # DB seviyesinde gerçekten 2 ayrı satır oluştuğunu doğrula (gruplama
+        # SADECE görüntüleme katmanında, DB'de tekilleşme YOK).
+        with app.app_context():
+            raw_rows = get_sb().table("notifications").select("id").eq(
+                "recipient_id", author["id"]
+            ).eq("post_id", post_id).eq("type", "like").execute().data
+        assert len(raw_rows) == 2
+
+        list_resp = client.get("/api/v1/notifications", headers=author_headers)
+        assert list_resp.status_code == 200
+        like_entries = [n for n in list_resp.get_json()["notifications"]
+                         if n["type"] == "like" and n["post_id"] == post_id]
+        assert len(like_entries) == 1, "İki like tek gruplanmış bildirime dönüşmeliydi"
+        summary = like_entries[0]["actor_summary"]
+        assert liker1["username"] in summary
+        assert liker2["username"] in summary
+        assert " ve " in summary
+        assert like_entries[0]["is_read"] is False
+
+        with app.app_context():
+            sb = get_sb()
+            for uid in (author["id"], liker1["id"], liker2["id"]):
+                sb.table("api_tokens").delete().eq("user_id", uid).execute()
+            sb.table("notifications").delete().eq("post_id", post_id).execute()
+            sb.table("likes").delete().eq("post_id", post_id).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_follow_notification_includes_username(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_notif_follow_owner@example.com", password="TestPass123!")
+        follower = test_user_factory(email="apiv1_notif_follow_follower@example.com", password="TestPass123!")
+        owner_token = _api_token_for(app, owner["id"])
+        follower_token = _api_token_for(app, follower["id"])
+
+        follow_resp = client.post(
+            f"/api/v1/profile/{owner['username']}/follow",
+            headers={"Authorization": f"Bearer {follower_token}"},
+        )
+        assert follow_resp.status_code == 200
+        assert follow_resp.get_json()["following"] is True  # public profil, direkt kabul
+
+        list_resp = client.get(
+            "/api/v1/notifications", headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        assert list_resp.status_code == 200
+        entry = next(n for n in list_resp.get_json()["notifications"] if n["type"] == "follow")
+        assert entry["username"] == follower["username"]
+        assert entry["actor_summary"] == follower["username"]
+        assert entry["post_id"] is None
+        assert entry["conversation_id"] is None
+        assert entry["text"] == "seni takip etmeye başladı"
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", owner["id"]).execute()
+            sb.table("api_tokens").delete().eq("user_id", follower["id"]).execute()
+            sb.table("notifications").delete().eq("recipient_id", owner["id"]).execute()
+            sb.table("follows").delete().eq("follower_id", follower["id"]).eq(
+                "following_id", owner["id"]
+            ).execute()
+
+    def test_message_notification_includes_conversation_id(self, app, client, test_user_factory):
+        user_a = test_user_factory(email="apiv1_notif_msg_a@example.com", password="TestPass123!")
+        user_b = test_user_factory(email="apiv1_notif_msg_b@example.com", password="TestPass123!")
+        token_a = _api_token_for(app, user_a["id"])
+        token_b = _api_token_for(app, user_b["id"])
+
+        start_resp = client.post(
+            f"/api/v1/messages/start/{user_b['username']}",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        cid = start_resp.get_json()["conversation_id"]
+
+        send_resp = client.post(
+            f"/api/v1/messages/conversations/{cid}/send",
+            data={"content": "api_v1 bildirim testi - mesaj"},
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert send_resp.status_code == 200
+
+        # Mesaj bildirimi _write_pool'a (arkaplan) submit ediliyor — test_comments.py
+        # ile AYNI polling deseni, DB'de oluşana kadar bekle.
+        with app.app_context():
+            sb = get_sb()
+            deadline = time.time() + 5
+            notif_rows = []
+            while time.time() < deadline and not notif_rows:
+                notif_rows = sb.table("notifications").select("*").eq(
+                    "recipient_id", user_b["id"]
+                ).eq("conversation_id", cid).eq("type", "message").execute().data
+                if not notif_rows:
+                    time.sleep(0.2)
+            assert notif_rows, "Mesaj bildirimi (arkaplanda) oluşmadı"
+
+        list_resp = client.get(
+            "/api/v1/notifications", headers={"Authorization": f"Bearer {token_b}"},
+        )
+        assert list_resp.status_code == 200
+        entry = next(n for n in list_resp.get_json()["notifications"] if n["type"] == "message")
+        assert entry["conversation_id"] == cid
+        assert entry["post_id"] is None
+        assert entry["actor_summary"] == user_a["username"]
+
+        _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
+        with app.app_context():
+            get_sb().table("notifications").delete().eq("conversation_id", cid).execute()
 
 
 class TestApiV1CloseFriends:
