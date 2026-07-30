@@ -6,6 +6,7 @@ fixture'ı bkz. tests/conftest.py) — auth/token akışı güvenlik-kritik.
 import hashlib
 import secrets
 
+import pyotp
 import pytest
 
 from app.supabase_client import get_sb
@@ -1367,6 +1368,320 @@ class TestApiV1ProfileDeactivate:
         me_resp = client.get("/api/v1/auth/me", headers=headers)
         assert me_resp.status_code == 401
         assert me_resp.get_json().get("error") == "unauthorized"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+
+class TestApiV1TwoFactor:
+    """2FA (TOTP) native endpoint'leri — GERÇEK Supabase MFA API'sine karşı,
+    pyotp ile ÜRETİLMİŞ gerçek geçerli kodlarla (RFC 6238) enroll→verify→
+    login round-trip'i kanıtlar (mock yok).
+
+    login:{ip} birikimli rate-limit flakiness'i (bkz. _api_token_for
+    docstring'i + dosya başı) göz önünde bulundurularak, gerçek
+    /api/v1/auth/login çağrısı SADECE login()'in 2FA dalını doğrulayan 3
+    testte yapılır (toplam 4 çağrı + TestApiV1Login'deki 2 = 6/10, güvenli
+    marj). /2fa/enroll, /2fa/enroll/verify, /2fa/disable endpoint'leri
+    KENDİ taze sign_in_with_password'lerini kullanır — bunlar login:{ip}
+    sayacını hiç ETKİLEMEZ (ayrı bir Supabase çağrısı, /api/v1/auth/login
+    route'undan geçmiyor)."""
+
+    def _enroll_and_verify(self, client, token, password):
+        """Enroll → secret'tan GERÇEK geçerli TOTP kodu üret → verify.
+        (factor_id, secret) döner — factor_id sonraki bir enroll denemesinde
+        (already_enabled testi) veya secret sonraki bir login kodu üretiminde
+        kullanılabilir."""
+        enroll_resp = client.post(
+            "/api/v1/2fa/enroll",
+            json={"password": password},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert enroll_resp.status_code == 200, enroll_resp.get_json()
+        body = enroll_resp.get_json()
+        factor_id = body.get("factor_id")
+        secret = body.get("secret")
+        assert factor_id and secret and body.get("qr_code")
+
+        code = pyotp.TOTP(secret).now()
+        verify_resp = client.post(
+            "/api/v1/2fa/enroll/verify",
+            json={"password": password, "factor_id": factor_id, "code": code},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert verify_resp.status_code == 200, verify_resp.get_json()
+        assert verify_resp.get_json().get("ok") is True
+        return factor_id, secret
+
+    def test_status_false_before_enroll(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_2fa_status_off@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp = client.get("/api/v1/2fa/status", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+        assert resp.get_json() == {"enabled": False}
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_enroll_wrong_password_returns_invalid_password(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_2fa_enroll_wrongpw@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp = client.post(
+            "/api/v1/2fa/enroll",
+            json={"password": "WrongPassword123!"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "invalid_password"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_enroll_missing_password_returns_400(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_2fa_enroll_nopw@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp = client.post(
+            "/api/v1/2fa/enroll",
+            json={},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "password_required"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_enroll_verify_roundtrip_then_status_true_then_already_enabled(
+        self, app, client, test_user_factory
+    ):
+        """Tam round-trip: enroll → GERÇEK TOTP kodu üret → verify → status
+        (enabled) → tekrar enroll (already_enabled, 409)."""
+        email = "apiv1_2fa_roundtrip@example.com"
+        password = "TestPass123!"
+        user = test_user_factory(email=email, password=password)
+        token = _api_token_for(app, user["id"])
+
+        self._enroll_and_verify(client, token, password)
+
+        status_resp = client.get("/api/v1/2fa/status", headers={"Authorization": f"Bearer {token}"})
+        assert status_resp.status_code == 200
+        assert status_resp.get_json() == {"enabled": True}
+
+        again_resp = client.post(
+            "/api/v1/2fa/enroll",
+            json={"password": password},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert again_resp.status_code == 409
+        assert again_resp.get_json().get("error") == "already_enabled"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_enroll_verify_invalid_code_format(self, app, client, test_user_factory):
+        email = "apiv1_2fa_badcodefmt@example.com"
+        password = "TestPass123!"
+        user = test_user_factory(email=email, password=password)
+        token = _api_token_for(app, user["id"])
+
+        enroll_resp = client.post(
+            "/api/v1/2fa/enroll",
+            json={"password": password},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert enroll_resp.status_code == 200
+        factor_id = enroll_resp.get_json()["factor_id"]
+
+        resp = client.post(
+            "/api/v1/2fa/enroll/verify",
+            json={"password": password, "factor_id": factor_id, "code": "abc12"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "invalid_code_format"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_login_without_code_returns_mfa_required_then_valid_code_returns_token(
+        self, app, client, test_user_factory
+    ):
+        """Gerçek uçtan uca: 2FA aktifken code'suz login → mfa_required;
+        AYNI kullanıcı GEÇERLİ bir TOTP koduyla login → token döner."""
+        email = "apiv1_2fa_login_flow@example.com"
+        password = "TestPass123!"
+        user = test_user_factory(email=email, password=password)
+        token = _api_token_for(app, user["id"])
+
+        _, secret = self._enroll_and_verify(client, token, password)
+
+        # Gerçek /api/v1/auth/login çağrısı #1 (bu sınıfta, code'suz)
+        no_code_resp = client.post(
+            "/api/v1/auth/login", json={"email": email, "password": password}
+        )
+        assert no_code_resp.status_code == 403
+        assert no_code_resp.get_json().get("error") == "mfa_required"
+
+        # Gerçek çağrı #2 — GEÇERLİ kod
+        valid_code = pyotp.TOTP(secret).now()
+        ok_resp = client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": password, "code": valid_code},
+        )
+        assert ok_resp.status_code == 200
+        body = ok_resp.get_json()
+        assert body.get("token")
+        assert body["user"]["id"] == user["id"]
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_login_with_wrong_code_returns_invalid_code(self, app, client, test_user_factory):
+        email = "apiv1_2fa_login_wrongcode@example.com"
+        password = "TestPass123!"
+        user = test_user_factory(email=email, password=password)
+        token = _api_token_for(app, user["id"])
+
+        _, secret = self._enroll_and_verify(client, token, password)
+
+        real_code = pyotp.TOTP(secret).now()
+        # Gerçek koddan KESİNLİKLE farklı, ama yine de 6 haneli/rakam bir kod
+        wrong_code = "000000" if real_code != "000000" else "111111"
+
+        # Gerçek çağrı #3 (bu sınıfta) — yanlış kod
+        resp = client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": password, "code": wrong_code},
+        )
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "invalid_code"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_disable_requires_code_then_wrong_code_fails_then_valid_code_succeeds_then_login_without_code(
+        self, app, client, test_user_factory
+    ):
+        """Disable AAL2 akışının TAMAMI — gerçek Supabase'e karşı test sırasında
+        bulunan bir bugu doğrular/kanıtlar (bkz. api_2fa_disable() DİKKAT notu):
+        kurulu supabase-auth kütüphanesi, VERIFIED bir TOTP factor'ü sadece
+        AAL1 (şifre) session'la unenroll etmeye izin VERMİYOR
+        ("AAL2 required to unenroll verified factor", gerçek hesaba karşı
+        doğrulandı) — bu yüzden password-only disable ASLA başarılı olamazdı;
+        native endpoint'i buna göre bir `code` adımı ekleyecek şekilde
+        DÜZELTİLDİ (spesifikasyondan sapma, kod yorumunda gerekçelendirildi).
+
+        Sonda: disable BAŞARILI olduktan sonra login code istemeden
+        (mfa_required olmadan) başarılı olmalı.
+        """
+        email = "apiv1_2fa_disable_then_login@example.com"
+        password = "TestPass123!"
+        user = test_user_factory(email=email, password=password)
+        token = _api_token_for(app, user["id"])
+
+        _, secret = self._enroll_and_verify(client, token, password)
+
+        # code'suz disable — code_required (unenroll'un AAL2 gerektirdiği
+        # anlaşılınca client'a AÇIKÇA bildirilir, login()'deki mfa_required
+        # deseniyle tutarlı)
+        no_code_resp = client.post(
+            "/api/v1/2fa/disable",
+            json={"password": password},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert no_code_resp.status_code == 400
+        assert no_code_resp.get_json().get("error") == "code_required"
+
+        # Yanlış kodla disable — invalid_code (AAL2'ye yükseltme başarısız)
+        real_code = pyotp.TOTP(secret).now()
+        wrong_code = "000000" if real_code != "000000" else "111111"
+        wrong_code_resp = client.post(
+            "/api/v1/2fa/disable",
+            json={"password": password, "code": wrong_code},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert wrong_code_resp.status_code == 401
+        assert wrong_code_resp.get_json().get("error") == "invalid_code"
+
+        # GEÇERLİ kod — AAL2'ye yükselt + gerçekten unenroll et
+        valid_code = pyotp.TOTP(secret).now()
+        disable_resp = client.post(
+            "/api/v1/2fa/disable",
+            json={"password": password, "code": valid_code},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert disable_resp.status_code == 200, disable_resp.get_json()
+        assert disable_resp.get_json().get("ok") is True
+
+        status_resp = client.get("/api/v1/2fa/status", headers={"Authorization": f"Bearer {token}"})
+        assert status_resp.get_json() == {"enabled": False}
+
+        # Gerçek çağrı #4 (bu sınıfta) — disable sonrası code'suz login
+        login_resp = client.post(
+            "/api/v1/auth/login", json={"email": email, "password": password}
+        )
+        assert login_resp.status_code == 200
+        assert login_resp.get_json().get("token")
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_disable_wrong_password_returns_invalid_password(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_2fa_disable_wrongpw@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp = client.post(
+            "/api/v1/2fa/disable",
+            json={"password": "WrongPassword123!"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "invalid_password"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_disable_no_active_2fa_returns_404(self, app, client, test_user_factory):
+        email = "apiv1_2fa_disable_noactive@example.com"
+        password = "TestPass123!"
+        user = test_user_factory(email=email, password=password)
+        token = _api_token_for(app, user["id"])
+
+        resp = client.post(
+            "/api/v1/2fa/disable",
+            json={"password": password},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+        assert resp.get_json().get("error") == "no_active_2fa"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_2fa_enroll_rate_limit(self, app, client, test_user_factory):
+        """5 deneme/300sn — 6. istek 429 döner. Anahtar kullanıcı bazlı
+        (2fa_enroll:{user_id}) olduğu için login:{ip} bütçesini ETKİLEMEZ."""
+        user = test_user_factory(email="apiv1_2fa_enroll_ratelimit@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        for _ in range(5):
+            resp = client.post(
+                "/api/v1/2fa/enroll",
+                json={},  # password eksik — 400 döner ama yine de rate limit sayacını artırır
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status_code == 400
+
+        resp = client.post(
+            "/api/v1/2fa/enroll",
+            json={},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 429
+        assert resp.get_json().get("error") == "rate_limited"
 
         with app.app_context():
             get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
