@@ -1021,3 +1021,100 @@ class TestApiV1Interactions:
             sb = get_sb()
             sb.table("api_tokens").delete().eq("user_id", viewer["id"]).execute()
             sb.table("posts").delete().eq("id", post_id).execute()
+
+
+class TestApiV1CreatePost:
+    """Not: image dosya yükleme (upload_image) yolu BİLEREK burada test
+    EDİLMİYOR — bu test suite'inde hiçbir yerde gerçek Supabase Storage'a
+    dosya yükleyen bir test yok (temizlik/kirlilik riski), bu endpoint de
+    aynı sınırı korur; sadece metin-yolu (endpoint'in kendi mantığı:
+    doğrulama/görünürlük/hashtag senkronu/response şekli) test edilir."""
+
+    def test_create_post_without_token_returns_401(self, client):
+        resp = client.post("/api/v1/posts", data={"content": "deneme"})
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_create_post_empty_returns_400(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_createpost_empty@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post("/api/v1/posts", data={"content": ""}, headers=headers)
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "empty"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_create_post_text_only_returns_post_shape(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_createpost_text@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/posts",
+            data={"content": "api_v1 post oluşturma testi #apiv1createposttest"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        post = resp.get_json()["post"]
+        assert post["content"] == "api_v1 post oluşturma testi #apiv1createposttest"
+        assert post["user_id"] == user["id"]
+        assert post["visibility"] == "public"
+        assert post["like_count"] == 0
+        assert post["comment_count"] == 0
+        assert post["liked_by_me"] is False
+        post_id = post["id"]
+
+        # Hashtag senkronu gerçekten çalıştı mı (create_post()'daki AYNI yan etki)
+        with app.app_context():
+            sb = get_sb()
+            linked = sb.table("post_hashtags").select("hashtag_id").eq("post_id", post_id).execute().data
+        assert len(linked) >= 1
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("post_hashtags").delete().eq("post_id", post_id).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_create_post_invalid_visibility_falls_back_to_public(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_createpost_vis@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/posts",
+            data={"content": "api_v1 görünürlük testi", "visibility": "gecersiz_deger"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        post = resp.get_json()["post"]
+        assert post["visibility"] == "public"
+        post_id = post["id"]
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_create_post_followers_visibility_accepted(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_createpost_followers@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/posts",
+            data={"content": "api_v1 takipçilere özel testi", "visibility": "followers"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        post = resp.get_json()["post"]
+        assert post["visibility"] == "followers"
+        post_id = post["id"]
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()

@@ -46,6 +46,8 @@ from .messaging.views import MESSAGE_PAGE, _write_pool
 from .routes._common import _can_view_post
 from .social import REACTIONS, _find_recent_duplicate_comment, _notify_pool
 from .post_views import record_view
+from .storage_helper import upload_image
+from .hashtags import sync_post_hashtags, notify_hashtag_followers, extract_hashtags
 
 bp = Blueprint("api_v1", __name__)
 
@@ -1798,3 +1800,70 @@ def api_add_comment(post_id):
         "reactions": [],
         "sticker": None,
     })
+
+
+# ----------------------- POST OLUŞTURMA (Faz 4, native Android) -----------------------
+# app/routes/posts.py create_post()'un BİLİNÇLİ bir alt kümesi: metin + TEK
+# görsel + görünürlük. KAPSAM DIŞI (bu turda hiç dokunulmadı): çoklu görsel
+# (max 4), video/reel oluşturma, GIF, anket, taslak/planlama, konum.
+
+@bp.route("/posts", methods=["POST"])
+@api_login_required
+def api_create_post():
+    """Yeni post oluştur — multipart/form-data (web formuyla AYNI kodlama,
+    JSON DEĞİL, çünkü görsel dosyası içeriyor). Alanlar: `content` (metin),
+    `visibility` (public/followers/close_friends, varsayılan public),
+    `image` (opsiyonel, TEK dosya — create_post()'daki `images` çoklu
+    alanının BİLİNÇLİ olarak tekil hali)."""
+    sb = get_sb()
+    me = request.api_user["id"]
+
+    content = (request.form.get("content") or "").strip()
+    image_file = request.files.get("image")
+    has_image = bool(image_file and image_file.filename)
+
+    if not content and not has_image:
+        return jsonify(error="empty"), 400
+
+    visibility = request.form.get("visibility", "public")
+    if visibility not in ("public", "followers", "close_friends"):
+        visibility = "public"
+
+    image_urls = []
+    if has_image:
+        image_url = upload_image(image_file, folder="posts")
+        if not image_url:
+            return jsonify(error="upload_failed"), 400
+        image_urls = [image_url]
+
+    insert_data = {"user_id": me, "content": content, "image_urls": image_urls}
+    if image_urls:
+        insert_data["image_url"] = image_urls[0]
+
+    try:
+        full_data = {**insert_data, "visibility": visibility, "is_draft": False}
+        inserted = sb.table("posts").insert(full_data).execute()
+    except Exception:
+        inserted = sb.table("posts").insert(insert_data).execute()
+
+    post_id = inserted.data[0]["id"] if inserted.data else None
+    if not post_id:
+        return jsonify(error="create_failed"), 500
+
+    # create_post()'daki AYNI yayın-sonrası işler — sadece BAŞARIYLA
+    # yayınlanan (taslak olmayan) bir post için (bu endpoint hiç taslak
+    # üretmiyor, HER ZAMAN yayınlanır).
+    invalidate(f"sidebar:{me}")
+    if content:
+        sync_post_hashtags(sb, post_id, content)
+        invalidate("trending:")
+        notify_mentions(sb, actor_id=me, content=content, post_id=post_id)
+        notify_hashtag_followers(sb, actor_id=me, post_id=post_id, tags=extract_hashtags(content))
+
+    post_res = sb.table("posts").select(
+        "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+    ).eq("id", post_id).execute()
+    post = post_res.data[0] if post_res.data else {"id": post_id, **insert_data}
+    _attach_post_metrics(sb, [post], me)
+
+    return jsonify(post=post)
