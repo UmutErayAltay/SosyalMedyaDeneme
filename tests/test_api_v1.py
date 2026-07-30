@@ -1685,3 +1685,123 @@ class TestApiV1TwoFactor:
 
         with app.app_context():
             get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+
+def _cleanup_registered_user(app, user_id):
+    """api_register() ile GERÇEKTEN oluşturulmuş bir kullanıcıyı temizler —
+    test_user_factory'nin cleanup'ından FARKLI olarak, kullanıcı fixture ile
+    değil doğrudan endpoint'in kendisiyle yaratıldığı için burada elle
+    yapılıyor (email değil user_id ile, register() sonucunda id doğrudan
+    elde ediliyor)."""
+    with app.app_context():
+        sb = get_sb()
+        try:
+            sb.table("api_tokens").delete().eq("user_id", user_id).execute()
+        except Exception:
+            pass
+        try:
+            sb.table("profiles").delete().eq("id", user_id).execute()
+        except Exception:
+            pass
+        try:
+            sb.auth.admin.delete_user(user_id)
+        except Exception:
+            pass
+
+
+class TestApiV1Register:
+    """POST /api/v1/auth/register — register:{ip} paylaşılan bütçesi 5/600,
+    bu sınıfta TAM OLARAK 5 gerçek çağrı var (sınır aşılmıyor, bkz. her
+    testin docstring'i — dosyanın login:{ip} birikimli rate-limit
+    flakiness geçmişiyle AYNI dikkat, bkz. _api_token_for docstring'i)."""
+
+    def test_register_missing_fields_returns_400(self, client):
+        resp = client.post("/api/v1/auth/register", json={"email": "x@example.com"})
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "missing_fields"
+
+    def test_register_short_username_returns_400(self, client):
+        resp = client.post(
+            "/api/v1/auth/register",
+            json={"email": "apiv1_reg_shortu@example.com", "password": "TestPass123!", "username": "ab"},
+        )
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "short_username"
+
+    def test_register_username_taken_returns_400(self, app, client, test_user_factory):
+        existing = test_user_factory(
+            email="apiv1_reg_existingu@example.com", password="TestPass123!", username="apiv1_reg_taken_name"
+        )
+        resp = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "apiv1_reg_newemail@example.com",
+                "password": "TestPass123!",
+                "username": existing["username"],
+            },
+        )
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "username_taken"
+
+    def test_register_email_taken_returns_400(self, app, client, test_user_factory):
+        existing = test_user_factory(email="apiv1_reg_existinge@example.com", password="TestPass123!")
+        resp = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": existing["email"],
+                "password": "TestPass123!",
+                "username": "apiv1_reg_newname_xyz",
+            },
+        )
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "email_taken"
+
+    def test_register_success_creates_user_and_returns_working_token(self, app, client):
+        email = "apiv1_reg_success@example.com"
+        resp = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": "TestPass123!", "username": "apiv1_reg_success_user"},
+        )
+        assert resp.status_code == 200, resp.get_json()
+        body = resp.get_json()
+        assert body.get("token")
+        assert body["user"]["email"] == email
+        assert body["user"]["username"] == "apiv1_reg_success_user"
+        user_id = body["user"]["id"]
+
+        try:
+            me_resp = client.get(
+                "/api/v1/auth/me",
+                headers={"Authorization": f"Bearer {body['token']}"},
+            )
+            assert me_resp.status_code == 200
+            assert me_resp.get_json()["user"]["id"] == user_id
+
+            with app.app_context():
+                prof = get_sb().table("profiles").select("is_private, username").eq(
+                    "id", user_id
+                ).execute().data[0]
+            assert prof["is_private"] is True
+            assert prof["username"] == "apiv1_reg_success_user"
+        finally:
+            _cleanup_registered_user(app, user_id)
+
+
+class TestApiV1GoogleLogin:
+    """POST /api/v1/auth/google — gerçek bir Google ID token'ı test ortamında
+    ÜRETİLEMEZ (gerçek bir Google hesabı/cihaz gerektirir, bkz. native Kotlin
+    dispatch'inde manuel doğrulanacak) — bu yüzden testler sadece REDDETME
+    yollarını kanıtlar (mock yok, gerçek Supabase'in geçersiz bir token'ı
+    gerçekten reddettiğini doğrular). İkisi de login:{ip} PAYLAŞILAN
+    bütçesini kullanır (login()'deki AYNI anahtar) — sadece 2 çağrı, dosya
+    genelindeki bütçeye dikkatle eklendi."""
+
+    def test_google_login_missing_token_returns_400(self, client):
+        resp = client.post("/api/v1/auth/google", json={})
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "missing_token"
+
+    def test_google_login_invalid_token_returns_401(self, client):
+        resp = client.post("/api/v1/auth/google", json={"id_token": "not-a-real-google-id-token"})
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "invalid_token"

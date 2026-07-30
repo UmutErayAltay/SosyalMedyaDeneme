@@ -19,6 +19,16 @@ istek body'sinde `code` yoksa, şifre doğru olsa bile ham token ÜRETİLMEZ
 Client AYNI isteği `code` alanıyla tekrar atar (tek endpoint, iki deneme —
 ayrı bir "2fa doğrulama" endpoint'i YOK). Enroll/disable/status için ayrı
 "2FA (TOTP)" bölümüne bak (Faz 4, native Android post-parity).
+
+Kayıt: POST /auth/register — auth.py register()'ın çekirdek mantığı, ama
+username-çakışması ÖNDEN kontrol edilir (register()'daki sessiz yutma YOK)
+ve otomatik giriş için ayrı bir sign_in_with_password YAPILMAZ (admin.
+create_user() zaten user.id döndürür, token doğrudan bununla üretilir).
+
+Google ile giriş: POST /auth/google — web'in tarayıcı-redirect akışından
+FARKLI, Android Credential Manager'ın ürettiği bir Google ID token'ı
+`sign_in_with_id_token()` ile Supabase'e değiştirir (bkz. api_google_login()
+docstring'i). Supabase'in Google provider Client ID'si web ile PAYLAŞILIR.
 """
 import hashlib
 import secrets
@@ -50,6 +60,7 @@ from .social import REACTIONS, _find_recent_duplicate_comment, _notify_pool
 from .post_views import record_view
 from .storage_helper import upload_image
 from .hashtags import sync_post_hashtags, notify_hashtag_followers, extract_hashtags
+from .auth import _unique_username, _has_verified_totp
 
 bp = Blueprint("api_v1", __name__)
 
@@ -139,6 +150,96 @@ def api_login_required(view):
 
         return view(*args, **kwargs)
     return wrapped
+
+
+@bp.route("/auth/register", methods=["POST"])
+def api_register():
+    """Yeni hesap oluştur — auth.py register()'ın AYNI çekirdek mantığı
+    (admin.create_user + profiles upsert), ama register()'dan farklı olarak:
+    1) SESSİZCE yutulan username-çakışması yerine önden bir uniqueness
+       kontrolü yapılır (api_profile_edit()'teki AYNI desen — register()'ın
+       "trigger zaten oluşturmuş olabilir" try/except'i, username zaten
+       alınmışsa upsert'in username constraint'ine çarpıp sessizce
+       yutulmasına açık; native'de bunu ÖNDEN engellemek daha doğru).
+    2) Otomatik giriş için AYRI bir sign_in_with_password YAPILMAZ — admin.
+       create_user() zaten user.id döndürüyor, native token'ı DOĞRUDAN bu
+       id ile üretilir (login()'in aksine burada bir Supabase Auth session'ı
+       hiç gerekmiyor, api_tokens tablosu sadece user_id ister).
+    """
+    if is_rate_limited(f"register:{request.remote_addr or 'unknown'}", 5, 600):
+        return jsonify(error="rate_limited"), 429
+
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
+    email = _str_field(data, "email")
+    password = _str_field(data, "password")
+    username = _str_field(data, "username")
+    device_name = _str_field(data, "device_name") or None
+
+    if not email or not password or not username:
+        return jsonify(error="missing_fields"), 400
+    if len(username) < 3:
+        return jsonify(error="short_username"), 400
+
+    sb = get_sb()
+    try:
+        taken = sb.table("profiles").select("id").eq("username", username).execute()
+        if taken.data:
+            return jsonify(error="username_taken"), 400
+    except Exception:
+        pass
+
+    try:
+        res = sb.auth.admin.create_user({
+            "email": email,
+            "password": password,
+            "email_confirm": True,
+            "user_metadata": {"username": username},
+        })
+        user = getattr(res, "user", None)
+    except Exception as e:
+        msg = str(e)
+        if "already" in msg.lower() or "registered" in msg.lower():
+            return jsonify(error="email_taken"), 400
+        return jsonify(error="register_failed"), 500
+
+    if not user:
+        return jsonify(error="register_failed"), 500
+
+    try:
+        sb.table("profiles").upsert({
+            "id": user.id,
+            "username": username,
+            "email": email,
+            "is_private": True,
+        }, on_conflict="id").execute()
+    except Exception:
+        return jsonify(error="register_failed"), 500
+
+    invalidate("valid_usernames")
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = _hash_token(raw_token)
+    try:
+        sb.table("api_tokens").insert({
+            "user_id": user.id,
+            "token_hash": token_hash,
+            "device_name": device_name,
+        }).execute()
+    except Exception:
+        return jsonify(error="token_creation_failed"), 500
+
+    return jsonify(
+        token=raw_token,
+        user={
+            "id": user.id,
+            "email": email,
+            "username": username,
+            "avatar_url": None,
+            "is_admin": False,
+        },
+    )
 
 
 @bp.route("/auth/login", methods=["POST"])
@@ -234,6 +335,146 @@ def login():
         except Exception:
             # Ekstra rate limit gerekmez — üstteki login:{ip} limiter (satır ~148)
             # zaten her denemeyi (kod yanlış olsa bile) sayıyor.
+            return jsonify(error="invalid_code"), 401
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = _hash_token(raw_token)
+    try:
+        sb.table("api_tokens").insert({
+            "user_id": user.id,
+            "token_hash": token_hash,
+            "device_name": device_name,
+        }).execute()
+    except Exception:
+        return jsonify(error="token_creation_failed"), 500
+
+    return jsonify(
+        token=raw_token,
+        user={
+            "id": user.id,
+            "email": user.email,
+            "username": prof_data.get("username"),
+            "avatar_url": prof_data.get("avatar_url"),
+            "is_admin": bool(prof_data.get("is_admin")),
+        },
+    )
+
+
+@bp.route("/auth/google", methods=["POST"])
+def api_google_login():
+    """Google ile giriş — web'in tarayıcı-yönlendirmeli auth.py google_complete()
+    akışından MİMARİ OLARAK FARKLI: web bir Supabase OAuth authorize-redirect
+    akışıyla (tarayıcı) ELDE EDİLMİŞ bir access_token'ı doğrular; native ise
+    Android Credential Manager'ın DOĞRUDAN ürettiği bir Google ID token'ı
+    (OIDC JWT) `sign_in_with_id_token()` ile Supabase'e DEĞİŞTİRİR (tarayıcı/
+    redirect adımı hiç yok). Supabase'in Google provider ayarı (Client ID)
+    web ile PAYLAŞILIR — native için ayrı bir OAuth client kaydı YOK.
+
+    `nonce` opsiyonel: Android Credential Manager `GetSignInWithGoogleOption`
+    ile hash'lenmiş bir nonce gönderip ID token'a gömebilir; client bunu ham
+    haliyle buraya da yollarsa Supabase token'daki hash'lenmiş nonce'la
+    karşılaştırıp replay saldırısına karşı ekstra doğrulama yapar. Native
+    Kotlin tarafı bunu henüz göndermeyebilir — bu durumda Supabase nonce
+    kontrolünü atlar (dict'te hiç anahtar yoksa sorun çıkmaz).
+    """
+    if is_rate_limited(f"login:{request.remote_addr or 'unknown'}", 10, 300):
+        return jsonify(error="rate_limited"), 429
+
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
+    id_token = _str_field(data, "id_token")
+    nonce = _str_field(data, "nonce")
+    code = _str_field(data, "code")
+    device_name = _str_field(data, "device_name") or None
+
+    if not id_token:
+        return jsonify(error="missing_token"), 400
+
+    credentials = {"provider": "google", "token": id_token}
+    if nonce:
+        credentials["nonce"] = nonce
+
+    try:
+        tmp = create_client(
+            current_app.config["SUPABASE_URL"],
+            current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+        )
+        res = call_with_ssl_retry(lambda: tmp.auth.sign_in_with_id_token(credentials))
+    except Exception:
+        return jsonify(error="invalid_token"), 401
+
+    user = getattr(res, "user", None)
+    sess = getattr(res, "session", None)
+    if not user or not sess or not getattr(sess, "access_token", None):
+        return jsonify(error="invalid_token"), 401
+
+    sb = get_sb()
+    try:
+        prof = sb.table("profiles").select(
+            "is_banned, username, avatar_url, is_admin"
+        ).eq("id", user.id).execute().data
+        prof_data = prof[0] if prof else {}
+    except Exception:
+        prof_data = {}
+
+    if prof_data.get("is_banned"):
+        return jsonify(error="banned"), 403
+
+    # İlk Google girişi: profiles satırı yoksa oluştur — auth.py
+    # google_complete()'teki (satır 368-386) AYNI mantık, AYNI yardımcı
+    # (_unique_username) reuse edilir.
+    if not prof:
+        meta = getattr(user, "user_metadata", None) or {}
+        try:
+            sb.table("profiles").upsert({
+                "id": user.id,
+                "username": _unique_username(sb, user.email),
+                "email": user.email,
+                "full_name": meta.get("full_name") or meta.get("name"),
+                "avatar_url": meta.get("avatar_url") or meta.get("picture"),
+                "is_private": True,
+            }, on_conflict="id").execute()
+            invalidate("valid_usernames")
+        except Exception:
+            pass
+        try:
+            prof = sb.table("profiles").select(
+                "is_banned, username, avatar_url, is_admin"
+            ).eq("id", user.id).execute().data
+            prof_data = prof[0] if prof else {}
+        except Exception:
+            prof_data = {}
+
+    # 2FA paritesi — login()'deki AYNI desen: ZATEN canlı olan bu session
+    # (sign_in_with_id_token'dan) reuse edilir, ayrı bir sign-in gerekmez.
+    has_totp = False
+    totp_factor = None
+    try:
+        factors = tmp.auth.mfa.list_factors()
+        for f in (factors.totp or []):
+            if f.factor_type == "totp" and f.status == "verified":
+                totp_factor = f
+                has_totp = True
+                break
+    except Exception:
+        pass
+
+    if has_totp and not code:
+        return jsonify(
+            error="mfa_required",
+            message="Bu hesapta 2FA aktif. Aynı isteği `code` alanıyla tekrar gönder.",
+        ), 403
+
+    if has_totp and code:
+        try:
+            challenge_resp = tmp.auth.mfa.challenge({"factor_id": totp_factor.id})
+            tmp.auth.mfa.verify({
+                "factor_id": totp_factor.id,
+                "challenge_id": challenge_resp.id,
+                "code": code,
+            })
+        except Exception:
             return jsonify(error="invalid_code"), 401
 
     raw_token = secrets.token_urlsafe(32)
