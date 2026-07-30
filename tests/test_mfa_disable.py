@@ -1,5 +1,7 @@
 """MFA (2FA) disable testleri — integration + unit tests."""
+import re
 import pytest
+import pyotp
 
 
 class TestMFADisable:
@@ -175,3 +177,124 @@ class TestUserHasPasswordIdentity:
 
         result = _user_has_password_identity("dummy_token")
         assert result is True  # Fail-closed: şifre istenir
+
+
+class TestMFADisableAAL2RoundTrip:
+    """GERÇEK enroll → disable round-trip'i — 2026-07-30'da native (/api/v1)
+    tarafında keşfedilen AAL2 bug'ının regresyon testi.
+
+    Önceki testler (TestMFADisable) hiçbir zaman GERÇEKTEN enrolled bir 2FA'yı
+    disable etmiyordu — sadece "şifre kontrolünü geçti, aktif 2FA yok" yoluna
+    ulaşıyordu. Bu yüzden şu bug hiç yakalanmamıştı: kurulu supabase-auth
+    kütüphanesi, VERIFIED bir TOTP factor'ü sadece AAL1 (şifre-only) session'la
+    unenroll etmeye izin vermiyor ("AAL2 required to unenroll verified
+    factor"). Bu test pyotp ile ÜRETİLMİŞ gerçek geçerli TOTP kodlarıyla
+    enroll → verify → disable (code'suz → yanlış kod → GERÇEK kod) zincirini
+    uçtan uca kanıtlar.
+    """
+
+    def _enroll_totp(self, client, email, password):
+        """Web /2fa/enroll akışıyla GERÇEKTEN 2FA enroll et, secret'i döner."""
+        # Adım 1: şifre POST'u → flag set + redirect (QR sayfasına)
+        resp = client.post(
+            "/2fa/enroll",
+            data={"csrf_token": "test-csrf-token", "password": password},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+        # Adım 2: GET → QR + secret göster
+        resp = client.get("/2fa/enroll")
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8", errors="ignore")
+        # Secret base32 (A-Z2-7) — Türkçe metne bağımlı olmadan ":</strong><br>"
+        # sınırından sonraki base32 bloğunu yakala.
+        m = re.search(r":</strong><br>([A-Z2-7]+)", body)
+        assert m, f"Secret bulunamadı, body: {body[:500]}"
+        secret = m.group(1)
+
+        # Adım 3: pyotp ile GERÇEK geçerli TOTP kodu üret → POST ile doğrula
+        code = pyotp.TOTP(secret).now()
+        resp = client.post(
+            "/2fa/enroll",
+            data={"csrf_token": "test-csrf-token", "code": code},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8", errors="ignore")
+        assert "etkinle" in body.lower()  # "2FA başarıyla etkinleştirildi!"
+
+        return secret
+
+    def test_disable_without_code_then_wrong_code_then_valid_code_disables(
+        self, app, client, logged_in_session
+    ):
+        """Enroll → disable code'suz (uyarı, unenroll'a ulaşılmaz) → yanlış kod
+        (Geçersiz doğrulama kodu) → GERÇEK kod (AAL2'ye yükselt + unenroll
+        BAŞARILI). Fix olmadan son adım "AAL2 required" hatasıyla patlardı
+        (bkz. sınıf docstring'i + bu dosyanın altındaki manuel doğrulama notu).
+        """
+        email = "mfa_disable_aal2@example.com"
+        password = "TestPass123!"
+        user, _ = logged_in_session(email=email, password=password)
+
+        secret = self._enroll_totp(client, email, password)
+
+        # code'suz disable → uyarı flash, unenroll'a ulaşılmaz
+        resp = client.post(
+            "/2fa/disable",
+            data={"csrf_token": "test-csrf-token", "password": password},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8", errors="ignore")
+        assert "6 haneli kodu da gir" in body
+
+        # yanlış kod → "Geçersiz doğrulama kodu" (AAL2'ye yükseltme başarısız)
+        real_code = pyotp.TOTP(secret).now()
+        wrong_code = "000000" if real_code != "000000" else "111111"
+        resp = client.post(
+            "/2fa/disable",
+            data={
+                "csrf_token": "test-csrf-token",
+                "password": password,
+                "code": wrong_code,
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8", errors="ignore")
+        assert "Geçersiz do" in body
+
+        # GERÇEK kod → AAL2'ye yükselt + GERÇEKTEN unenroll et
+        valid_code = pyotp.TOTP(secret).now()
+        resp = client.post(
+            "/2fa/disable",
+            data={
+                "csrf_token": "test-csrf-token",
+                "password": password,
+                "code": valid_code,
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8", errors="ignore")
+        assert "devre d" in body.lower()  # "2FA devre dışı bırakıldı."
+
+        # Bağımsız doğrulama: taze bir sign_in_with_password + mfa.list_factors
+        # ile GERÇEKTEN hiçbir verified TOTP factor kalmadığını kanıtla
+        # (flash mesajına güvenmek yerine gerçek Supabase durumunu sorgula).
+        from supabase import create_client
+
+        verify_client = create_client(
+            app.config["SUPABASE_URL"],
+            app.config["SUPABASE_PUBLISHABLE_KEY"],
+        )
+        login_res = verify_client.auth.sign_in_with_password({
+            "email": email,
+            "password": password,
+        })
+        assert login_res.session is not None  # code istemeden login başarılı
+        factors = verify_client.auth.mfa.list_factors()
+        verified = [f for f in (factors.totp or []) if f.status == "verified"]
+        assert verified == [], "2FA hâlâ enrolled — unenroll GERÇEKTEN başarısız olmuş"

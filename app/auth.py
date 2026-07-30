@@ -727,6 +727,14 @@ def mfa_disable():
 
     CSRF korumalı POST isteği — geçerli oturum gerekli. Google-only hesaplarda
     (hiç şifre yok) reverifikasyon adımı atlanır, bkz. _user_has_password_identity.
+
+    Şifre doğrulamasının yanı sıra unenroll'dan ÖNCE bir TOTP `code` da
+    istenir: kurulu supabase-auth kütüphanesi verified bir factor'ü sadece
+    AAL1 (şifre-only) session'la unenroll etmeye izin vermiyor ("AAL2
+    required to unenroll verified factor" — gerçek bir hesaba karşı
+    doğrulandı, bkz. app/api_v1.py api_2fa_disable() DİKKAT notu, aynı bug
+    burada da vardı). Kodla challenge+verify yapılıp session AAL2'ye
+    yükseltiliyor, ANCAK o zaman unenroll çağrılabiliyor.
     """
     if "user" not in session:
         flash("Giriş yap.", "error")
@@ -735,6 +743,7 @@ def mfa_disable():
     user_id = session["user"]["id"]
     email = session["user"]["email"]
     password = request.form.get("password", "").strip()
+    code = request.form.get("code", "").strip()
 
     if _user_has_password_identity(session["access_token"]):
         # Şifre alanı boş mu kontrol et
@@ -786,7 +795,28 @@ def mfa_disable():
             flash("Etkin 2FA bulunamadı.", "warning")
             return redirect(url_for("routes.profile_edit"))
 
-        # TOTP factor'ü unenroll et
+        # AAL2'ye yükseltme adımı — yukarıdaki DİKKAT notu: unenroll'dan
+        # ÖNCE zorunlu, aksi halde Supabase "AAL2 required" hatası verir.
+        if not code or len(code) != 6 or not code.isdigit():
+            flash("2FA'yı kapatmak için authenticator uygulamandaki 6 haneli kodu da gir.", "error")
+            return redirect(url_for("routes.profile_edit"))
+
+        try:
+            challenge_resp = tmp.auth.mfa.challenge({"factor_id": totp_factor.id})
+            tmp.auth.mfa.verify({
+                "factor_id": totp_factor.id,
+                "challenge_id": challenge_resp.id,
+                "code": code,
+            })
+        except Exception as e:
+            msg = str(e)
+            if "Invalid" in msg:
+                flash("Geçersiz doğrulama kodu.", "error")
+            else:
+                flash(f"2FA doğrulama hatası: {msg}", "error")
+            return redirect(url_for("routes.profile_edit"))
+
+        # TOTP factor'ü unenroll et (session artık AAL2 — Supabase izin verir)
         tmp.auth.mfa.unenroll({"factor_id": totp_factor.id})
 
         flash("2FA devre dışı bırakıldı.", "success")

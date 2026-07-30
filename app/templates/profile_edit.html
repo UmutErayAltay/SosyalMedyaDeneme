@@ -90,6 +90,10 @@
                     {% if has_password %}
                     <input type="password" name="password" placeholder="Şifreni gir" required>
                     {% endif %}
+                    {# Unenroll için AAL2 gerekiyor (bkz. auth.mfa_disable docstring'i) —
+                       authenticator zaten kurulu olduğundan (2FA aktifse) ayrı bir
+                       adıma gerek yok, kod şifreyle birlikte TEK seferde gönderilir. #}
+                    <input type="text" name="code" placeholder="6 haneli kod" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" required>
                     <button type="submit" class="btn btn-ghost">2FA'yı Kapat</button>
                 </form>
             </div>
