@@ -855,3 +855,169 @@ class TestApiV1Messaging:
         assert statuses[30] == 429
 
         _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
+
+
+class TestApiV1Interactions:
+    def test_like_without_token_returns_401(self, client):
+        resp = client.post("/api/v1/posts/nonexistent/like")
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_toggle_like_then_unlike(self, app, client, test_user_factory):
+        author = test_user_factory(email="apiv1_like_author@example.com", password="TestPass123!")
+        liker = test_user_factory(email="apiv1_like_liker@example.com", password="TestPass123!")
+        token = _api_token_for(app, liker["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        with app.app_context():
+            sb = get_sb()
+            post_row = sb.table("posts").insert({
+                "user_id": author["id"],
+                "content": "api_v1 beğeni testi için post",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute().data[0]
+        post_id = post_row["id"]
+
+        like_resp = client.post(f"/api/v1/posts/{post_id}/like", headers=headers)
+        assert like_resp.status_code == 200
+        like_body = like_resp.get_json()
+        assert like_body["liked"] is True
+        assert like_body["reaction"] == "like"
+        assert like_body["count"] == 1
+
+        # Aynı reaksiyona tekrar basınca kaldırılır (toggle)
+        unlike_resp = client.post(f"/api/v1/posts/{post_id}/like", headers=headers)
+        assert unlike_resp.status_code == 200
+        unlike_body = unlike_resp.get_json()
+        assert unlike_body["liked"] is False
+        assert unlike_body["reaction"] is None
+        assert unlike_body["count"] == 0
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", liker["id"]).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_post_detail_returns_post_and_comment_hierarchy(self, app, client, test_user_factory):
+        author = test_user_factory(email="apiv1_detail_author@example.com", password="TestPass123!")
+        commenter = test_user_factory(email="apiv1_detail_commenter@example.com", password="TestPass123!")
+        token = _api_token_for(app, commenter["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        with app.app_context():
+            sb = get_sb()
+            post_row = sb.table("posts").insert({
+                "user_id": author["id"],
+                "content": "api_v1 post detay testi",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute().data[0]
+            post_id = post_row["id"]
+            top_comment = sb.table("comments").insert({
+                "post_id": post_id, "user_id": commenter["id"], "content": "ana yorum",
+            }).execute().data[0]
+            sb.table("comments").insert({
+                "post_id": post_id, "user_id": author["id"], "content": "yanıt yorumu",
+                "parent_comment_id": top_comment["id"],
+            }).execute()
+
+        resp = client.get(f"/api/v1/posts/{post_id}", headers=headers)
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["post"]["id"] == post_id
+        assert "like_count" in body["post"] and "comment_count" in body["post"]
+        assert len(body["comments"]) == 1
+        top = body["comments"][0]
+        assert top["content"] == "ana yorum"
+        assert len(top["replies"]) == 1
+        assert top["replies"][0]["content"] == "yanıt yorumu"
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", commenter["id"]).execute()
+            sb.table("comments").delete().eq("post_id", post_id).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_add_comment_and_reply_roundtrip(self, app, client, test_user_factory):
+        author = test_user_factory(email="apiv1_addcomment_author@example.com", password="TestPass123!")
+        commenter = test_user_factory(email="apiv1_addcomment_commenter@example.com", password="TestPass123!")
+        token = _api_token_for(app, commenter["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        with app.app_context():
+            sb = get_sb()
+            post_row = sb.table("posts").insert({
+                "user_id": author["id"],
+                "content": "api_v1 yorum ekleme testi",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute().data[0]
+        post_id = post_row["id"]
+
+        add_resp = client.post(
+            f"/api/v1/posts/{post_id}/comments",
+            json={"content": "api_v1 ilk yorum"},
+            headers=headers,
+        )
+        assert add_resp.status_code == 200
+        added = add_resp.get_json()["comment"]
+        assert added["content"] == "api_v1 ilk yorum"
+        assert added["parent_comment_id"] is None
+        comment_id = added["id"]
+
+        reply_resp = client.post(
+            f"/api/v1/posts/{post_id}/comments",
+            json={"content": "api_v1 yanıt", "parent_comment_id": comment_id},
+            headers=headers,
+        )
+        assert reply_resp.status_code == 200
+        reply = reply_resp.get_json()["comment"]
+        assert reply["parent_comment_id"] == comment_id
+
+        # Boş içerik → 400
+        empty_resp = client.post(
+            f"/api/v1/posts/{post_id}/comments", json={"content": ""}, headers=headers,
+        )
+        assert empty_resp.status_code == 400
+
+        detail = client.get(f"/api/v1/posts/{post_id}", headers=headers).get_json()
+        assert len(detail["comments"]) == 1
+        assert len(detail["comments"][0]["replies"]) == 1
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", commenter["id"]).execute()
+            sb.table("comments").delete().eq("post_id", post_id).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_post_detail_hides_others_private_draft_post(self, app, client, test_user_factory):
+        """_can_view_post() korumasi: baskasinin taslak (is_draft) postuna
+        erisim 404 ile engellenir - enumeration onleme, kaynak fonksiyonla
+        BIREBIR ayni davranis."""
+        author = test_user_factory(email="apiv1_detail_priv_author@example.com", password="TestPass123!")
+        viewer = test_user_factory(email="apiv1_detail_priv_viewer@example.com", password="TestPass123!")
+        token = _api_token_for(app, viewer["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        with app.app_context():
+            sb = get_sb()
+            post_row = sb.table("posts").insert({
+                "user_id": author["id"],
+                "content": "api_v1 taslak gizlilik testi",
+                "visibility": "public",
+                "is_draft": True,
+                "is_archived": False,
+            }).execute().data[0]
+        post_id = post_row["id"]
+
+        resp = client.get(f"/api/v1/posts/{post_id}", headers=headers)
+        assert resp.status_code == 404
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", viewer["id"]).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
