@@ -61,6 +61,7 @@ from .post_views import record_view
 from .storage_helper import upload_image
 from .hashtags import sync_post_hashtags, notify_hashtag_followers, extract_hashtags
 from .auth import _unique_username, _has_verified_totp
+from .realtime_session import _store_realtime_session, _decrypt_token
 
 bp = Blueprint("api_v1", __name__)
 
@@ -219,6 +220,28 @@ def api_register():
 
     invalidate("valid_usernames")
 
+    # Realtime için gerçek bir Supabase Auth session gerekiyor — normalde bu
+    # akışta HİÇ yok (admin.create_user() zaten user.id döndürüyor, token
+    # bununla üretiliyor, bkz. fonksiyon docstring'i). auth.py register()'daki
+    # (web) "otomatik giriş" adımının AYNISI burada Realtime AMAÇLI eklendi.
+    # BAŞARISIZ olursa (ör. az önce açılan hesaba karşı geçici ağ hatası) kayıt
+    # akışının GERİ KALANI (token issuance) YİNE DE devam eder — sess=None
+    # kalır, _store_realtime_session bunu no-op sayar (register() 500 dönmez).
+    sess = None
+    try:
+        tmp_auth = create_client(
+            current_app.config["SUPABASE_URL"],
+            current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+        )
+        auth_res = call_with_ssl_retry(
+            lambda: tmp_auth.auth.sign_in_with_password({
+                "email": email, "password": password,
+            })
+        )
+        sess = getattr(auth_res, "session", None)
+    except Exception:
+        sess = None
+
     raw_token = secrets.token_urlsafe(32)
     token_hash = _hash_token(raw_token)
     try:
@@ -229,6 +252,12 @@ def api_register():
         }).execute()
     except Exception:
         return jsonify(error="token_creation_failed"), 500
+
+    _store_realtime_session(
+        sb, token_hash,
+        getattr(sess, "access_token", None) if sess else None,
+        getattr(sess, "refresh_token", None) if sess else None,
+    )
 
     return jsonify(
         token=raw_token,
@@ -347,6 +376,12 @@ def login():
         }).execute()
     except Exception:
         return jsonify(error="token_creation_failed"), 500
+
+    # Realtime oturumu — ORİJİNAL `sess` kullanılır (yukarıdaki 2FA kontrolü
+    # için set_session yapılan `tmp` client'ın DEĞİL): sess, satır ~209'daki
+    # ilk sign_in_with_password sonucudur ve access_token/refresh_token'ı
+    # tmp'nin sonraki mfa çağrılarından ETKİLENMEZ (ayrı client örneği).
+    _store_realtime_session(sb, token_hash, sess.access_token, getattr(sess, "refresh_token", None))
 
     return jsonify(
         token=raw_token,
@@ -488,6 +523,10 @@ def api_google_login():
     except Exception:
         return jsonify(error="token_creation_failed"), 500
 
+    # Realtime oturumu — sess, sign_in_with_id_token()'dan (satır ~409 ETRAFI)
+    # ZATEN doğrulanmış (access_token/refresh_token var), login()'deki AYNI desen.
+    _store_realtime_session(sb, token_hash, sess.access_token, getattr(sess, "refresh_token", None))
+
     return jsonify(
         token=raw_token,
         user={
@@ -507,7 +546,14 @@ def logout():
     sb = get_sb()
     try:
         sb.table("api_tokens").update({
-            "revoked_at": datetime.now(timezone.utc).isoformat()
+            "revoked_at": datetime.now(timezone.utc).isoformat(),
+            # Defense-in-depth: asıl koruma zaten revoked_at (api_login_required
+            # bunu kontrol ediyor) ama satırda ölü bir Supabase refresh token
+            # bırakmamak daha temiz — iptal edilmiş bir token'ın Realtime
+            # oturumu da ölü sayılmalı.
+            "sb_access_token_enc": None,
+            "sb_refresh_token_enc": None,
+            "sb_token_expires_at": None,
         }).eq("token_hash", request.api_token_hash).execute()
     except Exception:
         return jsonify(error="logout_failed"), 500
@@ -518,6 +564,96 @@ def logout():
 @api_login_required
 def me():
     return jsonify(user=request.api_user)
+
+
+@bp.route("/realtime-token")
+@api_login_required
+def api_realtime_token():
+    """Native için taze Supabase Auth access token'ı — auth.py realtime_token()
+    (web)'in AYNI mantığı, ama Flask session yerine bu isteğin taşıdığı bearer
+    token'a karşılık gelen api_tokens satırından (şifreli) okunur/yazılır.
+
+    Realtime hiçbir zaman ÇEKİRDEK bir özellik değildir (bkz. app/
+    realtime_session.py docstring'i, fail-open) — bu yüzden burada dönen
+    HER hata kodu (503/401) native tarafın Realtime'ı sessizce kapatıp ana
+    bearer-token akışına DOKUNMADAN devam edebileceği şekilde tasarlandı.
+    """
+    import requests as _rq
+
+    sb = get_sb()
+    token_hash = request.api_token_hash
+
+    try:
+        rows = sb.table("api_tokens").select(
+            "sb_access_token_enc, sb_refresh_token_enc, sb_token_expires_at"
+        ).eq("token_hash", token_hash).execute().data
+    except Exception:
+        return jsonify(error="unavailable"), 503
+    if not rows:
+        return jsonify(error="unavailable"), 503
+    row = rows[0]
+
+    refresh_token = _decrypt_token(row.get("sb_refresh_token_enc"))
+    if not refresh_token:
+        # Fernet yok / bu satır hiç enroll edilmemiş / anahtar rotasyonu —
+        # HANGİSİ olursa olsun client için AYNI sonuç: Realtime kullanılamaz.
+        return jsonify(error="unavailable"), 503
+    access_token = _decrypt_token(row.get("sb_access_token_enc"))
+
+    needs_refresh = not access_token
+    expires_at = row.get("sb_token_expires_at")
+    if expires_at:
+        try:
+            exp_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            needs_refresh = needs_refresh or (exp_dt - datetime.now(timezone.utc)).total_seconds() <= 300
+        except Exception:
+            needs_refresh = True
+    else:
+        needs_refresh = True
+
+    if needs_refresh:
+        try:
+            r = _rq.post(
+                current_app.config["SUPABASE_URL"] + "/auth/v1/token?grant_type=refresh_token",
+                headers={"apikey": current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+                         "Content-Type": "application/json"},
+                json={"refresh_token": refresh_token},
+                timeout=6,
+            )
+            if r.status_code == 200:
+                d = r.json()
+                new_access = d.get("access_token")
+                new_refresh = d.get("refresh_token") or refresh_token
+                if new_access:
+                    _store_realtime_session(sb, token_hash, new_access, new_refresh)
+                    access_token = new_access
+            elif r.status_code in (400, 401, 403):
+                # Refresh token KESİN reddedildi — auth.py refresh_session_tokens()'daki
+                # AYNI gerekçe (süresi dolmuş/iptal/başka projeden kalma). Satırdaki
+                # ölü Realtime oturumunu temizle; client relogin_required görüp
+                # Realtime'ı kapatır, ANA bearer token'a (bu isteği DOĞRULAYAN token)
+                # DOKUNULMAZ — kullanıcı native'de login kalmaya devam eder.
+                try:
+                    sb.table("api_tokens").update({
+                        "sb_access_token_enc": None,
+                        "sb_refresh_token_enc": None,
+                        "sb_token_expires_at": None,
+                    }).eq("token_hash", token_hash).execute()
+                except Exception:
+                    pass
+                return jsonify(error="relogin_required"), 401
+            # Ağ hatası/5xx: mevcut (henüz süresi geçmemiş olabilecek) access_token'la devam
+        except Exception:
+            pass
+
+    if not access_token:
+        return jsonify(error="unavailable"), 503
+
+    return jsonify(
+        access_token=access_token,
+        supabase_url=current_app.config["SUPABASE_URL"],
+        supabase_publishable_key=current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+    )
 
 
 @bp.route("/feed")
@@ -2657,9 +2793,13 @@ def api_deactivate_account():
 
     # Bu isteğin token'ını iptal et — logout()'daki AYNI desen (yukarıdaki
     # docstring'deki gerekçe: native'de kapatılacak bir Flask session yok).
+    # sb_* kolonları da temizlenir — logout()'daki AYNI defense-in-depth gerekçesi.
     try:
         sb.table("api_tokens").update({
-            "revoked_at": datetime.now(timezone.utc).isoformat()
+            "revoked_at": datetime.now(timezone.utc).isoformat(),
+            "sb_access_token_enc": None,
+            "sb_refresh_token_enc": None,
+            "sb_token_expires_at": None,
         }).eq("token_hash", request.api_token_hash).execute()
     except Exception:
         pass

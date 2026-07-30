@@ -5,6 +5,7 @@ fixture'ı bkz. tests/conftest.py) — auth/token akışı güvenlik-kritik.
 """
 import hashlib
 import secrets
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 import pyotp
@@ -74,6 +75,34 @@ class TestApiV1Login:
         assert me_resp.status_code == 200
         me_body = me_resp.get_json()
         assert me_body["user"]["id"] == user["id"]
+
+        # Realtime oturumu — login() bu GERÇEK çağrı sırasında _store_realtime_
+        # session()'ı ZATEN tetikledi (REALTIME_TOKEN_ENCRYPTION_KEY .env'de
+        # mevcut varsayılıyor). YENİ bir gerçek login çağrısı EKLEMEDEN, bu
+        # testin ürettiği TEK login üzerinden hem DB hem endpoint doğrulanır
+        # (login:{ip} bütçesine ek yük YOK).
+        from app.realtime_session import _decrypt_token
+        with app.app_context():
+            row = get_sb().table("api_tokens").select(
+                "sb_access_token_enc, sb_refresh_token_enc, sb_token_expires_at"
+            ).eq("user_id", user["id"]).execute().data[0]
+        assert row["sb_access_token_enc"]
+        assert row["sb_refresh_token_enc"]
+        assert row["sb_token_expires_at"]
+        decrypted_access = _decrypt_token(row["sb_access_token_enc"])
+        decrypted_refresh = _decrypt_token(row["sb_refresh_token_enc"])
+        assert decrypted_access and decrypted_access.count(".") == 2  # JWT şekli
+        assert decrypted_refresh
+
+        rt_resp = client.get(
+            "/api/v1/realtime-token",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert rt_resp.status_code == 200
+        rt_body = rt_resp.get_json()
+        assert rt_body.get("access_token")
+        assert rt_body.get("supabase_url")
+        assert rt_body.get("supabase_publishable_key")
 
         # Temizlik: bu testin ürettiği api_tokens satırını sil
         with app.app_context():
@@ -2082,6 +2111,23 @@ class TestApiV1Register:
                 ).execute().data[0]
             assert prof["is_private"] is True
             assert prof["username"] == "apiv1_reg_success_user"
+
+            # Realtime oturumu — api_register()'a EKLENEN "otomatik giriş"
+            # adımının (bkz. api_v1.py docstring güncellemesi) GERÇEKTEN bir
+            # Supabase Auth session ürettiğini ve DB'ye şifreli yazıldığını
+            # kanıtlar. YENİ bir gerçek /register çağrısı YOK — register:{ip}
+            # bütçesi (5/600, bu sınıfta ZATEN tam 5 çağrı var) bu genişletmeyle
+            # artmıyor, aynı tek çağrının sonucu ek olarak doğrulanıyor.
+            from app.realtime_session import _decrypt_token
+            with app.app_context():
+                row = get_sb().table("api_tokens").select(
+                    "sb_access_token_enc, sb_refresh_token_enc, sb_token_expires_at"
+                ).eq("user_id", user_id).execute().data[0]
+            assert row["sb_access_token_enc"]
+            assert row["sb_refresh_token_enc"]
+            assert row["sb_token_expires_at"]
+            assert _decrypt_token(row["sb_access_token_enc"])
+            assert _decrypt_token(row["sb_refresh_token_enc"])
         finally:
             _cleanup_registered_user(app, user_id)
 
@@ -2104,3 +2150,153 @@ class TestApiV1GoogleLogin:
         resp = client.post("/api/v1/auth/google", json={"id_token": "not-a-real-google-id-token"})
         assert resp.status_code == 401
         assert resp.get_json().get("error") == "invalid_token"
+
+
+class TestApiV1RealtimeSessionCrypto:
+    """_encrypt_token/_decrypt_token round-trip — .env'deki gerçek
+    REALTIME_TOKEN_ENCRYPTION_KEY (Fernet) ile çalışır, mock YOK. Hiçbir
+    Flask route'unu (login/register/google) TETİKLEMEZ, bu yüzden dosyanın
+    login:{ip}/register:{ip} paylaşılan bütçesine hiç dokunmaz."""
+
+    def test_encrypt_decrypt_round_trip(self):
+        from app.realtime_session import _decrypt_token, _encrypt_token
+        raw = "sample-jwt-payload." + secrets.token_urlsafe(24)
+        enc = _encrypt_token(raw)
+        assert enc is not None
+        assert enc != raw
+        assert _decrypt_token(enc) == raw
+
+    def test_decrypt_invalid_ciphertext_returns_none(self):
+        """Bozuk/rastgele bir string InvalidToken'a düşer — exception dışarı
+        SIZMAMALI (bkz. _decrypt_token docstring'i)."""
+        from app.realtime_session import _decrypt_token
+        assert _decrypt_token("bu-gecerli-bir-fernet-tokeni-degil") is None
+        assert _decrypt_token("") is None
+        assert _decrypt_token(None) is None
+
+
+class TestApiV1RealtimeSessionFailOpen:
+    """REALTIME_TOKEN_ENCRYPTION_KEY yokken login() akışının ÇEKİRDEĞİ
+    (token issuance) hâlâ 200 dönmeli — Realtime sessizce devre dışı kalır
+    ama giriş asla kırılmaz (bkz. app/realtime_session.py modül docstring'i).
+
+    BÜTÇE NOTU: bu sınıfta TEK bir gerçek /api/v1/auth/login çağrısı var.
+    Dosya genelinde bu noktaya kadarki login:{ip} kullanımı: TestApiV1Login
+    (2) + TestApiV1TwoFactor (4, mfa login akışları) + TestApiV1GoogleLogin
+    (2) = 8/10. Bu test 9/10 yapar — limit (10/300sn) hâlâ aşılmıyor."""
+
+    def test_login_without_encryption_key_still_returns_200(
+        self, app, client, test_user_factory, monkeypatch
+    ):
+        monkeypatch.delenv("REALTIME_TOKEN_ENCRYPTION_KEY", raising=False)
+        user = test_user_factory(email="apiv1_realtime_failopen@example.com", password="TestPass123!")
+
+        resp = client.post(
+            "/api/v1/auth/login",
+            json={"email": user["email"], "password": "TestPass123!"},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body.get("token")
+
+        # Fernet yoktu — _store_realtime_session no-op kaldı, kolonlar boş
+        with app.app_context():
+            row = get_sb().table("api_tokens").select(
+                "sb_access_token_enc, sb_refresh_token_enc"
+            ).eq("user_id", user["id"]).execute().data[0]
+        assert row["sb_access_token_enc"] is None
+        assert row["sb_refresh_token_enc"] is None
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+
+class TestApiV1RealtimeToken:
+    """GET /api/v1/realtime-token — token üretimi _api_token_for() ile YAPILIR
+    (login:{ip} bütçesini KULLANMAZ); gerçek access/refresh çifti ise
+    test_user_factory'nin DOĞRUDAN (Flask route'undan GEÇMEYEN, dolayısıyla
+    login:{ip}'yi hiç artırmayan) sign_in_with_password çağrısından gelir.
+    Bu sınıftaki HİÇBİR test dosyanın login:{ip}/register:{ip} bütçesini
+    artırmaz."""
+
+    def _seed_realtime_row(self, app, token_hash, access_token, refresh_token, expires_at_iso):
+        from app.realtime_session import _encrypt_token
+        with app.app_context():
+            get_sb().table("api_tokens").update({
+                "sb_access_token_enc": _encrypt_token(access_token),
+                "sb_refresh_token_enc": _encrypt_token(refresh_token),
+                "sb_token_expires_at": expires_at_iso,
+            }).eq("token_hash", token_hash).execute()
+
+    def test_realtime_token_without_bearer_returns_401(self, client):
+        resp = client.get("/api/v1/realtime-token")
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_realtime_token_unavailable_without_stored_session(self, app, client, test_user_factory):
+        """Bu satır hiç enroll edilmemiş (sb_refresh_token_enc NULL) — unavailable."""
+        user = test_user_factory(email="apiv1_realtime_unavail@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp = client.get("/api/v1/realtime-token", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 503
+        assert resp.get_json().get("error") == "unavailable"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_realtime_token_refreshes_when_expired(self, app, client, test_user_factory):
+        """sb_token_expires_at GEÇMİŞTE → endpoint GERÇEK bir Supabase refresh
+        grant'ı tetikler; dönen access_token'ın DB'de YENİDEN okunan
+        sb_token_expires_at'i artık GELECEKTE olmalı (gerçek bir yenilemenin kanıtı)."""
+        user = test_user_factory(email="apiv1_realtime_refresh@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        self._seed_realtime_row(app, token_hash, user["access_token"], user["refresh_token"], past)
+
+        resp = client.get("/api/v1/realtime-token", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200, resp.get_json()
+        body = resp.get_json()
+        assert body.get("access_token")
+        assert body.get("supabase_url")
+        assert body.get("supabase_publishable_key")
+
+        with app.app_context():
+            row = get_sb().table("api_tokens").select("sb_token_expires_at").eq(
+                "token_hash", token_hash
+            ).execute().data[0]
+        new_expires = datetime.fromisoformat(row["sb_token_expires_at"].replace("Z", "+00:00"))
+        assert new_expires > datetime.now(timezone.utc)
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_realtime_token_relogin_required_when_refresh_token_dead(self, app, client, test_user_factory):
+        """Refresh token KESİN geçersizse (Supabase 400/401/403 döner) endpoint
+        relogin_required döner VE satırdaki sb_* kolonlarını NULL'a çeker
+        (spec: /realtime-token adım 4 — 'kesin ret' dalı)."""
+        user = test_user_factory(email="apiv1_realtime_dead@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        # Gerçek biçimde ama KESİNLİKLE geçersiz bir refresh token — Supabase'in
+        # KENDİ token endpoint'i bunu 400 ile REDDEDER (mock yok, gerçek ret).
+        self._seed_realtime_row(app, token_hash, user["access_token"], "invalid-refresh-token-xyz", past)
+
+        resp = client.get("/api/v1/realtime-token", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "relogin_required"
+
+        with app.app_context():
+            row = get_sb().table("api_tokens").select(
+                "sb_access_token_enc, sb_refresh_token_enc, sb_token_expires_at"
+            ).eq("token_hash", token_hash).execute().data[0]
+        assert row["sb_access_token_enc"] is None
+        assert row["sb_refresh_token_enc"] is None
+        assert row["sb_token_expires_at"] is None
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
