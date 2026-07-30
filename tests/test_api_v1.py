@@ -869,6 +869,257 @@ class TestApiV1Messaging:
         _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
 
 
+class TestApiV1GroupChat:
+    """messaging/creation.py create_group() + messaging/group_admin.py'nin
+    TAMAMININ (rename/üye ekle-çıkar/admin toggle/ayrılma) JSON API'si."""
+
+    def _create_group(self, client, headers, name, member_ids):
+        return client.post(
+            "/api/v1/messages/group/new",
+            json={"name": name, "user_ids": member_ids},
+            headers=headers,
+        )
+
+    def test_create_group_appears_in_inbox_with_correct_metadata_and_admin_flags(
+        self, app, client, test_user_factory
+    ):
+        creator = test_user_factory(email="apiv1_grp_create_a@example.com", password="TestPass123!")
+        member_b = test_user_factory(email="apiv1_grp_create_b@example.com", password="TestPass123!")
+        member_c = test_user_factory(email="apiv1_grp_create_c@example.com", password="TestPass123!")
+        token_creator = _api_token_for(app, creator["id"])
+        headers_creator = {"Authorization": f"Bearer {token_creator}"}
+
+        resp = self._create_group(
+            client, headers_creator, "api_v1 test grubu", [member_b["id"], member_c["id"]]
+        )
+        assert resp.status_code == 200
+        cid = resp.get_json()["conversation_id"]
+        assert cid
+
+        inbox = client.get("/api/v1/messages/conversations", headers=headers_creator).get_json()
+        conv = next(c for c in inbox["conversations"] if c["id"] == cid)
+        assert conv["is_group"] is True
+        assert conv["name"] == "api_v1 test grubu"
+        assert conv["member_count"] == 3
+
+        members_resp = client.get(f"/api/v1/messages/group/{cid}/members", headers=headers_creator)
+        assert members_resp.status_code == 200
+        members = members_resp.get_json()["members"]
+        assert len(members) == 3
+        by_id = {m["id"]: m for m in members}
+        assert by_id[creator["id"]]["is_admin"] is True
+        assert by_id[member_b["id"]]["is_admin"] is False
+        assert by_id[member_c["id"]]["is_admin"] is False
+
+        _cleanup_conversation(app, cid, creator["id"], member_b["id"], member_c["id"])
+
+    def test_create_group_too_few_members_returns_400(self, app, client, test_user_factory):
+        creator = test_user_factory(email="apiv1_grp_few_a@example.com", password="TestPass123!")
+        member_b = test_user_factory(email="apiv1_grp_few_b@example.com", password="TestPass123!")
+        token = _api_token_for(app, creator["id"])
+
+        resp = self._create_group(client, {"Authorization": f"Bearer {token}"}, "eksik grup", [member_b["id"]])
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "too_few_members"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", creator["id"]).execute()
+            get_sb().table("api_tokens").delete().eq("user_id", member_b["id"]).execute()
+
+    def test_non_admin_and_non_participant_get_403_on_admin_actions(self, app, client, test_user_factory):
+        """Admin OLMAYAN bir üye VE gruba HİÇ katılımcı olmayan biri, rename/
+        add/remove/toggle-admin denerse (ikisi de _api_is_group_admin() için
+        DB'de satır bulamadığından) AYNI 403 not_admin'i alır; members
+        endpoint'i ise katılımcı olmayanı ayrıca 403 forbidden ile reddeder."""
+        creator = test_user_factory(email="apiv1_grp_perm_a@example.com", password="TestPass123!")
+        member_b = test_user_factory(email="apiv1_grp_perm_b@example.com", password="TestPass123!")
+        member_d = test_user_factory(email="apiv1_grp_perm_d@example.com", password="TestPass123!")
+        outsider = test_user_factory(email="apiv1_grp_perm_out@example.com", password="TestPass123!")
+        headers_creator = {"Authorization": f"Bearer {_api_token_for(app, creator['id'])}"}
+        headers_b = {"Authorization": f"Bearer {_api_token_for(app, member_b['id'])}"}
+        headers_out = {"Authorization": f"Bearer {_api_token_for(app, outsider['id'])}"}
+
+        resp = self._create_group(client, headers_creator, "izin testi grubu", [member_b["id"], member_d["id"]])
+        cid = resp.get_json()["conversation_id"]
+
+        for headers in (headers_b, headers_out):
+            rename_resp = client.post(
+                f"/api/v1/messages/group/{cid}/rename", json={"name": "yeni ad"}, headers=headers
+            )
+            assert rename_resp.status_code == 403
+            assert rename_resp.get_json()["error"] == "not_admin"
+
+            add_resp = client.post(
+                f"/api/v1/messages/group/{cid}/members/add",
+                json={"user_ids": [outsider["id"]]},
+                headers=headers,
+            )
+            assert add_resp.status_code == 403
+            assert add_resp.get_json()["error"] == "not_admin"
+
+            remove_resp = client.post(
+                f"/api/v1/messages/group/{cid}/members/{member_d['id']}/remove", headers=headers
+            )
+            assert remove_resp.status_code == 403
+            assert remove_resp.get_json()["error"] == "not_admin"
+
+            toggle_resp = client.post(
+                f"/api/v1/messages/group/{cid}/members/{member_d['id']}/toggle-admin", headers=headers
+            )
+            assert toggle_resp.status_code == 403
+            assert toggle_resp.get_json()["error"] == "not_admin"
+
+        # outsider ayrıca üye listesini de göremez (forbidden — detail/send ile tutarlı)
+        members_resp = client.get(f"/api/v1/messages/group/{cid}/members", headers=headers_out)
+        assert members_resp.status_code == 403
+        assert members_resp.get_json()["error"] == "forbidden"
+
+        _cleanup_conversation(app, cid, creator["id"], member_b["id"], member_d["id"], outsider["id"])
+
+    def test_admin_add_remove_member_and_self_remove_guard(self, app, client, test_user_factory):
+        creator = test_user_factory(email="apiv1_grp_addrm_a@example.com", password="TestPass123!")
+        member_b = test_user_factory(email="apiv1_grp_addrm_b@example.com", password="TestPass123!")
+        member_d = test_user_factory(email="apiv1_grp_addrm_d@example.com", password="TestPass123!")
+        new_member = test_user_factory(email="apiv1_grp_addrm_new@example.com", password="TestPass123!")
+        headers_creator = {"Authorization": f"Bearer {_api_token_for(app, creator['id'])}"}
+
+        resp = self._create_group(client, headers_creator, "ekle-çıkar grubu", [member_b["id"], member_d["id"]])
+        cid = resp.get_json()["conversation_id"]
+
+        add_resp = client.post(
+            f"/api/v1/messages/group/{cid}/members/add",
+            json={"user_ids": [new_member["id"]]},
+            headers=headers_creator,
+        )
+        assert add_resp.status_code == 200
+        added = add_resp.get_json()["added"]
+        assert len(added) == 1
+        assert added[0]["id"] == new_member["id"]
+        assert added[0]["is_admin"] is False
+
+        members_after_add = client.get(
+            f"/api/v1/messages/group/{cid}/members", headers=headers_creator
+        ).get_json()["members"]
+        assert {m["id"] for m in members_after_add} == {
+            creator["id"], member_b["id"], member_d["id"], new_member["id"]
+        }
+
+        remove_resp = client.post(
+            f"/api/v1/messages/group/{cid}/members/{member_b['id']}/remove", headers=headers_creator
+        )
+        assert remove_resp.status_code == 200
+        assert remove_resp.get_json()["ok"] is True
+
+        members_after_remove = client.get(
+            f"/api/v1/messages/group/{cid}/members", headers=headers_creator
+        ).get_json()["members"]
+        assert member_b["id"] not in {m["id"] for m in members_after_remove}
+
+        # Kendini çıkarmaya çalışmak
+        self_remove_resp = client.post(
+            f"/api/v1/messages/group/{cid}/members/{creator['id']}/remove", headers=headers_creator
+        )
+        assert self_remove_resp.status_code == 400
+        assert self_remove_resp.get_json()["error"] == "cannot_remove_self"
+
+        # Zaten çıkarılmış (artık üye olmayan) birini tekrar çıkarmaya çalışmak
+        already_removed_resp = client.post(
+            f"/api/v1/messages/group/{cid}/members/{member_b['id']}/remove", headers=headers_creator
+        )
+        assert already_removed_resp.status_code == 404
+        assert already_removed_resp.get_json()["error"] == "not_a_member"
+
+        _cleanup_conversation(
+            app, cid, creator["id"], member_b["id"], member_d["id"], new_member["id"]
+        )
+
+    def test_toggle_admin_and_last_admin_guard(self, app, client, test_user_factory):
+        creator = test_user_factory(email="apiv1_grp_toggle_a@example.com", password="TestPass123!")
+        member_b = test_user_factory(email="apiv1_grp_toggle_b@example.com", password="TestPass123!")
+        member_d = test_user_factory(email="apiv1_grp_toggle_d@example.com", password="TestPass123!")
+        outsider = test_user_factory(email="apiv1_grp_toggle_out@example.com", password="TestPass123!")
+        headers_creator = {"Authorization": f"Bearer {_api_token_for(app, creator['id'])}"}
+
+        resp = self._create_group(client, headers_creator, "toggle grubu", [member_b["id"], member_d["id"]])
+        cid = resp.get_json()["conversation_id"]
+
+        # Tek admin (creator) kendini düşürmeye çalışırsa reddedilir
+        guard_resp = client.post(
+            f"/api/v1/messages/group/{cid}/members/{creator['id']}/toggle-admin", headers=headers_creator
+        )
+        assert guard_resp.status_code == 400
+        assert guard_resp.get_json()["error"] == "last_admin"
+
+        # Admin başka birini (member_b) admin yapar
+        toggle_resp = client.post(
+            f"/api/v1/messages/group/{cid}/members/{member_b['id']}/toggle-admin", headers=headers_creator
+        )
+        assert toggle_resp.status_code == 200
+        assert toggle_resp.get_json()["is_admin"] is True
+
+        # Artık başka bir admin (member_b) olduğundan creator kendini düşürebilir
+        demote_resp = client.post(
+            f"/api/v1/messages/group/{cid}/members/{creator['id']}/toggle-admin", headers=headers_creator
+        )
+        assert demote_resp.status_code == 200
+        assert demote_resp.get_json()["is_admin"] is False
+
+        # Üye olmayan (gruba hiç katılmamış) biri için toggle -> 404 not_a_member
+        not_member_resp = client.post(
+            f"/api/v1/messages/group/{cid}/members/{outsider['id']}/toggle-admin",
+            headers={"Authorization": f"Bearer {_api_token_for(app, member_b['id'])}"},
+        )
+        assert not_member_resp.status_code == 404
+        assert not_member_resp.get_json()["error"] == "not_a_member"
+
+        _cleanup_conversation(app, cid, creator["id"], member_b["id"], member_d["id"], outsider["id"])
+
+    def test_leave_group_removes_participant_and_reassigns_sole_admin(self, app, client, test_user_factory):
+        """RPC'nin gerçek davranışını (varsaymadan) doğrular: tek admin
+        ayrılınca kalan üyelerden biri otomatik admin olur; admin OLMAYAN
+        biri ayrılınca mevcut admin değişmez."""
+        creator = test_user_factory(email="apiv1_grp_leave_a@example.com", password="TestPass123!")
+        member_b = test_user_factory(email="apiv1_grp_leave_b@example.com", password="TestPass123!")
+        member_d = test_user_factory(email="apiv1_grp_leave_d@example.com", password="TestPass123!")
+        headers_creator = {"Authorization": f"Bearer {_api_token_for(app, creator['id'])}"}
+        headers_b = {"Authorization": f"Bearer {_api_token_for(app, member_b['id'])}"}
+        headers_d = {"Authorization": f"Bearer {_api_token_for(app, member_d['id'])}"}
+
+        resp = self._create_group(client, headers_creator, "ayrılma grubu", [member_b["id"], member_d["id"]])
+        cid = resp.get_json()["conversation_id"]
+
+        # Admin olmayan (member_d) ayrılır -> sadece üye sayısı düşer, admin değişmez
+        leave_d_resp = client.post(f"/api/v1/messages/group/{cid}/leave", headers=headers_d)
+        assert leave_d_resp.status_code == 200
+        assert leave_d_resp.get_json()["ok"] is True
+
+        with app.app_context():
+            remaining_after_d = get_sb().table("conversation_participants").select(
+                "user_id, is_admin"
+            ).eq("conversation_id", cid).execute().data
+        remaining_ids = {r["user_id"] for r in remaining_after_d}
+        assert member_d["id"] not in remaining_ids
+        assert {r["user_id"]: r["is_admin"] for r in remaining_after_d}[creator["id"]] is True
+
+        # Aynı kişi zaten ayrılmışken tekrar ayrılmaya çalışırsa 404 not_a_member
+        leave_d_again_resp = client.post(f"/api/v1/messages/group/{cid}/leave", headers=headers_d)
+        assert leave_d_again_resp.status_code == 404
+        assert leave_d_again_resp.get_json()["error"] == "not_a_member"
+
+        # Tek admin (creator) ayrılır -> kalan tek üye (member_b) otomatik admin olmalı
+        leave_creator_resp = client.post(f"/api/v1/messages/group/{cid}/leave", headers=headers_creator)
+        assert leave_creator_resp.status_code == 200
+
+        with app.app_context():
+            remaining_after_creator = get_sb().table("conversation_participants").select(
+                "user_id, is_admin"
+            ).eq("conversation_id", cid).execute().data
+        assert {r["user_id"] for r in remaining_after_creator} == {member_b["id"]}
+        assert remaining_after_creator[0]["is_admin"] is True
+
+        _cleanup_conversation(app, cid, creator["id"], member_b["id"], member_d["id"])
+
+
 class TestApiV1Interactions:
     def test_like_without_token_returns_401(self, client):
         resp = client.post("/api/v1/posts/nonexistent/like")

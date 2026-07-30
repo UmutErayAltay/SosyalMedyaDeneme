@@ -1581,6 +1581,11 @@ def _serialize_conversation_summary(c: dict) -> dict:
         "last_message_preview": (last.get("content") or "")[:40] if last else None,
         "last_message_at": last.get("created_at") if last else None,
         "has_unread": c["unread"],
+        # _build_convos() zaten hesaplıyor (grupta değilse None) — Faz 4 grup
+        # yönetimi eklenirken inbox satırında "3 üye" gibi bir özet göstermek
+        # için serileştirmeye eklendi, native eski sürümler bilinmeyen alanı
+        # yok sayar (additive/geriye uyumlu).
+        "member_count": c.get("member_count") if is_group else None,
     }
 
 
@@ -1842,6 +1847,252 @@ def api_mark_conversation_read(conversation_id):
         pass  # read_at migration'ı yoksa sessizce atla (mark_conversation_read ile aynı tavır)
 
     _mark_message_notifications_read(sb, me, conversation_id)
+    return jsonify(ok=True)
+
+
+# --- Grup sohbeti yönetimi (Faz 4, native Android) ---
+# app/messaging/creation.py create_group() + app/messaging/group_admin.py'nin
+# TAMAMI (rename/üye ekle-çıkar/admin toggle/ayrılma) BİREBİR aynı iş mantığıyla
+# JSON'a taşınır — yeni bir kural İCAT edilmez, sadece jsonify/durum kodu
+# sözleşmesi native'e uygun hale getirilir.
+
+def _api_is_group_admin(sb, conversation_id: str, user_id: str) -> bool:
+    """group_admin.py _is_admin()'in kopyası (import değil — o dosya bir web
+    Blueprint'i, route-seviyesi yardımcılar burada mevcut desene uyup
+    kopyalanır, sadece _common.py'deki paylaşılan yardımcılar import edilir).
+
+    Service-role RLS'i bypass ettiğinden bu kontrol DB'den her admin-gated
+    route'ta TAZE yapılır — token'ın kime ait olduğu bilgisine güvenilmez.
+    """
+    row = sb.table("conversation_participants").select("is_admin").eq(
+        "conversation_id", conversation_id
+    ).eq("user_id", user_id).execute().data
+    return bool(row) and bool(row[0].get("is_admin"))
+
+
+@bp.route("/messages/group/new", methods=["POST"])
+@api_login_required
+def api_create_group():
+    """Yeni grup sohbeti — creation.py create_group()'ın AYNI mantığı
+    (isim + kendisi hariç en az 2 üye, engellenen biri varsa 403,
+    migration uygulanmamışsa insert patlar -> 503)."""
+    sb = get_sb()
+    me = request.api_user["id"]
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
+
+    name = _str_field(data, "name")
+    user_ids = [u for u in data.get("user_ids", []) if isinstance(u, str)]
+    user_ids = list(dict.fromkeys(uid for uid in user_ids if uid != me))
+
+    if not name:
+        return jsonify(error="missing_name"), 400
+    if len(user_ids) < 2:
+        return jsonify(error="too_few_members"), 400
+
+    blocked_ids = blocked_user_ids(sb, me)
+    if any(uid in blocked_ids for uid in user_ids):
+        return jsonify(error="blocked"), 403
+
+    try:
+        conv = sb.table("conversations").insert({
+            "is_group": True, "name": name, "created_by": me,
+        }).execute()
+    except Exception:
+        return jsonify(error="groups_not_available"), 503
+    cid = conv.data[0]["id"]
+
+    # Grubu oluşturan otomatik yönetici olur, davet edilenler değil
+    # (create_group()'daki AYNI kural, created_by ile tutarlı).
+    sb.table("conversation_participants").insert(
+        [{"conversation_id": cid, "user_id": me, "is_admin": True}]
+        + [{"conversation_id": cid, "user_id": uid, "is_admin": False} for uid in user_ids]
+    ).execute()
+
+    for uid in user_ids:
+        notify(sb, recipient_id=uid, actor_id=me, type_="message", conversation_id=cid)
+
+    return jsonify(conversation_id=cid)
+
+
+@bp.route("/messages/group/<conversation_id>/rename", methods=["POST"])
+@api_login_required
+def api_rename_group(conversation_id):
+    """Grup adını değiştirir — group_admin.py rename_group() ile AYNI mantık.
+
+    Çağıran gruba hiç katılımcı değilse de _api_is_group_admin() False döner
+    (satır yok) — outsider ve "admin olmayan üye" AYNI 403 not_admin'i alır,
+    detail/members/send'deki forbidden davranışıyla tutarlı.
+    """
+    sb = get_sb()
+    me = request.api_user["id"]
+    if not _api_is_group_admin(sb, conversation_id, me):
+        return jsonify(error="not_admin"), 403
+
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
+    name = _str_field(data, "name")
+    if not name:
+        return jsonify(error="missing_name"), 400
+
+    sb.table("conversations").update({"name": name}).eq("id", conversation_id).execute()
+    return jsonify(ok=True, name=name)
+
+
+def _serialize_group_member(row: dict) -> dict:
+    """conversation_participants + profiles join satırını JSON üye sözleşmesine çevirir."""
+    p = row.get("profiles") or {}
+    return {
+        "id": p.get("id"),
+        "username": p.get("username"),
+        "avatar_url": p.get("avatar_url"),
+        "is_admin": bool(row.get("is_admin")),
+    }
+
+
+@bp.route("/messages/group/<conversation_id>/members")
+@api_login_required
+def api_group_members(conversation_id):
+    """Grup üye listesi + is_admin bayrağı — web'de doğrudan karşılığı yok,
+    native'in "Grubu Yönet" ekranı için EKLENDİ (bkz. görev tarifi). Çağıran
+    katılımcı değilse diğer endpoint'lerle (detail/send) AYNI 403 forbidden."""
+    sb = get_sb()
+    me = request.api_user["id"]
+
+    part = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id
+    ).eq("user_id", me).execute().data
+    if not part:
+        return jsonify(error="forbidden"), 403
+
+    rows = sb.table("conversation_participants").select(
+        "is_admin, profiles!conversation_participants_user_id_fkey(id, username, avatar_url)"
+    ).eq("conversation_id", conversation_id).execute().data
+    members = [_serialize_group_member(r) for r in rows]
+    members.sort(key=lambda m: (not m["is_admin"], (m["username"] or "").lower()))
+    return jsonify(members=members)
+
+
+@bp.route("/messages/group/<conversation_id>/members/add", methods=["POST"])
+@api_login_required
+def api_add_group_members(conversation_id):
+    """Gruba üye ekler — group_admin.py add_group_members() ile AYNI mantık."""
+    sb = get_sb()
+    me = request.api_user["id"]
+    if not _api_is_group_admin(sb, conversation_id, me):
+        return jsonify(error="not_admin"), 403
+
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
+    user_ids = [u for u in data.get("user_ids", []) if isinstance(u, str)]
+    user_ids = list(dict.fromkeys(uid for uid in user_ids if uid != me))
+    if not user_ids:
+        return jsonify(error="missing_user_ids"), 400
+
+    blocked_ids = blocked_user_ids(sb, me)
+    if any(uid in blocked_ids for uid in user_ids):
+        return jsonify(error="blocked"), 403
+
+    # Zaten üye olanları tekrar eklemek primary key ihlaline yol açar
+    # (add_group_members()'daki AYNI ön-filtre, grup üye sayısı küçük).
+    existing = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id
+    ).execute().data
+    existing_ids = {r["user_id"] for r in existing}
+    new_ids = [uid for uid in user_ids if uid not in existing_ids]
+    if not new_ids:
+        return jsonify(ok=True, added=[])
+
+    sb.table("conversation_participants").insert([
+        {"conversation_id": conversation_id, "user_id": uid, "is_admin": False} for uid in new_ids
+    ]).execute()
+
+    for uid in new_ids:
+        notify(sb, recipient_id=uid, actor_id=me, type_="message", conversation_id=conversation_id)
+
+    profiles = sb.table("profiles").select("id, username, avatar_url").in_("id", new_ids).execute().data
+    added = [{**p, "is_admin": False} for p in profiles]
+    return jsonify(ok=True, added=added)
+
+
+@bp.route("/messages/group/<conversation_id>/members/<user_id>/remove", methods=["POST"])
+@api_login_required
+def api_remove_group_member(conversation_id, user_id):
+    """Üyeyi gruptan çıkarır — group_admin.py remove_group_member() ile AYNI mantık."""
+    sb = get_sb()
+    me = request.api_user["id"]
+    if not _api_is_group_admin(sb, conversation_id, me):
+        return jsonify(error="not_admin"), 403
+    if user_id == me:
+        return jsonify(error="cannot_remove_self"), 400
+
+    target = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id
+    ).eq("user_id", user_id).execute().data
+    if not target:
+        return jsonify(error="not_a_member"), 404
+
+    sb.table("conversation_participants").delete().eq(
+        "conversation_id", conversation_id
+    ).eq("user_id", user_id).execute()
+    return jsonify(ok=True)
+
+
+@bp.route("/messages/group/<conversation_id>/members/<user_id>/toggle-admin", methods=["POST"])
+@api_login_required
+def api_toggle_group_admin(conversation_id, user_id):
+    """Üyenin yöneticilik durumunu tersine çevirir — group_admin.py
+    toggle_group_admin() ile AYNI mantık (tek admin kendini düşüremez)."""
+    sb = get_sb()
+    me = request.api_user["id"]
+    if not _api_is_group_admin(sb, conversation_id, me):
+        return jsonify(error="not_admin"), 403
+
+    target = sb.table("conversation_participants").select("is_admin").eq(
+        "conversation_id", conversation_id
+    ).eq("user_id", user_id).execute().data
+    if not target:
+        return jsonify(error="not_a_member"), 404
+
+    new_value = not bool(target[0].get("is_admin"))
+
+    if user_id == me and not new_value:
+        # Grup admin'siz kalmasın diye kendini düşürmeden önce başka bir
+        # admin olduğundan emin olunur (toggle_group_admin()'daki AYNI kontrol).
+        other_admins = sb.table("conversation_participants").select("user_id").eq(
+            "conversation_id", conversation_id
+        ).eq("is_admin", True).neq("user_id", me).execute().data
+        if not other_admins:
+            return jsonify(error="last_admin"), 400
+
+    sb.table("conversation_participants").update({"is_admin": new_value}).eq(
+        "conversation_id", conversation_id
+    ).eq("user_id", user_id).execute()
+    return jsonify(ok=True, is_admin=new_value)
+
+
+@bp.route("/messages/group/<conversation_id>/leave", methods=["POST"])
+@api_login_required
+def api_leave_group(conversation_id):
+    """Gruptan ayrılır — group_admin.py leave_group() ile AYNI mantık
+    (atomik RPC: ayrılma + boş grup temizliği + tek adminse admin devri,
+    hepsi tek transaction'da — bkz. sql/migration_leave_group_atomic_rpc.sql)."""
+    sb = get_sb()
+    me = request.api_user["id"]
+
+    me_row = sb.table("conversation_participants").select("is_admin").eq(
+        "conversation_id", conversation_id
+    ).eq("user_id", me).execute().data
+    if not me_row:
+        return jsonify(error="not_a_member"), 404
+
+    sb.rpc("leave_group_and_reassign_admin", {
+        "p_conversation_id": conversation_id, "p_user_id": me
+    }).execute()
+
     return jsonify(ok=True)
 
 
