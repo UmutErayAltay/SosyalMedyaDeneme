@@ -2593,3 +2593,121 @@ class TestApiV1Blocks:
             sb.table("blocks").delete().eq("blocker_id", me["id"]).eq("blocked_id", target["id"]).execute()
             sb.table("api_tokens").delete().eq("user_id", me["id"]).execute()
             sb.table("api_tokens").delete().eq("user_id", target["id"]).execute()
+
+
+def _insert_token_with_device(app, user_id, device_name):
+    """_api_token_for()'ın device_name'li versiyonu — Aktif Oturumlar
+    testlerinde birden fazla "cihaz" simüle etmek için."""
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    with app.app_context():
+        row = get_sb().table("api_tokens").insert({
+            "user_id": user_id, "token_hash": token_hash, "device_name": device_name,
+        }).execute().data[0]
+    return raw_token, row["id"]
+
+
+class TestApiV1Sessions:
+    """GET /api/v1/sessions + POST /sessions/<id>/revoke + /sessions/revoke-others
+    — api_tokens üzerinde çalışır (web'in user_sessions'ından FARKLI mekanizma,
+    bkz. api_v1.py bölüm başı yorumu)."""
+
+    def test_lists_only_own_active_sessions_with_correct_is_current(
+        self, app, client, test_user_factory
+    ):
+        user = test_user_factory(email="apiv1_sessions_list@example.com", password="TestPass123!")
+        other_user = test_user_factory(email="apiv1_sessions_other_user@example.com", password="TestPass123!")
+        token_a, id_a = _insert_token_with_device(app, user["id"], "Pixel 8")
+        token_b, id_b = _insert_token_with_device(app, user["id"], "Samsung S21")
+        _other_token, _other_id = _insert_token_with_device(app, other_user["id"], "Başkasının Telefonu")
+
+        resp = client.get("/api/v1/sessions", headers={"Authorization": f"Bearer {token_a}"})
+        assert resp.status_code == 200
+        sessions = resp.get_json()["sessions"]
+        ids = {s["id"] for s in sessions}
+        assert ids == {id_a, id_b}  # sadece KENDİ cihazları, başkasınınki yok
+        by_id = {s["id"]: s for s in sessions}
+        assert by_id[id_a]["is_current"] is True
+        assert by_id[id_b]["is_current"] is False
+        assert by_id[id_a]["device_name"] == "Pixel 8"
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("api_tokens").delete().eq("user_id", other_user["id"]).execute()
+
+    def test_cannot_revoke_someone_elses_session(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_sessions_forbid_a@example.com", password="TestPass123!")
+        other_user = test_user_factory(email="apiv1_sessions_forbid_b@example.com", password="TestPass123!")
+        token_a, _id_a = _insert_token_with_device(app, user["id"], "Cihaz A")
+        _token_b, id_b = _insert_token_with_device(app, other_user["id"], "Başkasının Cihazı")
+
+        resp = client.post(f"/api/v1/sessions/{id_b}/revoke", headers={"Authorization": f"Bearer {token_a}"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "forbidden"
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("api_tokens").delete().eq("user_id", other_user["id"]).execute()
+
+    def test_cannot_revoke_own_current_session_via_this_endpoint(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_sessions_selfrevoke@example.com", password="TestPass123!")
+        token_a, id_a = _insert_token_with_device(app, user["id"], "Cihaz A")
+
+        resp = client.post(f"/api/v1/sessions/{id_a}/revoke", headers={"Authorization": f"Bearer {token_a}"})
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "use_logout"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_revoke_other_device_removes_it_from_list_and_invalidates_its_token(
+        self, app, client, test_user_factory
+    ):
+        user = test_user_factory(email="apiv1_sessions_revoke@example.com", password="TestPass123!")
+        token_a, id_a = _insert_token_with_device(app, user["id"], "Cihaz A")
+        token_b, id_b = _insert_token_with_device(app, user["id"], "Cihaz B")
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+
+        revoke_resp = client.post(f"/api/v1/sessions/{id_b}/revoke", headers=headers_a)
+        assert revoke_resp.status_code == 200
+        assert revoke_resp.get_json()["ok"] is True
+
+        list_resp = client.get("/api/v1/sessions", headers=headers_a)
+        ids = {s["id"] for s in list_resp.get_json()["sessions"]}
+        assert ids == {id_a}
+
+        # İptal edilen token artık GERÇEKTEN geçersiz mi (kendi isteğinde de)
+        me_resp_b = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token_b}"})
+        assert me_resp_b.status_code == 401
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_revoke_others_keeps_current_and_invalidates_rest(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_sessions_revokeothers@example.com", password="TestPass123!")
+        token_a, id_a = _insert_token_with_device(app, user["id"], "Cihaz A")
+        token_b, id_b = _insert_token_with_device(app, user["id"], "Cihaz B")
+        token_c, id_c = _insert_token_with_device(app, user["id"], "Cihaz C")
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+
+        resp = client.post("/api/v1/sessions/revoke-others", headers=headers_a)
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
+        list_resp = client.get("/api/v1/sessions", headers=headers_a)
+        ids = {s["id"] for s in list_resp.get_json()["sessions"]}
+        assert ids == {id_a}
+
+        # A hâlâ çalışıyor, B ve C GERÇEKTEN iptal edildi
+        assert client.get("/api/v1/auth/me", headers=headers_a).status_code == 200
+        assert client.get(
+            "/api/v1/auth/me", headers={"Authorization": f"Bearer {token_b}"}
+        ).status_code == 401
+        assert client.get(
+            "/api/v1/auth/me", headers={"Authorization": f"Bearer {token_c}"}
+        ).status_code == 401
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
