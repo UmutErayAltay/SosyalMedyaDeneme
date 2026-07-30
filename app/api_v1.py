@@ -611,6 +611,15 @@ def api_realtime_token():
     else:
         needs_refresh = True
 
+    if needs_refresh and is_rate_limited(f"realtime_refresh:{token_hash}", 12, 60):
+        # Supabase'in refresh_token grant endpoint'ini flood etmeyi önler (aynı
+        # cihaz/oturum art arda çok sık çağırırsa) — security incelemesinde
+        # bulundu. Per-token_hash (cihaz başına) ve gerçek kullanımın (~1
+        # yenileme/saat) çok üzerinde bir bütçe: limit aşılırsa Supabase'e HİÇ
+        # gidilmez, mevcut (belki süresi yaklaşmış ama henüz geçmemiş)
+        # access_token'la devam edilir — fail-open, hard error YOK.
+        needs_refresh = False
+
     if needs_refresh:
         try:
             r = _rq.post(
@@ -633,12 +642,25 @@ def api_realtime_token():
                 # ölü Realtime oturumunu temizle; client relogin_required görüp
                 # Realtime'ı kapatır, ANA bearer token'a (bu isteği DOĞRULAYAN token)
                 # DOKUNULMAZ — kullanıcı native'de login kalmaya devam eder.
+                #
+                # CAS (compare-and-swap) ile null'lanır: sadece satırdaki
+                # sb_refresh_token_enc HÂLÂ az önce reddedilen (eski) değerse
+                # temizlenir. Security incelemesinde bulundu — aynı cihazdan
+                # eşzamanlı iki /realtime-token isteği aynı tek-kullanımlık
+                # refresh_token'ı yarışarak tüketirse, biri Supabase'den YENİ
+                # bir çift alıp satırı GÜNCELLERKEN diğeri (ESKİ refresh_token'la
+                # denediği için) 400 alır; şartsız bir null'lama bu durumda
+                # kazananın az önce yazdığı GEÇERLİ oturumu silerdi. eq ile
+                # eşleşmezse (biri zaten satırı yeni değerle değiştirmişse)
+                # update SIFIR satırı etkiler, taze oturum korunur.
                 try:
                     sb.table("api_tokens").update({
                         "sb_access_token_enc": None,
                         "sb_refresh_token_enc": None,
                         "sb_token_expires_at": None,
-                    }).eq("token_hash", token_hash).execute()
+                    }).eq("token_hash", token_hash).eq(
+                        "sb_refresh_token_enc", row.get("sb_refresh_token_enc")
+                    ).execute()
                 except Exception:
                     pass
                 return jsonify(error="relogin_required"), 401
