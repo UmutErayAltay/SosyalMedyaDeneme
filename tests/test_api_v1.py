@@ -11,6 +11,17 @@ import pytest
 from app.supabase_client import get_sb
 
 
+# app/notifications.py NOTIFICATION_TYPES ile AYNI 13 kolon — testte bağımsız
+# bir kopya tutulur ki bu dosya notifications.py'nin private sabitine değil,
+# api_v1.py'nin JSON sözleşmesine (preferences alan adları) bağımlı kalsın.
+_NOTIF_PREF_COLUMNS = [
+    "notify_like", "notify_comment", "notify_reply", "notify_comment_like",
+    "notify_comment_reaction", "notify_follow", "notify_follow_request",
+    "notify_follow_accept", "notify_message", "notify_mention",
+    "notify_hashtag_post", "notify_story_reaction", "notify_repost",
+]
+
+
 def _api_login(client, email, password):
     """Ortak login yardımcısı — TestApiV1Login/Feed/Discover/Search gibi
     login akışının KENDİSİNİ doğrulayan testlerde kullanılır."""
@@ -1118,3 +1129,244 @@ class TestApiV1CreatePost:
             sb = get_sb()
             sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
             sb.table("posts").delete().eq("id", post_id).execute()
+
+
+class TestApiV1ProfileEdit:
+    """profile.py profile_edit()'in POST dalının JSON API karşılığı.
+
+    Not: avatar dosya yükleme (upload_image) yolu BİLEREK test EDİLMİYOR —
+    TestApiV1CreatePost'daki AYNI gerekçe (bu suite'te gerçek Supabase
+    Storage'a dosya yükleyen tek bir test yok, temizlik/kirlilik riski)."""
+
+    def test_edit_profile_updates_username_bio_full_name(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_pedit_ok@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+        new_username = "apiv1peditnewuser"
+
+        resp = client.post(
+            "/api/v1/profile/edit",
+            data={
+                "full_name": "Yeni Ad Soyad",
+                "bio": "apiv1 profil düzenleme testi bio",
+                "username": new_username,
+                "is_private": "true",
+                "hide_last_seen": "false",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["profile"]["username"] == new_username
+        assert body["profile"]["full_name"] == "Yeni Ad Soyad"
+        assert body["profile"]["bio"] == "apiv1 profil düzenleme testi bio"
+        assert body["profile"]["is_private"] is True
+        assert body["profile"]["hide_last_seen"] is False
+
+        # DB'de gerçekten değişti mi (JSON yanıtı değil, kaynağın kendisi)
+        with app.app_context():
+            row = get_sb().table("profiles").select("*").eq("id", user["id"]).execute().data[0]
+        assert row["username"] == new_username
+        assert row["full_name"] == "Yeni Ad Soyad"
+        assert row["bio"] == "apiv1 profil düzenleme testi bio"
+        assert row["is_private"] is True
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_edit_profile_short_username_returns_400(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_pedit_short@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp = client.post(
+            "/api/v1/profile/edit",
+            data={"username": "ab"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "short_username"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_edit_profile_taken_username_returns_400(self, app, client, test_user_factory):
+        owner = test_user_factory(
+            email="apiv1_pedit_taken_owner@example.com", password="TestPass123!",
+            username="apiv1pedittakenowner",
+        )
+        other = test_user_factory(email="apiv1_pedit_taken_other@example.com", password="TestPass123!")
+        token = _api_token_for(app, other["id"])
+
+        resp = client.post(
+            "/api/v1/profile/edit",
+            data={"username": owner["username"]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "username_taken"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", other["id"]).execute()
+
+
+class TestApiV1NotificationPreferences:
+    """notifications.py preferences()'ın JSON API karşılığı."""
+
+    def test_get_preferences_defaults_all_true_when_no_row(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_notifpref_default@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Satırın gerçekten yok olduğundan emin ol (fail-open davranışı test ediliyor)
+        with app.app_context():
+            get_sb().table("notification_preferences").delete().eq("user_id", user["id"]).execute()
+
+        resp = client.get("/api/v1/notifications/preferences", headers=headers)
+        assert resp.status_code == 200
+        prefs = resp.get_json()["preferences"]
+        assert len(prefs) == 13
+        assert all(v is True for v in prefs.values())
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_post_preferences_updates_one_field_others_stay_true(self, app, client, test_user_factory):
+        """POST body eksik/yok alanı False sayar (web checkbox'ın "yoksa kapalı"
+        davranışının JSON karşılığı) — bu yüzden native client, web formu gibi,
+        TÜM 13 alanı her seferinde açıkça gönderir (bir ayarlar ekranının tüm
+        toggle durumunu tek seferde göndermesi doğal kullanımdır). Burada
+        notify_like DIŞINDAKİ 12 alan True gönderilip DB'de True kaldığı,
+        notify_like'ın False yazıldığı doğrulanır."""
+        user = test_user_factory(email="apiv1_notifpref_post@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        all_true_except_like = {col: True for col in _NOTIF_PREF_COLUMNS}
+        all_true_except_like["notify_like"] = False
+
+        resp = client.post(
+            "/api/v1/notifications/preferences",
+            json=all_true_except_like,
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
+        with app.app_context():
+            row = get_sb().table("notification_preferences").select("*").eq(
+                "user_id", user["id"]
+            ).execute().data[0]
+        assert row["notify_like"] is False
+        for col in _NOTIF_PREF_COLUMNS:
+            if col != "notify_like":
+                assert row[col] is True, f"{col} True kalmalıydı"
+
+        get_resp = client.get("/api/v1/notifications/preferences", headers=headers)
+        get_prefs = get_resp.get_json()["preferences"]
+        assert get_prefs["notify_like"] is False
+        assert get_prefs["notify_comment"] is True
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("notification_preferences").delete().eq("user_id", user["id"]).execute()
+
+
+class TestApiV1CloseFriends:
+    """close_friends.py'nin JSON API karşılığı."""
+
+    def test_add_list_remove_round_trip(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_cf_owner@example.com", password="TestPass123!")
+        friend = test_user_factory(email="apiv1_cf_friend@example.com", password="TestPass123!")
+        token = _api_token_for(app, owner["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        add_resp = client.post(
+            "/api/v1/close-friends/add",
+            json={"user_id": friend["id"]},
+            headers=headers,
+        )
+        assert add_resp.status_code == 200
+        assert add_resp.get_json()["ok"] is True
+
+        list_resp = client.get("/api/v1/close-friends", headers=headers)
+        assert list_resp.status_code == 200
+        users = list_resp.get_json()["users"]
+        assert any(u["id"] == friend["id"] for u in users)
+
+        remove_resp = client.post(f"/api/v1/close-friends/{friend['id']}/remove", headers=headers)
+        assert remove_resp.status_code == 200
+        assert remove_resp.get_json()["ok"] is True
+
+        list_resp2 = client.get("/api/v1/close-friends", headers=headers)
+        users2 = list_resp2.get_json()["users"]
+        assert not any(u["id"] == friend["id"] for u in users2)
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", owner["id"]).execute()
+            sb.table("close_friends").delete().eq("owner_id", owner["id"]).execute()
+
+    def test_add_self_as_close_friend_returns_400(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_cf_self@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp = client.post(
+            "/api/v1/close-friends/add",
+            json={"user_id": user["id"]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "cannot_add_self"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+
+class TestApiV1ProfileDeactivate:
+    """profile.py deactivate_account()'ın JSON API karşılığı."""
+
+    def test_wrong_password_fails_and_does_not_deactivate(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_deact_wrongpw@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp = client.post(
+            "/api/v1/profile/deactivate",
+            json={"password": "WrongPassword123!"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "invalid_password"
+
+        with app.app_context():
+            row = get_sb().table("profiles").select("is_deactivated").eq("id", user["id"]).execute().data[0]
+        assert row["is_deactivated"] is False
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_correct_password_deactivates_and_revokes_token(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_deact_ok@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/profile/deactivate",
+            json={"password": "TestPass123!"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
+        with app.app_context():
+            row = get_sb().table("profiles").select("is_deactivated").eq("id", user["id"]).execute().data[0]
+        assert row["is_deactivated"] is True
+
+        # Deaktivasyonda kullanılan token artık iptal edilmiş olmalı
+        me_resp = client.get("/api/v1/auth/me", headers=headers)
+        assert me_resp.status_code == 401
+        assert me_resp.get_json().get("error") == "unauthorized"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
