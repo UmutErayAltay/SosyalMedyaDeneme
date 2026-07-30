@@ -682,3 +682,195 @@ class TestApiV1Reels:
             sb = get_sb()
             sb.table("api_tokens").delete().eq("user_id", viewer["id"]).execute()
             sb.table("posts").delete().eq("user_id", author["id"]).execute()
+
+
+def _cleanup_conversation(app, cid, *user_ids):
+    """Konuşma testlerinin ürettiği messages/conversation_participants/
+    conversations satırlarını + api_tokens'ı temizler. (auth kullanıcısı
+    test_user_factory teardown'ında zaten silinir; profiles(id) FK'leri
+    ON DELETE CASCADE olduğundan bu satırlar aslında o silme ile de
+    temizlenirdi — burada AYRICA/erken temizlenir ki aynı test dosyasındaki
+    başka testler kalıntıyla karışmasın.)"""
+    with app.app_context():
+        sb = get_sb()
+        sb.table("messages").delete().eq("conversation_id", cid).execute()
+        sb.table("conversation_participants").delete().eq("conversation_id", cid).execute()
+        sb.table("conversations").delete().eq("id", cid).execute()
+        for uid in user_ids:
+            sb.table("api_tokens").delete().eq("user_id", uid).execute()
+
+
+class TestApiV1Messaging:
+    """messaging/*.py'nin metin-mesaj + 1:1 inbox alt kümesinin JSON API'si —
+    grup/görsel/ses/sticker/tepki/arama BU İTERASYONUN kapsamı dışında."""
+
+    def test_conversations_empty_for_new_user(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_msg_empty@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp = client.get(
+            "/api/v1/messages/conversations",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.get_json() == {"conversations": []}
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_start_send_and_view_conversation_roundtrip(self, app, client, test_user_factory):
+        user_a = test_user_factory(email="apiv1_msg_a@example.com", password="TestPass123!")
+        user_b = test_user_factory(email="apiv1_msg_b@example.com", password="TestPass123!")
+        token_a = _api_token_for(app, user_a["id"])
+        token_b = _api_token_for(app, user_b["id"])
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+        headers_b = {"Authorization": f"Bearer {token_b}"}
+
+        start_resp = client.post(f"/api/v1/messages/start/{user_b['username']}", headers=headers_a)
+        assert start_resp.status_code == 200
+        cid = start_resp.get_json()["conversation_id"]
+        assert cid
+
+        # get-or-create: aynı çift için tekrar başlatınca AYNI konuşma dönmeli
+        start_resp2 = client.post(f"/api/v1/messages/start/{user_b['username']}", headers=headers_a)
+        assert start_resp2.get_json()["conversation_id"] == cid
+
+        send_resp = client.post(
+            f"/api/v1/messages/conversations/{cid}/send",
+            json={"content": "api_v1 mesajlaşma testi - merhaba"},
+            headers=headers_a,
+        )
+        assert send_resp.status_code == 200
+        sent = send_resp.get_json()["message"]
+        assert sent["content"] == "api_v1 mesajlaşma testi - merhaba"
+        assert sent["sender_id"] == user_a["id"]
+
+        # reply_to_id ile B'den cevap
+        reply_resp = client.post(
+            f"/api/v1/messages/conversations/{cid}/send",
+            json={"content": "api_v1 mesajlaşma testi - cevap", "reply_to_id": sent["id"]},
+            headers=headers_b,
+        )
+        assert reply_resp.status_code == 200
+        reply_msg = reply_resp.get_json()["message"]
+        assert reply_msg.get("reply_to_id") == sent["id"]
+
+        # Karşı taraf (B) konuşmayı ve mesaj geçmişini görebiliyor mu
+        detail_resp = client.get(f"/api/v1/messages/conversations/{cid}", headers=headers_b)
+        assert detail_resp.status_code == 200
+        detail_body = detail_resp.get_json()
+        assert detail_body["conversation"]["id"] == cid
+        assert detail_body["conversation"]["is_group"] is False
+        assert detail_body["conversation"]["name"] == user_a["username"]
+        contents = [m["content"] for m in detail_body["messages"]]
+        assert "api_v1 mesajlaşma testi - merhaba" in contents
+        assert "api_v1 mesajlaşma testi - cevap" in contents
+
+        # Inbox'ta da görünüyor mu (her iki taraf için, karşı tarafın adıyla)
+        inbox_a = client.get("/api/v1/messages/conversations", headers=headers_a).get_json()
+        conv_a = next(c for c in inbox_a["conversations"] if c["id"] == cid)
+        assert conv_a["is_group"] is False
+        assert conv_a["name"] == user_b["username"]
+        assert conv_a["last_message_preview"] == "api_v1 mesajlaşma testi - cevap"[:40]
+
+        _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
+
+    def test_non_participant_cannot_access_conversation(self, app, client, test_user_factory):
+        """Enumeration/yetkisiz erişim koruması: konuşmaya katılımcı OLMAYAN
+        3. bir kullanıcı ne mesaj geçmişini görebilir, ne mesaj gönderebilir,
+        ne de okundu işaretleyebilir."""
+        user_a = test_user_factory(email="apiv1_msg_c_a@example.com", password="TestPass123!")
+        user_b = test_user_factory(email="apiv1_msg_c_b@example.com", password="TestPass123!")
+        outsider = test_user_factory(email="apiv1_msg_c_out@example.com", password="TestPass123!")
+        token_a = _api_token_for(app, user_a["id"])
+        token_out = _api_token_for(app, outsider["id"])
+        headers_out = {"Authorization": f"Bearer {token_out}"}
+
+        start_resp = client.post(
+            f"/api/v1/messages/start/{user_b['username']}",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        cid = start_resp.get_json()["conversation_id"]
+
+        detail_resp = client.get(f"/api/v1/messages/conversations/{cid}", headers=headers_out)
+        assert detail_resp.status_code == 403
+
+        send_resp = client.post(
+            f"/api/v1/messages/conversations/{cid}/send",
+            json={"content": "izinsiz mesaj"},
+            headers=headers_out,
+        )
+        assert send_resp.status_code == 403
+
+        mark_read_resp = client.post(
+            f"/api/v1/messages/conversations/{cid}/mark-read", headers=headers_out
+        )
+        assert mark_read_resp.status_code == 404
+
+        # Dışarıdan gönderilen mesaj gerçekten insert EDİLMEDİ mi?
+        with app.app_context():
+            rows = get_sb().table("messages").select("id").eq(
+                "conversation_id", cid
+            ).eq("content", "izinsiz mesaj").execute().data
+        assert rows == []
+
+        _cleanup_conversation(app, cid, user_a["id"], outsider["id"])
+
+    def test_mark_read_updates_has_unread_status(self, app, client, test_user_factory):
+        user_a = test_user_factory(email="apiv1_msg_read_a@example.com", password="TestPass123!")
+        user_b = test_user_factory(email="apiv1_msg_read_b@example.com", password="TestPass123!")
+        token_a = _api_token_for(app, user_a["id"])
+        token_b = _api_token_for(app, user_b["id"])
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+        headers_b = {"Authorization": f"Bearer {token_b}"}
+
+        start_resp = client.post(f"/api/v1/messages/start/{user_b['username']}", headers=headers_a)
+        cid = start_resp.get_json()["conversation_id"]
+
+        client.post(
+            f"/api/v1/messages/conversations/{cid}/send",
+            json={"content": "api_v1 okundu testi"},
+            headers=headers_a,
+        )
+
+        inbox_b_before = client.get("/api/v1/messages/conversations", headers=headers_b).get_json()
+        conv_before = next(c for c in inbox_b_before["conversations"] if c["id"] == cid)
+        assert conv_before["has_unread"] is True
+
+        mark_resp = client.post(f"/api/v1/messages/conversations/{cid}/mark-read", headers=headers_b)
+        assert mark_resp.status_code == 200
+        assert mark_resp.get_json()["ok"] is True
+
+        inbox_b_after = client.get("/api/v1/messages/conversations", headers=headers_b).get_json()
+        conv_after = next(c for c in inbox_b_after["conversations"] if c["id"] == cid)
+        assert conv_after["has_unread"] is False
+
+        _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
+
+    def test_send_message_rate_limit_enforced(self, app, client, test_user_factory):
+        """send_message()'daki AYNI limit: kullanıcı bazlı, dakikada 30 mesaj
+        (bkz. rate_limit.is_rate_limited: len(attempts) > max_attempts).
+        Taze bir kullanıcı (yeni UUID) kullanılır ki `send_message:{me}`
+        anahtarı başka testlerle KARIŞMASIN (bkz. _api_token_for docstring'i
+        — aynı tuzak burada da geçerli)."""
+        user_a = test_user_factory(email="apiv1_msg_rl_a@example.com", password="TestPass123!")
+        user_b = test_user_factory(email="apiv1_msg_rl_b@example.com", password="TestPass123!")
+        token_a = _api_token_for(app, user_a["id"])
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+
+        start_resp = client.post(f"/api/v1/messages/start/{user_b['username']}", headers=headers_a)
+        cid = start_resp.get_json()["conversation_id"]
+
+        statuses = []
+        for i in range(31):
+            resp = client.post(
+                f"/api/v1/messages/conversations/{cid}/send",
+                json={"content": f"rl-mesaj-{i}"},
+                headers=headers_a,
+            )
+            statuses.append(resp.status_code)
+
+        assert statuses[:30] == [200] * 30
+        assert statuses[30] == 429
+
+        _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
