@@ -2509,3 +2509,87 @@ class TestApiV1RealtimeToken:
 
         with app.app_context():
             get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+
+class TestApiV1Blocks:
+    """POST /api/v1/block/<username> (toggle) + GET /api/v1/blocked —
+    blocks.py toggle_block()/blocked_list()'in aynı mantığı."""
+
+    def test_cannot_block_self(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_block_self@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp = client.post(
+            f"/api/v1/block/{user['username']}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "cannot_block_self"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_block_toggle_appears_in_blocked_list_and_unblock_removes_it(
+        self, app, client, test_user_factory
+    ):
+        me = test_user_factory(email="apiv1_block_me@example.com", password="TestPass123!")
+        target = test_user_factory(email="apiv1_block_target@example.com", password="TestPass123!")
+        token = _api_token_for(app, me["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        block_resp = client.post(f"/api/v1/block/{target['username']}", headers=headers)
+        assert block_resp.status_code == 200
+        assert block_resp.get_json() == {"ok": True, "blocked": True}
+
+        list_resp = client.get("/api/v1/blocked", headers=headers)
+        assert list_resp.status_code == 200
+        usernames = [u["username"] for u in list_resp.get_json()["users"]]
+        assert target["username"] in usernames
+
+        unblock_resp = client.post(f"/api/v1/block/{target['username']}", headers=headers)
+        assert unblock_resp.status_code == 200
+        assert unblock_resp.get_json() == {"ok": True, "blocked": False}
+
+        list_after_resp = client.get("/api/v1/blocked", headers=headers)
+        usernames_after = [u["username"] for u in list_after_resp.get_json()["users"]]
+        assert target["username"] not in usernames_after
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("blocks").delete().eq("blocker_id", me["id"]).eq("blocked_id", target["id"]).execute()
+            sb.table("api_tokens").delete().eq("user_id", me["id"]).execute()
+            sb.table("api_tokens").delete().eq("user_id", target["id"]).execute()
+
+    def test_blocking_removes_mutual_follow(self, app, client, test_user_factory):
+        """toggle_block()'ın yan etkisi: engelleyince her iki yöndeki takip de kopar."""
+        me = test_user_factory(email="apiv1_block_follow_me@example.com", password="TestPass123!")
+        target = test_user_factory(email="apiv1_block_follow_target@example.com", password="TestPass123!")
+        token_me = _api_token_for(app, me["id"])
+        token_target = _api_token_for(app, target["id"])
+
+        # Karşılıklı takip kur
+        client.post(
+            f"/api/v1/profile/{target['username']}/follow",
+            headers={"Authorization": f"Bearer {token_me}"},
+        )
+        client.post(
+            f"/api/v1/profile/{me['username']}/follow",
+            headers={"Authorization": f"Bearer {token_target}"},
+        )
+
+        client.post(
+            f"/api/v1/block/{target['username']}",
+            headers={"Authorization": f"Bearer {token_me}"},
+        )
+
+        with app.app_context():
+            sb = get_sb()
+            follows = sb.table("follows").select("follower_id, following_id").or_(
+                f"and(follower_id.eq.{me['id']},following_id.eq.{target['id']}),"
+                f"and(follower_id.eq.{target['id']},following_id.eq.{me['id']})"
+            ).execute().data
+            assert follows == []
+
+            sb.table("blocks").delete().eq("blocker_id", me["id"]).eq("blocked_id", target["id"]).execute()
+            sb.table("api_tokens").delete().eq("user_id", me["id"]).execute()
+            sb.table("api_tokens").delete().eq("user_id", target["id"]).execute()
