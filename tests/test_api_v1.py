@@ -2711,3 +2711,125 @@ class TestApiV1Sessions:
 
         with app.app_context():
             get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+
+class TestApiV1HashtagTrending:
+    """GET /api/v1/hashtag/<tag> + POST /hashtag/<tag>/follow + GET /trending
+    — hashtags.py hashtag_posts()/toggle_hashtag_follow()/_trending_hashtags()'in
+    JSON API karşılığı (Faz 4 sonrası eksik giderme, native Android gündem/hashtag
+    sayfası). Post şekli /api/v1/feed ile AYNI sözleşme (_attach_post_metrics/
+    attach_polls çıktısı) — ayrı bir serialization testi YAPILMIYOR, sadece
+    kritik alanların (like_count/comment_count/liked_by_me) varlığı doğrulanır."""
+
+    def test_hashtag_posts_without_token_returns_401(self, client):
+        resp = client.get("/api/v1/hashtag/deneme")
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_hashtag_posts_shows_real_post_with_that_tag(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_hashtag_posts@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+        tag = "apiv1hashtagposttest"
+
+        create_resp = client.post(
+            "/api/v1/posts",
+            data={"content": f"api_v1 hashtag sayfası testi #{tag}"},
+            headers=headers,
+        )
+        assert create_resp.status_code == 200
+        post_id = create_resp.get_json()["post"]["id"]
+
+        resp = client.get(f"/api/v1/hashtag/{tag}", headers=headers)
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert "posts" in body and "is_following" in body
+        assert body["is_following"] is False
+        matched = next((p for p in body["posts"] if p["id"] == post_id), None)
+        assert matched is not None
+        # /api/v1/feed ile AYNI sözleşme (_attach_post_metrics çıktısı)
+        assert "like_count" in matched and "comment_count" in matched and "liked_by_me" in matched
+
+        # Büyük/küçük harf duyarsız (hashtag_posts()'daki AYNI davranış: tag.lower())
+        resp_upper = client.get(f"/api/v1/hashtag/{tag.upper()}", headers=headers)
+        assert resp_upper.status_code == 200
+        assert any(p["id"] == post_id for p in resp_upper.get_json()["posts"])
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("post_hashtags").delete().eq("post_id", post_id).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_hashtag_posts_unknown_tag_returns_empty_list_not_error(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_hashtag_unknown@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.get("/api/v1/hashtag/hicbirzamankullanilmayacakbiretiket999", headers=headers)
+        assert resp.status_code == 200
+        assert resp.get_json() == {"posts": [], "is_following": False}
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_toggle_hashtag_follow_flips_state(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_hashtag_follow@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+        tag = "apiv1hashtagfollowtest"
+
+        follow_resp = client.post(f"/api/v1/hashtag/{tag}/follow", headers=headers)
+        assert follow_resp.status_code == 200
+        assert follow_resp.get_json()["following"] is True
+
+        # is_following artık gerçekten True (hashtag_posts sözleşmesiyle doğrulanır)
+        check_resp = client.get(f"/api/v1/hashtag/{tag}", headers=headers)
+        assert check_resp.get_json()["is_following"] is True
+
+        unfollow_resp = client.post(f"/api/v1/hashtag/{tag}/follow", headers=headers)
+        assert unfollow_resp.status_code == 200
+        assert unfollow_resp.get_json()["following"] is False
+
+        check_resp2 = client.get(f"/api/v1/hashtag/{tag}", headers=headers)
+        assert check_resp2.get_json()["is_following"] is False
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("hashtag_follows").delete().eq("user_id", user["id"]).execute()
+            sb.table("hashtags").delete().eq("tag", tag).execute()
+
+    def test_trending_returns_200_and_includes_freshly_created_hashtag(
+        self, app, client, test_user_factory
+    ):
+        """Cache-bypass kararı: ayrı bir cache-atlama mekanizması İCAT EDİLMEDİ —
+        api_create_post() zaten içerikli her post oluşturulduğunda
+        invalidate("trending:") çağırıyor (api_v1.py api_create_post(), web'in
+        create_post()'uyla AYNI yan etki). Bu yüzden testte post oluşturmak
+        120sn'lik TTL cache'i kendiliğinden temizliyor ve hemen ardından gelen
+        /trending isteği TAZE hesaplanıyor — ayrı bir bypass'a gerek kalmadı."""
+        user = test_user_factory(email="apiv1_trending@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+        tag = "apiv1trendingtesttag"
+
+        create_resp = client.post(
+            "/api/v1/posts",
+            data={"content": f"api_v1 gündem testi #{tag}", "visibility": "public"},
+            headers=headers,
+        )
+        assert create_resp.status_code == 200
+        post_id = create_resp.get_json()["post"]["id"]
+
+        resp = client.get("/api/v1/trending", headers=headers)
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert "tags" in body and isinstance(body["tags"], list)
+        assert any(t["tag"] == tag for t in body["tags"])
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("post_hashtags").delete().eq("post_id", post_id).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
