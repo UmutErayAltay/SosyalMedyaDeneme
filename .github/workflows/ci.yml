@@ -47,9 +47,12 @@ jobs:
       # tests/conftest.py) — bu yüzden repo secret'ları gerekli:
       # Settings → Secrets and variables → Actions → New repository secret
       # FLASK_SECRET_KEY, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY,
-      # SUPABASE_SECRET_KEY (service role), SUPABASE_JWKS_URL
+      # SUPABASE_SECRET_KEY (service role), SUPABASE_JWKS_URL,
+      # REALTIME_TOKEN_ENCRYPTION_KEY
       # (2026-07-16: secret'lar eklendi, ilk koşumda eksikti — bu commit
       # secret'lar hazır olduktan sonraki doğrulama koşumunu tetiklemek için.)
+      # (2026-07-31: REALTIME_TOKEN_ENCRYPTION_KEY eksikti, Realtime
+      # şifreleme testleri sessizce fail-open olup 5 test kırmızıydı.)
       - name: pytest (gerçek Supabase'e karşı)
         env:
           FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
@@ -57,4 +60,5 @@ jobs:
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           SUPABASE_JWKS_URL: ${{ secrets.SUPABASE_JWKS_URL }}
+          REALTIME_TOKEN_ENCRYPTION_KEY: ${{ secrets.REALTIME_TOKEN_ENCRYPTION_KEY }}
         run: python -m pytest tests/ -v
