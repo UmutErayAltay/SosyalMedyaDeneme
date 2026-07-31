@@ -439,7 +439,11 @@ def api_google_login():
             current_app.config["SUPABASE_PUBLISHABLE_KEY"],
         )
         res = call_with_ssl_retry(lambda: tmp.auth.sign_in_with_id_token(credentials))
-    except Exception:
+    except Exception as e:
+        # Gerçek red nedenini (nonce uyuşmazlığı/audience/expired vb.) logla —
+        # önceden çıplak "invalid_token" dönüp sebep tamamen kayboluyordu,
+        # native'de "hesap seçtim ama giriş olmadı" raporu teşhis edilemiyordu.
+        current_app.logger.error(f"Google id_token girişi reddedildi: {e}")
         return jsonify(error="invalid_token"), 401
 
     user = getattr(res, "user", None)
