@@ -10,7 +10,7 @@ from ..mentions import notify_mentions
 from ..cache import invalidate
 from ..social import REACTIONS, _find_recent_duplicate_comment, _notify_pool
 from ..post_views import record_view
-from ..storage_helper import upload_image
+from ..storage_helper import upload_image, upload_video
 from ..hashtags import sync_post_hashtags, notify_hashtag_followers, extract_hashtags
 
 
@@ -237,26 +237,41 @@ def api_add_comment(post_id):
 
 # ----------------------- POST OLUŞTURMA (Faz 4, native Android) -----------------------
 # app/routes/posts.py create_post()'un BİLİNÇLİ bir alt kümesi: metin + TEK
-# görsel + görünürlük. KAPSAM DIŞI (bu turda hiç dokunulmadı): çoklu görsel
-# (max 4), video/reel oluşturma, GIF, anket, taslak/planlama, konum.
+# görsel + TEK video/reel + görünürlük. KAPSAM DIŞI (bu turda hiç dokunulmadı):
+# çoklu görsel (max 4), GIF, anket, taslak/planlama, konum.
 
 @bp.route("/posts", methods=["POST"])
 @api_login_required
 def api_create_post():
     """Yeni post oluştur — multipart/form-data (web formuyla AYNI kodlama,
-    JSON DEĞİL, çünkü görsel dosyası içeriyor). Alanlar: `content` (metin),
-    `visibility` (public/followers/close_friends, varsayılan public),
-    `image` (opsiyonel, TEK dosya — create_post()'daki `images` çoklu
-    alanının BİLİNÇLİ olarak tekil hali)."""
+    JSON DEĞİL, çünkü görsel/video dosyası içeriyor). Alanlar: `content`
+    (metin), `visibility` (public/followers/close_friends, varsayılan
+    public), `image` (opsiyonel, TEK dosya — create_post()'daki `images`
+    çoklu alanının BİLİNÇLİ olarak tekil hali), `video` (opsiyonel, TEK
+    dosya) + `is_reel` ("true"/"false" — native her zaman açık gönderir,
+    web'in checkbox `"on"`'undan FARKLI, bkz. settings.py _bool_form_field).
+
+    create_post()'daki AYNI kural: is_reel=true iken video YOKSA
+    `reel_requires_video` hatası döner. Reels sekmesi (api_v1/reels.py)
+    is_reel=True + video_url IS NOT NULL + visibility=public filtresiyle
+    ZATEN doğru postları buluyor — burada SADECE video_url/is_reel eklemek
+    yeterli, reels.py'ye dokunulmadı.
+    """
     sb = get_sb()
     me = request.api_user["id"]
 
     content = (request.form.get("content") or "").strip()
     image_file = request.files.get("image")
     has_image = bool(image_file and image_file.filename)
+    video_file = request.files.get("video")
+    has_video = bool(video_file and video_file.filename)
+    is_reel = request.form.get("is_reel") == "true"
 
-    if not content and not has_image:
+    if not content and not has_image and not has_video:
         return jsonify(error="empty"), 400
+
+    if is_reel and not has_video:
+        return jsonify(error="reel_requires_video"), 400
 
     visibility = request.form.get("visibility", "public")
     if visibility not in ("public", "followers", "close_friends"):
@@ -269,12 +284,22 @@ def api_create_post():
             return jsonify(error="upload_failed"), 400
         image_urls = [image_url]
 
+    video_url = None
+    if has_video:
+        video_url = upload_video(video_file, folder="posts")
+        if not video_url:
+            return jsonify(error="video_upload_failed"), 400
+
     insert_data = {"user_id": me, "content": content, "image_urls": image_urls}
     if image_urls:
         insert_data["image_url"] = image_urls[0]
 
     try:
         full_data = {**insert_data, "visibility": visibility, "is_draft": False}
+        if video_url:
+            full_data["video_url"] = video_url
+        if is_reel:
+            full_data["is_reel"] = is_reel
         inserted = sb.table("posts").insert(full_data).execute()
     except Exception:
         inserted = sb.table("posts").insert(insert_data).execute()
