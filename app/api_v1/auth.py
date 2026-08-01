@@ -4,15 +4,15 @@
 import secrets
 from datetime import datetime, timezone
 
-from flask import request, jsonify, current_app
+from flask import request, jsonify, current_app, url_for
 from supabase import create_client
 
 from . import bp
 from ._common import _str_field, _hash_token, api_login_required
-from ..supabase_client import get_sb, call_with_ssl_retry
+from ..supabase_client import get_sb, get_auth, call_with_ssl_retry
 from ..rate_limit import is_rate_limited
 from ..cache import invalidate
-from ..auth import _unique_username
+from ..auth import _unique_username, _reset_rate_limited
 from ..realtime_session import _store_realtime_session, _decrypt_token
 
 
@@ -404,6 +404,55 @@ def api_google_login():
             "is_admin": bool(prof_data.get("is_admin")),
         },
     )
+
+
+@bp.route("/auth/forgot-password", methods=["POST"])
+def api_forgot_password():
+    """Şifre sıfırlama e-postası iste — auth.py forgot_password()'ün (web) AYNI
+    çekirdek mantığı: AYNI `_reset_rate_limited(ip)` sayacı (ayrı bir anahtar
+    aynı IP'ye toplamda iki kat deneme hakkı verirdi — login()'deki `login:{ip}`
+    anahtarını web ile PAYLAŞMA gerekçesinin aynısı) ve Supabase'in HAZIR
+    `reset_password_for_email()` fonksiyonu. E-posta ŞABLONU ve gönderimi
+    tamamen Supabase'in altyapısında — repo'da SMTP/şablon YOK.
+
+    `@api_login_required` BİLEREK YOK: login/register gibi açık (oturumsuz)
+    bir endpoint — şifresini unutmuş kullanıcının zaten token'ı olamaz.
+
+    redirect_to MEVCUT WEB SAYFASINA (auth.reset_password) işaret eder: kullanıcı
+    e-postadaki linke mobil tarayıcıda tıklayıp sıfırlamayı orada tamamlar.
+    Uygulama-içi sıfırlama (deep link + AndroidManifest intent-filter + Supabase
+    redirect-URL allowlist değişikliği) BİLİNÇLİ olarak kapsam dışı — Supabase'in
+    redirect ayarını değiştirmek CANLI web akışını bozma riski taşır.
+
+    HER DURUMDA jsonify(ok=True): e-postanın kayıtlı olup olmadığı, Supabase'in
+    hata verip vermediği DIŞARI SIZDIRILMAZ (kullanıcı-enumeration koruması,
+    web forgot_password()'ün "aynı jenerik mesaj" davranışının JSON karşılığı).
+    Tek istisna 429 — rate limit'in kendisi bir e-postanın varlığını değil,
+    bu IP'nin deneme sayısını ele verir.
+    """
+    if _reset_rate_limited(request.remote_addr or "unknown"):
+        return jsonify(error="rate_limited"), 429
+
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
+    email = _str_field(data, "email")
+
+    if email:
+        try:
+            redirect_url = url_for("auth.reset_password", _external=True)
+            call_with_ssl_retry(
+                lambda: get_auth().auth.reset_password_for_email(
+                    email, {"redirect_to": redirect_url}
+                )
+            )
+        except Exception as e:
+            # Logla ama İSTEMCİYE YANSITMA — enumeration koruması (web
+            # forgot_password()'te bu `pass`; burada teşhis için log eklendi,
+            # yanıt DEĞİŞMEZ).
+            current_app.logger.warning(f"Şifre sıfırlama e-postası gönderilemedi: {e}")
+
+    return jsonify(ok=True)
 
 
 @bp.route("/auth/logout", methods=["POST"])

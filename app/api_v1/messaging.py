@@ -22,9 +22,9 @@ from ..notifications import notify
 # app/messaging/*.py'nin BİLİNÇLİ bir alt kümesi JSON'a taşınır: inbox +
 # konuşma geçmişi (sayfalı) + metin/görsel mesajı gönderme (+reply_to) +
 # get-or-create 1:1 konuşma başlatma + okundu işaretleme + grup oluşturma/
-# yönetimi (Faz 4). KAPSAM DIŞI (hâlâ hiç dokunulmadı): mesaj düzenleme/
-# silme/sabitleme/iletme/tepki, ses/sticker/GIF mesaj, WebRTC/LiveKit arama,
-# Supabase Realtime (native taraf basit polling yapacak).
+# yönetimi (Faz 4) + mesaj gelişmiş işlemleri (Faz 5: düzenle/sil/tepki/
+# sabitle/ilet/sohbeti sessize al/arama). KAPSAM DIŞI (hâlâ hiç dokunulmadı):
+# ses/sticker/GIF mesaj, WebRTC/LiveKit arama.
 
 def _serialize_conversation_summary(c: dict) -> dict:
     """_common.py _build_convos() satırını JSON sözleşmesine çevirir.
@@ -49,6 +49,11 @@ def _serialize_conversation_summary(c: dict) -> dict:
         # için serileştirmeye eklendi, native eski sürümler bilinmeyen alanı
         # yok sayar (additive/geriye uyumlu).
         "member_count": c.get("member_count") if is_group else None,
+        # Sessize alma (Faz 5): _build_convos() bunu ZATEN hesaplıyor
+        # (my_parts -> is_muted), sadece serileştirmeye eklendi — inbox
+        # satırında sessiz-zil ikonu gösterilebilsin diye. Kolon/migration
+        # yoksa _build_convos() zaten False döner.
+        "is_muted": bool(c.get("is_muted")),
     }
 
 
@@ -182,6 +187,11 @@ def api_message_conversation_detail(conversation_id):
             "is_group": is_group,
             "name": group_name if is_group else (other_user.get("username") if other_user else None),
             "avatar_url": None if is_group else (other_user.get("avatar_url") if other_user else None),
+            # Sessize alma durumu (Faz 5) — EK SORGU GEREKMEZ: yukarıdaki
+            # katılımcı doğrulaması zaten `.select()` (tüm kolonlar) ile
+            # satırı çekmiş durumda. is_muted kolonu (migration_conversation_
+            # mute.sql) yoksa .get() None döner -> False.
+            "is_muted": bool(part[0].get("is_muted")),
         },
     )
 
@@ -323,6 +333,420 @@ def api_mark_conversation_read(conversation_id):
 
     _mark_message_notifications_read(sb, me, conversation_id)
     return jsonify(ok=True)
+
+
+# --- Mesaj gelişmiş işlemleri (Faz 5 Dalga 1B, native Android) ---
+# app/messaging/sending.py (delete/edit/pin/mute/forward-targets/forward),
+# reactions.py (react) ve views.py (sohbet içi + global arama) BİREBİR aynı iş
+# mantığı ve AYNI DURUM KODLARIYLA JSON'a taşınır — yeni bir kural, yeni bir
+# yetki modeli veya yeni bir SQL migration'ı İCAT EDİLMEZ (gereken kolonların
+# HEPSİ zaten canlıda: messages.edited_at/pinned_at/is_forwarded,
+# conversation_participants.is_muted, message_reactions tablosu).
+#
+# İZİN ASİMETRİSİ (kaynak dosyalardan birebir — karıştırılmamalı):
+#   - delete/edit : SADECE mesajın GÖNDERENİ (sender_id = me filtresi)
+#   - pin         : konuşmanın HERHANGİ BİR katılımcısı (gönderen olmak şart değil)
+#   - mute        : SADECE kendi katılımcı satırı (başkasını sessize alamazsın)
+#   - react       : katılımcı olmayan 403 DEĞİL **404** alır — bu BİLİNÇLİ bir
+#                   enumeration korumasıdır (reactions.py'deki abort(404)
+#                   yorumu), "düzeltilmemeli".
+#
+# Okuma yolunda backend değişikliği GEREKMEDİ: api_message_conversation_detail()
+# `select("*")` kullandığı için edited_at/pinned_at/is_forwarded zaten mesaj
+# satırlarında dönüyor (native DTO'ya alan eklemek yeterli).
+#
+# BİLİNÇLİ SAPMA (web'den): hata gövdeleri Türkçe cümle DEĞİL makine-okunur kod
+# (örn. "empty"/"not_found") — api_v1'in bu dosyadaki mevcut sözleşmesi bu
+# (native istemci kodu switch'liyor, kullanıcıya gösterilecek metni KENDİ
+# yerelleştirmesinden seçiyor). Durum KODLARI web ile birebir aynıdır.
+
+
+@bp.route("/messages/<message_id>/delete", methods=["POST"])
+@api_login_required
+def api_delete_message(message_id):
+    """Kendi mesajını siler — sending.py delete_message() ile AYNI mantık:
+    HARD delete (soft-delete kolonu YOK), sahiplik uygulama katmanında
+    `sender_id = me` filtresiyle sağlanır (service-role RLS'i bypass ettiği
+    için bu filtre TEK savunma hattıdır, düşürülemez).
+
+    Hiçbir satır eşleşmese bile (başkasının mesajı / zaten silinmiş) 404 DEĞİL
+    {ok:true} döner — kaynak fonksiyonun AYNI davranışı; "bu id'li mesaj var
+    mı" sorusuna cevap sızdırmamak da bu tavrın bir yan faydası.
+    message_reactions satırları ON DELETE CASCADE ile birlikte ölür.
+    """
+    sb = get_sb()
+    me = request.api_user["id"]
+    sb.table("messages").delete().eq("id", message_id).eq("sender_id", me).execute()
+    return jsonify(ok=True)
+
+
+@bp.route("/messages/<message_id>/edit", methods=["POST"])
+@api_login_required
+def api_edit_message(message_id):
+    """Kendi mesajının METNİNİ düzenler — sending.py edit_message() ile AYNI
+    mantık (boş olamaz, <=2000 karakter, sender_id=me filtresi, edited_at
+    kolonu yoksa yalnızca content'i güncelleyen fallback, hiçbir satır
+    güncellenmezse 404).
+
+    Ek (görsel/ses/sticker) ASLA değişmez — bu yüzden istemci düzenle
+    seçeneğini SADECE salt-metin mesajlarda göstermelidir (web UI'ın AYNI
+    kuralı, bkz. chat.js).
+    """
+    sb = get_sb()
+    me = request.api_user["id"]
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
+
+    content = _str_field(data, "content")
+    if not content:
+        return jsonify(error="empty"), 400
+    if len(content) > 2000:
+        return jsonify(error="too_long"), 400
+
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        updated = sb.table("messages").update({"content": content, "edited_at": now}).eq(
+            "id", message_id).eq("sender_id", me).execute().data
+    except Exception:
+        # edited_at migration'ı (sql/migration_message_edit.sql) uygulanmamışsa
+        # "düzenlendi" etiketi olmadan sessizce content'i güncelle.
+        updated = sb.table("messages").update({"content": content}).eq(
+            "id", message_id).eq("sender_id", me).execute().data
+        now = None
+    if not updated:
+        return jsonify(error="not_found"), 404
+    return jsonify(ok=True, content=content, edited_at=now)
+
+
+@bp.route("/messages/<message_id>/react", methods=["POST"])
+@api_login_required
+def api_react_message(message_id):
+    """Mesaja emoji tepkisi ekle/değiştir/sil — reactions.py react_message()
+    ile AYNI 3 yönlü toggle: aynı tepki tekrar gönderilirse SİLİNİR
+    (reaction:null, 200), farklı tepki GÜNCELLENİR (200), hiç yoksa EKLENİR
+    (201). Kullanıcı başına mesaj başına TEK tepki (PK (message_id, user_id)).
+
+    DİKKAT — mesaj yoksa VEYA çağıran o konuşmanın katılımcısı değilse 403
+    değil **404** döner: bu bilinçli bir enumeration korumasıdır (saldırgan
+    "bu message_id var ama benim değil" ile "hiç yok"u ayırt edemesin), kaynak
+    fonksiyondan aynen taşındı — "tutarsız" görünüp düzeltilmemelidir.
+    """
+    sb = get_sb()
+    me = request.api_user["id"]
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
+
+    reaction = _str_field(data, "reaction")
+    if not reaction:
+        return jsonify(error="empty_reaction"), 400
+
+    try:
+        msg = sb.table("messages").select("conversation_id").eq("id", message_id).execute().data
+        if not msg:
+            return jsonify(error="not_found"), 404
+        conversation_id = msg[0]["conversation_id"]
+    except Exception:
+        return jsonify(error="not_found"), 404
+
+    try:
+        part = sb.table("conversation_participants").select("user_id").eq(
+            "conversation_id", conversation_id).eq("user_id", me).execute().data
+        if not part:
+            return jsonify(error="not_found"), 404  # 403 DEĞİL — bkz. docstring
+    except Exception:
+        return jsonify(error="not_found"), 404
+
+    try:
+        existing = sb.table("message_reactions").select("reaction").eq(
+            "message_id", message_id).eq("user_id", me).execute().data
+        if existing:
+            if existing[0].get("reaction") == reaction:
+                sb.table("message_reactions").delete().eq(
+                    "message_id", message_id).eq("user_id", me).execute()
+                return jsonify(ok=True, reaction=None), 200
+            sb.table("message_reactions").update({"reaction": reaction}).eq(
+                "message_id", message_id).eq("user_id", me).execute()
+            return jsonify(ok=True, reaction=reaction), 200
+        sb.table("message_reactions").insert({
+            "message_id": message_id, "user_id": me, "reaction": reaction,
+        }).execute()
+        return jsonify(ok=True, reaction=reaction), 201
+    except Exception as e:
+        # message_reactions tablosu henüz oluşturulmadıysa (reactions.py'deki
+        # AYNI ayırt etme koşulu) — gerçek bir hata sessizce yutulmaz, raise edilir.
+        if "message_reactions" in str(e) or "does not exist" in str(e):
+            return jsonify(error="feature_not_yet_active"), 503
+        raise
+
+
+@bp.route("/messages/<message_id>/pin", methods=["POST"])
+@api_login_required
+def api_pin_message(message_id):
+    """Mesajı sabitle / sabitlemeyi kaldır (toggle) — sending.py pin_message()
+    ile AYNI mantık. Yetki, delete/edit'ten FARKLI olarak GÖNDEREN değil
+    konuşmanın HERHANGİ BİR KATILIMCISIDIR (sabitleme sohbetin ortak hafızası,
+    kaynak fonksiyonun bilinçli kuralı) — mesaj yoksa 404, katılımcı değilse
+    403, pinned_at kolonu yoksa 503.
+    """
+    sb = get_sb()
+    me = request.api_user["id"]
+
+    try:
+        msg = sb.table("messages").select("id, conversation_id, pinned_at").eq(
+            "id", message_id).execute().data
+    except Exception:
+        # pinned_at kolonu (sql/migration_message_pin.sql) yoksa SELECT'in
+        # kendisi patlar — web'de bu satır try DIŞINDA olduğu için 500 verirdi;
+        # JSON API'de aynı durum, update'inkiyle AYNI 503'e çevrildi (bu
+        # dosyanın migration-toleransı kuralı).
+        return jsonify(error="unavailable"), 503
+    if not msg:
+        return jsonify(error="not_found"), 404
+    conversation_id = msg[0]["conversation_id"]
+
+    part = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id).eq("user_id", me).execute().data
+    if not part:
+        return jsonify(error="forbidden"), 403
+
+    currently_pinned = msg[0].get("pinned_at") is not None
+    new_pinned_at = None if currently_pinned else datetime.now(timezone.utc).isoformat()
+
+    try:
+        sb.table("messages").update({"pinned_at": new_pinned_at}).eq("id", message_id).execute()
+    except Exception:
+        return jsonify(error="unavailable"), 503
+    return jsonify(ok=True, pinned=new_pinned_at is not None)
+
+
+@bp.route("/messages/forward-targets")
+@api_login_required
+def api_forward_targets():
+    """İletme hedefleri: kullanıcının TÜM konuşmaları — sending.py
+    forward_targets() ile AYNI mantık (paylaşılan _build_convos() üzerinden,
+    ayrı bir sorgu İCAT EDİLMEDİ; ad = grup adı / karşı kullanıcı adı /
+    "Bilinmeyen").
+
+    BİLİNÇLİ SAPMA: web çıplak bir JSON DİZİSİ döner, burada `{"targets": [...]}`
+    nesnesi dönülür — bu dosyadaki diğer liste endpoint'leriyle (conversations=,
+    members=) tutarlı olsun ve ileride `error` alanı eklenebilsin diye.
+    """
+    sb = get_sb()
+    me = request.api_user["id"]
+    convos = _build_convos(sb, me)
+    targets = [
+        {
+            "id": c["id"],
+            "name": c["name"] if c["is_group"] else (
+                c["other_user"].get("username") if c["other_user"] else "Bilinmeyen"
+            ),
+        }
+        for c in convos
+    ]
+    return jsonify(targets=targets)
+
+
+@bp.route("/messages/<message_id>/forward", methods=["POST"])
+@api_login_required
+def api_forward_message(message_id):
+    """Mesajı başka bir konuşmaya iletir — sending.py forward_message()'ın
+    6 kontrolü AYNI SIRAYLA: (a) kaynak mesaj yoksa 404, (b) kaynak konuşmanın
+    katılımcısı değilsem 403 (başkasının sohbetindeki mesaj iletilemez),
+    (c) hedef konuşmanın katılımcısı değilsem 403, (d) hedefteki biriyle
+    engelleme varsa 403 blocked, (e) send_message ile AYNI kullanıcı-bazlı
+    limit (30/60sn) aşılırsa 429, (f) içerik kopyalanıp is_forwarded=True ile
+    YENİ mesaj olarak insert edilir (kolon yoksa kolonsuz retry).
+
+    Sıra ÖNEMLİ: rate limit yetki kontrollerinden SONRA gelir — geçersiz bir
+    iletme denemesi kullanıcının kendi gönderim kotasını yakmaz.
+    """
+    sb = get_sb()
+    me = request.api_user["id"]
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
+
+    target_cid = _str_field(data, "target_conversation_id")
+    if not target_cid:
+        return jsonify(error="missing_target"), 400
+
+    src = sb.table("messages").select(
+        "id, conversation_id, sender_id, content, image_url, audio_url, sticker_id"
+    ).eq("id", message_id).execute().data
+    if not src:
+        return jsonify(error="not_found"), 404
+    msg = src[0]
+
+    part_src = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", msg["conversation_id"]).eq("user_id", me).execute().data
+    if not part_src:
+        return jsonify(error="forbidden"), 403
+
+    part_tgt = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", target_cid).eq("user_id", me).execute().data
+    if not part_tgt:
+        return jsonify(error="forbidden"), 403
+
+    others = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", target_cid).neq("user_id", me).execute().data
+    if any(is_blocked_either_way(sb, me, o["user_id"]) for o in others):
+        return jsonify(error="blocked"), 403
+
+    if is_rate_limited(f"send_message:{me}", 30, 60):
+        return jsonify(error="rate_limited"), 429
+
+    insert_data = {
+        "conversation_id": target_cid,
+        "sender_id": me,
+        "content": msg.get("content", ""),
+        "image_url": msg.get("image_url"),
+    }
+    optional = {}
+    if msg.get("audio_url"):
+        optional["audio_url"] = msg["audio_url"]
+    if msg.get("sticker_id"):
+        optional["sticker_id"] = msg["sticker_id"]
+    try:
+        sb.table("messages").insert({**insert_data, **optional, "is_forwarded": True}).execute()
+    except Exception:
+        # is_forwarded kolonu (sql/migration_message_forward.sql) yoksa onsuz dene
+        sb.table("messages").insert({**insert_data, **optional}).execute()
+
+    app = current_app._get_current_object()
+
+    def _bg_notify():
+        try:
+            with app.test_request_context():
+                _notify_conversation(sb, target_cid, me)
+        except Exception:
+            pass
+
+    _write_pool.submit(_bg_notify)
+
+    return jsonify(ok=True, conversation_id=target_cid)
+
+
+@bp.route("/messages/conversations/<conversation_id>/mute", methods=["POST"])
+@api_login_required
+def api_mute_conversation(conversation_id):
+    """Konuşmayı sessize al / sesi aç (toggle) — sending.py mute_conversation()
+    ile AYNI mantık. SADECE ÇAĞIRANIN KENDİ katılımcı satırı güncellenir
+    (başkasını sessize alma diye bir şey yok). Katılımcı değilse 403, is_muted
+    kolonu yoksa 503.
+
+    Anlamı (kaynak docstring'i): bildirim/push susar ama okunmamış mesaj
+    sayacı normal şekilde artmaya devam eder (bkz. _common.py
+    _notify_conversation — is_muted kontrolünden ÖNCE invalidate ediliyor).
+    """
+    sb = get_sb()
+    me = request.api_user["id"]
+
+    part = sb.table("conversation_participants").select("is_muted").eq(
+        "conversation_id", conversation_id).eq("user_id", me).execute().data
+    if not part:
+        return jsonify(error="forbidden"), 403
+
+    new_muted = not bool(part[0].get("is_muted"))
+    try:
+        sb.table("conversation_participants").update({"is_muted": new_muted}).eq(
+            "conversation_id", conversation_id).eq("user_id", me).execute()
+    except Exception:
+        return jsonify(error="unavailable"), 503
+    return jsonify(ok=True, muted=new_muted)
+
+
+# Arama sayfa boyutu — views.py search_conversation_messages()/
+# search_all_messages() ile AYNI (31 satır çekilir, 31.'nin varlığı has_next'i
+# belirtir; MESSAGE_PAGE'den BAĞIMSIZ, kaynak fonksiyonların sabiti budur).
+_SEARCH_PAGE = 30
+
+
+def _serialize_search_row(r: dict, me: str, with_conversation: bool) -> dict:
+    """views.py'deki iki arama fonksiyonunun AYNI satır sözleşmesi (global
+    versiyonda ek olarak conversation_id) — tek yerde toplandı."""
+    row = {
+        "id": r["id"],
+        "content": r["content"] or "",
+        "created_at": r["created_at"],
+        "mine": r["sender_id"] == me,
+        "sender": (r.get("profiles") or {}).get("username") or "?",
+    }
+    if with_conversation:
+        row["conversation_id"] = r["conversation_id"]
+    return row
+
+
+@bp.route("/messages/conversations/<conversation_id>/search")
+@api_login_required
+def api_search_conversation_messages(conversation_id):
+    """Sohbet İÇİ mesaj arama — views.py search_conversation_messages() ile
+    AYNI mantık: SADECE `content` üzerinde ILIKE '%q%' (görsel/ses/sticker
+    aranmaz), katılımcı olmayan 403 değil **404** (mark-read ile aynı
+    enumeration deseni), q 2 karakterden kısaysa boş sonuç, sayfa başına 30
+    sonuç (?offset= ile ilerlenir), en yeniden eskiye.
+    """
+    sb = get_sb()
+    me = request.api_user["id"]
+    q = (request.args.get("q") or "").strip()
+    offset = request.args.get("offset", 0, type=int) or 0
+
+    part = sb.table("conversation_participants").select("user_id").eq(
+        "conversation_id", conversation_id).eq("user_id", me).execute().data
+    if not part:
+        return jsonify(error="not_found"), 404
+    if len(q) < 2:
+        return jsonify(results=[], has_next=False, next_offset=None)
+
+    rows = sb.table("messages").select(
+        "id, content, created_at, sender_id, profiles!messages_sender_id_fkey(username)"
+    ).eq("conversation_id", conversation_id).ilike(
+        "content", f"%{q}%"
+    ).order("created_at", desc=True).limit(_SEARCH_PAGE + 1).offset(offset).execute().data
+
+    has_next = len(rows) > _SEARCH_PAGE
+    results = [_serialize_search_row(r, me, with_conversation=False) for r in rows[:_SEARCH_PAGE]]
+    return jsonify(
+        results=results,
+        has_next=has_next,
+        next_offset=offset + _SEARCH_PAGE if has_next else None,
+    )
+
+
+@bp.route("/messages/search")
+@api_login_required
+def api_search_all_messages():
+    """TÜM sohbetlerde mesaj arama — views.py search_all_messages() ile AYNI
+    mantık (yukarıdaki sohbet-içi aramanın global versiyonu; sonuç satırlarında
+    EK OLARAK conversation_id döner ki istemci doğru sohbete gidebilsin).
+    Hiç konuşması olmayan kullanıcı boş sonuç alır.
+    """
+    sb = get_sb()
+    me = request.api_user["id"]
+    q = (request.args.get("q") or "").strip()
+    offset = request.args.get("offset", 0, type=int) or 0
+
+    parts = sb.table("conversation_participants").select("conversation_id").eq(
+        "user_id", me).execute().data
+    cids = [p["conversation_id"] for p in parts]
+    if not cids or len(q) < 2:
+        return jsonify(results=[], has_next=False, next_offset=None)
+
+    rows = sb.table("messages").select(
+        "id, conversation_id, content, created_at, sender_id, "
+        "profiles!messages_sender_id_fkey(username)"
+    ).in_("conversation_id", cids).ilike(
+        "content", f"%{q}%"
+    ).order("created_at", desc=True).limit(_SEARCH_PAGE + 1).offset(offset).execute().data
+
+    has_next = len(rows) > _SEARCH_PAGE
+    results = [_serialize_search_row(r, me, with_conversation=True) for r in rows[:_SEARCH_PAGE]]
+    return jsonify(
+        results=results,
+        has_next=has_next,
+        next_offset=offset + _SEARCH_PAGE if has_next else None,
+    )
 
 
 # --- Grup sohbeti yönetimi (Faz 4, native Android) ---
