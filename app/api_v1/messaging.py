@@ -16,15 +16,17 @@ from ..messaging._common import (
 )
 from ..messaging.views import MESSAGE_PAGE, _write_pool
 from ..notifications import notify
+from ..gifs import is_valid_klipy_url
 
 
 # ----------------------- MESAJLAŞMA (Faz 3, native Android mesajlaşma ekranı) -----------------------
 # app/messaging/*.py'nin BİLİNÇLİ bir alt kümesi JSON'a taşınır: inbox +
-# konuşma geçmişi (sayfalı) + metin/görsel mesajı gönderme (+reply_to) +
-# get-or-create 1:1 konuşma başlatma + okundu işaretleme + grup oluşturma/
-# yönetimi (Faz 4) + mesaj gelişmiş işlemleri (Faz 5: düzenle/sil/tepki/
-# sabitle/ilet/sohbeti sessize al/arama). KAPSAM DIŞI (hâlâ hiç dokunulmadı):
-# ses/sticker/GIF mesaj, WebRTC/LiveKit arama.
+# konuşma geçmişi (sayfalı) + metin/görsel/sticker/GIF mesajı gönderme
+# (+reply_to) + get-or-create 1:1 konuşma başlatma + okundu işaretleme + grup
+# oluşturma/yönetimi (Faz 4) + mesaj gelişmiş işlemleri (Faz 5: düzenle/sil/
+# tepki/sabitle/ilet/sohbeti sessize al/arama) + sticker/GIF mesaj (Faz 5
+# Dalga 3B, sending.py send_message()'ın AYNI mantığı). KAPSAM DIŞI (hâlâ hiç
+# dokunulmadı): ses mesajı (RECORD_AUDIO izni gerektiriyor), WebRTC/LiveKit arama.
 
 def _serialize_conversation_summary(c: dict) -> dict:
     """_common.py _build_convos() satırını JSON sözleşmesine çevirir.
@@ -200,10 +202,14 @@ def api_message_conversation_detail(conversation_id):
 @api_login_required
 def api_send_message(conversation_id):
     """Mesaj gönder — messaging/sending.py send_message()'ın metin+reply_to_id+
-    GÖRSEL dalları port edildi (ses/sticker/GIF dalları BİLİNÇLİ olarak
-    atlandı — ses RECORD_AUDIO izni+MediaRecorder gerektiriyor, sticker yeni
-    bir katalog endpoint'i, GIF üçüncü-parti Klipy entegrasyonu istiyor, hepsi
-    ayrı birer iterasyon).
+    GÖRSEL+sticker+GIF dalları port edildi (SADECE ses dalı BİLİNÇLİ olarak
+    atlandı — RECORD_AUDIO izni+MediaRecorder gerektiriyor, ayrı bir iterasyon).
+    `sticker_id` (form, /stickers/* katalogundan — app/api_v1/stickers.py) ve
+    `gif_url` (form, Klipy CDN'inden) opsiyonel — send_message()'daki AYNI
+    kurallar: sticker_id `stickers` tablosunda yoksa sessizce None'a düşer,
+    gif_url `is_valid_klipy_url()` geçmezse yok sayılır, GIF ayrı bir kolona
+    DEĞİL (messages'ta gif_url kolonu yok) `image_url`'e yazılır (görsel
+    yoksa).
 
     BİLİNÇLİ SAPMA: JSON'dan multipart/form-data'ya geçildi (api_create_post()
     ile AYNI kodlama deseni) — native henüz gerçek kullanıcıya çıkmadığı için
@@ -236,8 +242,24 @@ def api_send_message(conversation_id):
     reply_to_id = (request.form.get("reply_to_id") or "").strip() or None
     image_file = request.files.get("image")
     has_image = bool(image_file and image_file.filename)
+    sticker_id = (request.form.get("sticker_id") or "").strip() or None
+    gif_url = (request.form.get("gif_url") or "").strip() or None
 
-    if not content and not has_image:
+    # Sticker var mı kontrol et — send_message()'daki AYNI tolerans: tablo
+    # yoksa veya id geçersizse hata DEĞİL, sessizce yok say.
+    if sticker_id:
+        try:
+            sticker = sb.table("stickers").select("id").eq("id", sticker_id).execute()
+            if not sticker.data:
+                sticker_id = None
+        except Exception:
+            sticker_id = None
+
+    # GIF URL kontrolü — sadece Klipy'den kabul et (send_message()'daki AYNI kural)
+    if gif_url and not is_valid_klipy_url(gif_url):
+        gif_url = None
+
+    if not content and not has_image and not sticker_id and not gif_url:
         return jsonify(error="empty"), 400
 
     image_url = None
@@ -245,6 +267,12 @@ def api_send_message(conversation_id):
         image_url = upload_image(image_file, folder="messages")
         if not image_url:
             return jsonify(error="upload_failed"), 400
+
+    # GIF ayrı bir kolona DEĞİL image_url'e yazılır — messages'ta gif_url
+    # kolonu yok ve mevcut görsel render akışı GIF'i olduğu gibi gösterir
+    # (send_message()'daki AYNI desen).
+    if gif_url and not image_url:
+        image_url = gif_url
 
     if reply_to_id:
         # send_message()'daki AYNI doğrulama: farklı konuşmadansa/mevcut
@@ -257,9 +285,11 @@ def api_send_message(conversation_id):
 
     insert_data = {"conversation_id": conversation_id, "sender_id": me, "content": content, "image_url": image_url}
     try:
-        # reply_to_id opsiyonel kolon — migration_message_reply.sql henüz
+        # Opsiyonel kolonlar: sticker_id, reply_to_id — migration henüz
         # uygulanmamışsa kolonsuz insert'e düş (send_message()'daki AYNI desen).
         data_full = dict(insert_data)
+        if sticker_id:
+            data_full["sticker_id"] = sticker_id
         if reply_to_id:
             data_full["reply_to_id"] = reply_to_id
         inserted = sb.table("messages").insert(data_full).execute()

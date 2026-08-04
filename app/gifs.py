@@ -7,6 +7,15 @@ from .decorators import login_required
 bp = Blueprint("gifs", __name__)
 
 
+def is_valid_klipy_url(url: str) -> bool:
+    """Bir GIF URL'sinin Klipy CDN'inden geldiğini doğrular (SSRF/keyfi URL
+    engeli). Web tarafında (app/social.py, app/messaging/sending.py,
+    app/routes/posts.py) AYNI kontrol 3 yerde `gif_url.startswith(...)` olarak
+    tekrarlanıyor — yeni (native/api_v1) kabul noktaları buraya toplanan tek
+    yardımcıyı çağırır, kuralı bir daha kopyalamaz."""
+    return bool(url) and url.startswith("https://static.klipy.com/")
+
+
 @bp.route("/gif/search")
 @login_required
 def gif_search():

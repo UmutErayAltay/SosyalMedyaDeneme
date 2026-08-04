@@ -12,13 +12,15 @@ from ..social import REACTIONS, _find_recent_duplicate_comment, _notify_pool
 from ..post_views import record_view
 from ..storage_helper import upload_image, upload_video
 from ..hashtags import sync_post_hashtags, notify_hashtag_followers, extract_hashtags
+from ..gifs import is_valid_klipy_url
 
 
 # ----------------------- ETKİLEŞİMLER: BEĞENİ + YORUM (Faz 4, native Android) -----------------------
 # app/social.py toggle_like()/add_comment()/reply_comment() ve app/routes/posts.py
-# post_detail()'in BİLİNÇLİ bir alt kümesi JSON'a taşınır. KAPSAM DIŞI (bu turda
-# hiç dokunulmadı): sticker/gif yorum, yorum düzenleme/silme/tepki (comment_reactions),
-# yorum beğenme (comment_likes) — SADECE post beğenme + metin yorumu (+yanıt) var.
+# post_detail()'in BİLİNÇLİ bir alt kümesi JSON'a taşınır. Faz 5 Dalga 3B'de
+# sticker/GIF yorum eklendi (add_comment()/reply_comment() ile AYNI mantık).
+# KAPSAM DIŞI (hâlâ dokunulmadı): yorum düzenleme/silme/tepki (comment_reactions),
+# yorum beğenme (comment_likes).
 
 @bp.route("/posts/<post_id>/like", methods=["POST"])
 @api_login_required
@@ -152,11 +154,11 @@ def api_post_detail(post_id):
 @bp.route("/posts/<post_id>/comments", methods=["POST"])
 @api_login_required
 def api_add_comment(post_id):
-    """Yorum ekle (+ isteğe bağlı yanıt) — social.py add_comment()/
-    reply_comment()'in SADECE metin dalı (sticker/gif İCAT edilmedi, bu
-    iterasyonun kapsamı dışı). body'de `parent_comment_id` varsa yanıt,
-    yoksa ana yorum — hangi bildirim türünün ('comment' vs 'reply')
-    gönderileceği buna göre seçilir, kaynak fonksiyonlarla AYNI mantık."""
+    """Yorum ekle (+ isteğe bağlı yanıt, + isteğe bağlı sticker/GIF) —
+    social.py add_comment()/reply_comment()'in AYNI mantığı (metin + sticker +
+    GIF dalları). body'de `parent_comment_id` varsa yanıt, yoksa ana yorum —
+    hangi bildirim türünün ('comment' vs 'reply') gönderileceği buna göre
+    seçilir, kaynak fonksiyonlarla AYNI mantık."""
     sb = get_sb()
     me = request.api_user["id"]
 
@@ -169,8 +171,24 @@ def api_add_comment(post_id):
         data = {}
     content = _str_field(data, "content")
     parent_comment_id = _str_field(data, "parent_comment_id") or None
+    sticker_id = _str_field(data, "sticker_id") or None
+    gif_url = _str_field(data, "gif_url") or None
 
-    if not content:
+    # Sticker var mı kontrol et — add_comment()'daki AYNI tolerans: tablo yoksa
+    # veya id geçersizse hata DEĞİL, sessizce yok say.
+    if sticker_id:
+        try:
+            sticker = sb.table("stickers").select("id").eq("id", sticker_id).execute()
+            if not sticker.data:
+                sticker_id = None
+        except Exception:
+            sticker_id = None
+
+    # GIF URL kontrolü — sadece Klipy'den kabul et (add_comment()'daki AYNI kural)
+    if gif_url and not is_valid_klipy_url(gif_url):
+        gif_url = None
+
+    if not content and not sticker_id and not gif_url:
         return jsonify(error="empty"), 400
 
     if parent_comment_id:
@@ -182,7 +200,9 @@ def api_add_comment(post_id):
         if not parent:
             parent_comment_id = None
 
-    dup = _find_recent_duplicate_comment(sb, post_id, me, content, None, None, parent_id=parent_comment_id)
+    dup = _find_recent_duplicate_comment(
+        sb, post_id, me, content, sticker_id, gif_url, parent_id=parent_comment_id
+    )
     if dup:
         comment_row = dup
     else:
@@ -190,17 +210,30 @@ def api_add_comment(post_id):
         if parent_comment_id:
             insert_data["parent_comment_id"] = parent_comment_id
         try:
-            res = sb.table("comments").insert(insert_data).execute()
+            # Opsiyonel kolonlar: sticker_id, gif_url — migration öncesiyse
+            # (except dalı) onlarsız tekrar dene (add_comment()'daki AYNI desen).
+            data_full = dict(insert_data)
+            if sticker_id:
+                data_full["sticker_id"] = sticker_id
+            if gif_url:
+                data_full["gif_url"] = gif_url
+            res = sb.table("comments").insert(data_full).execute()
         except _CONNECTION_ERRORS:
             raise  # dıştaki katman yeniden dener, dup kontrolü idempotent devam ettirir
         except Exception:
-            # parent_comment_id kolonu henüz yoksa (migration öncesi) onsuz dene
-            res = sb.table("comments").insert({
-                "post_id": post_id, "user_id": me, "content": content
-            }).execute()
+            res = sb.table("comments").insert(insert_data).execute()
         comment_row = res.data[0] if res.data else {}
 
     comment_id = comment_row.get("id")
+
+    sticker_out = None
+    if sticker_id:
+        try:
+            srow = sb.table("stickers").select("id, image_url").eq("id", sticker_id).execute().data
+            if srow:
+                sticker_out = {"id": srow[0]["id"], "image_url": srow[0]["image_url"]}
+        except Exception:
+            sticker_out = None
 
     def _bg_notify():
         try:
@@ -231,14 +264,15 @@ def api_add_comment(post_id):
         "like_count": 0,
         "liked_by_me": False,
         "reactions": [],
-        "sticker": None,
+        "sticker": sticker_out,
+        "gif_url": gif_url,
     })
 
 
 # ----------------------- POST OLUŞTURMA (Faz 4, native Android) -----------------------
 # app/routes/posts.py create_post()'un BİLİNÇLİ bir alt kümesi: metin + TEK
-# görsel + TEK video/reel + görünürlük. KAPSAM DIŞI (bu turda hiç dokunulmadı):
-# çoklu görsel (max 4), GIF, anket, taslak/planlama, konum.
+# görsel + TEK video/reel + görünürlük + GIF (Faz 5 Dalga 3B). KAPSAM DIŞI
+# (hâlâ dokunulmadı): çoklu görsel (max 4), anket, taslak/planlama, konum.
 
 @bp.route("/posts", methods=["POST"])
 @api_login_required
@@ -249,7 +283,10 @@ def api_create_post():
     public), `image` (opsiyonel, TEK dosya — create_post()'daki `images`
     çoklu alanının BİLİNÇLİ olarak tekil hali), `video` (opsiyonel, TEK
     dosya) + `is_reel` ("true"/"false" — native her zaman açık gönderir,
-    web'in checkbox `"on"`'undan FARKLI, bkz. settings.py _bool_form_field).
+    web'in checkbox `"on"`'undan FARKLI, bkz. settings.py _bool_form_field) +
+    `gif_url` (opsiyonel, Klipy CDN'inden — create_post()'daki AYNI kural:
+    SADECE görsel/video YOKSA ve `is_valid_klipy_url()` geçerse kullanılır,
+    ayrı bir kolon İCAT edilmez, `image_urls=[gif_url]` olarak yazılır).
 
     create_post()'daki AYNI kural: is_reel=true iken video YOKSA
     `reel_requires_video` hatası döner. Reels sekmesi (api_v1/reels.py)
@@ -266,8 +303,9 @@ def api_create_post():
     video_file = request.files.get("video")
     has_video = bool(video_file and video_file.filename)
     is_reel = request.form.get("is_reel") == "true"
+    gif_url = (request.form.get("gif_url") or "").strip()
 
-    if not content and not has_image and not has_video:
+    if not content and not has_image and not has_video and not gif_url:
         return jsonify(error="empty"), 400
 
     if is_reel and not has_video:
@@ -283,6 +321,10 @@ def api_create_post():
         if not image_url:
             return jsonify(error="upload_failed"), 400
         image_urls = [image_url]
+    elif gif_url and not has_video and is_valid_klipy_url(gif_url):
+        # GIF ayrı bir kolona DEĞİL image_urls'e yazılır — create_post()'daki
+        # AYNI kural (posts.py:334-337): video ile mutually exclusive.
+        image_urls = [gif_url]
 
     video_url = None
     if has_video:
