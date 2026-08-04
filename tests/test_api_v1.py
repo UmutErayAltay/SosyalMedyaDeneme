@@ -1460,6 +1460,58 @@ class TestApiV1CreatePost:
             sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
             sb.table("posts").delete().eq("id", post_id).execute()
 
+    def test_create_post_with_poll_creates_poll_and_returns_options(self, app, client, test_user_factory):
+        """Faz 5 Dalga 4C — poll_option_1..4 (en az 2 dolu) anket oluşturur,
+        response'taki post.poll dolu döner (attach_polls() çağrısının AYNI
+        turda eklendiği regresyon testi)."""
+        user = test_user_factory(email="apiv1_createpost_poll@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/posts",
+            data={
+                "content": "api_v1 anket testi",
+                "poll_option_1": "Seçenek A",
+                "poll_option_2": "Seçenek B",
+                "poll_option_3": "",
+                "poll_option_4": "",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        post = resp.get_json()["post"]
+        post_id = post["id"]
+        assert post["poll"] is not None
+        option_texts = {o["text"] for o in post["poll"]["options"]}
+        assert option_texts == {"Seçenek A", "Seçenek B"}
+
+        with app.app_context():
+            sb = get_sb()
+            poll_id = post["poll"]["id"]
+            sb.table("poll_options").delete().eq("poll_id", poll_id).execute()
+            sb.table("polls").delete().eq("id", poll_id).execute()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_create_post_poll_without_content_returns_poll_question_required(
+        self, app, client, test_user_factory,
+    ):
+        user = test_user_factory(email="apiv1_createpost_poll_noq@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/posts",
+            data={"content": "", "poll_option_1": "A", "poll_option_2": "B"},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "poll_question_required"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
 
 class TestApiV1ProfileEdit:
     """profile.py profile_edit()'in POST dalının JSON API karşılığı.

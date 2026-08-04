@@ -4,7 +4,7 @@ from . import bp
 from ._common import _str_field, api_login_required
 from ..supabase_client import get_sb, _CONNECTION_ERRORS
 from ..routes._common import _attach_post_metrics, _can_view_post
-from ..polls import attach_polls
+from ..polls import attach_polls, create_poll
 from ..notifications import notify
 from ..mentions import notify_mentions
 from ..cache import invalidate
@@ -286,7 +286,10 @@ def api_create_post():
     web'in checkbox `"on"`'undan FARKLI, bkz. settings.py _bool_form_field) +
     `gif_url` (opsiyonel, Klipy CDN'inden — create_post()'daki AYNI kural:
     SADECE görsel/video YOKSA ve `is_valid_klipy_url()` geçerse kullanılır,
-    ayrı bir kolon İCAT edilmez, `image_urls=[gif_url]` olarak yazılır).
+    ayrı bir kolon İCAT edilmez, `image_urls=[gif_url]` olarak yazılır) +
+    `poll_option_1`..`poll_option_4` (opsiyonel, en az 2 dolu alan anket
+    sayılır — create_post()'daki (posts.py:303-307) AYNI kural: anket
+    görsel/video ile MUTUALLY EXCLUSIVE DEĞİL, birlikte eklenebilir).
 
     create_post()'daki AYNI kural: is_reel=true iken video YOKSA
     `reel_requires_video` hatası döner. Reels sekmesi (api_v1/reels.py)
@@ -305,7 +308,16 @@ def api_create_post():
     is_reel = request.form.get("is_reel") == "true"
     gif_url = (request.form.get("gif_url") or "").strip()
 
-    if not content and not has_image and not has_video and not gif_url:
+    # create_post()'daki (posts.py:305-307) AYNI mantık — en az 2 dolu
+    # seçenek anket sayılır, en fazla 4 seçenek desteklenir.
+    poll_options_raw = [(request.form.get(f"poll_option_{i}") or "").strip() for i in range(1, 5)]
+    poll_options = [o for o in poll_options_raw if o]
+    has_poll = len(poll_options) >= 2
+
+    if has_poll and not content:
+        return jsonify(error="poll_question_required"), 400
+
+    if not content and not has_image and not has_video and not gif_url and not has_poll:
         return jsonify(error="empty"), 400
 
     if is_reel and not has_video:
@@ -359,11 +371,14 @@ def api_create_post():
         invalidate("trending:")
         notify_mentions(sb, actor_id=me, content=content, post_id=post_id)
         notify_hashtag_followers(sb, actor_id=me, post_id=post_id, tags=extract_hashtags(content))
+    if has_poll:
+        create_poll(sb, poll_options, post_id=post_id)
 
     post_res = sb.table("posts").select(
         "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
     ).eq("id", post_id).execute()
     post = post_res.data[0] if post_res.data else {"id": post_id, **insert_data}
     _attach_post_metrics(sb, [post], me)
+    attach_polls(sb, [post], me)
 
     return jsonify(post=post)
