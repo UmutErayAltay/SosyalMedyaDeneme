@@ -412,3 +412,46 @@ def api_delete_highlight(highlight_id):
     except Exception:
         return jsonify(error="highlights_not_available"), 503
     return jsonify(ok=True)
+
+
+@bp.route("/stories/highlights/<highlight_id>/update", methods=["POST"])
+@api_login_required
+def api_update_highlight(highlight_id):
+    """Highlight başlığını ve/veya kapak görselini günceller — SIFIRDAN
+    (web'de de yoktu). JSON body: {"title": ...} ve/veya {"cover_url": ...},
+    en az biri dolu olmalı. Sahiplik `.eq("user_id", me)` update filtresiyle
+    uygulama katmanında zorlanır (get_sb() service-role, RLS'i bypass eder);
+    başkasının highlight'ı için 404 döner (403 DEĞİL — api_view_highlight
+    ile AYNI enumeration-önleme deseni, highlight ID'lerinin var/yok
+    olduğu dışarıdan ayırt edilemesin)."""
+    sb = get_sb()
+    me = request.api_user["id"]
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        body = {}
+
+    title = body.get("title")
+    cover_url = body.get("cover_url")
+    update_data = {}
+    if isinstance(title, str) and title.strip():
+        update_data["title"] = title.strip()
+    if isinstance(cover_url, str) and cover_url.strip():
+        update_data["cover_url"] = cover_url.strip()
+
+    if not update_data:
+        return jsonify(error="nothing_to_update"), 400
+
+    try:
+        hl = sb.table("story_highlights").select("id, user_id").eq(
+            "id", highlight_id
+        ).execute().data
+        if not hl or hl[0]["user_id"] != me:
+            return jsonify(error="not_found"), 404
+
+        sb.table("story_highlights").update(update_data).eq(
+            "id", highlight_id
+        ).eq("user_id", me).execute()
+    except Exception:
+        return jsonify(error="highlights_not_available"), 503
+
+    return jsonify(ok=True)

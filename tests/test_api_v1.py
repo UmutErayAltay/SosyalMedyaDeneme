@@ -2885,3 +2885,148 @@ class TestApiV1HashtagTrending:
             sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
             sb.table("post_hashtags").delete().eq("post_id", post_id).execute()
             sb.table("posts").delete().eq("id", post_id).execute()
+
+
+class TestApiV1Repost:
+    def test_repost_without_token_returns_401(self, client):
+        resp = client.post("/api/v1/posts/nonexistent/repost")
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_repost_creates_new_post_and_notifies_author(self, app, client, test_user_factory):
+        author = test_user_factory(email="apiv1_repost_author@example.com", password="TestPass123!")
+        reposter = test_user_factory(email="apiv1_repost_reposter@example.com", password="TestPass123!")
+        token = _api_token_for(app, reposter["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        with app.app_context():
+            sb = get_sb()
+            post_row = sb.table("posts").insert({
+                "user_id": author["id"],
+                "content": "api_v1 repost testi için orijinal post",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute().data[0]
+        post_id = post_row["id"]
+
+        resp = client.post(f"/api/v1/posts/{post_id}/repost", json={}, headers=headers)
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        repost_id = body["post_id"]
+
+        with app.app_context():
+            sb = get_sb()
+            repost_row = sb.table("posts").select("repost_of_id, user_id, content").eq(
+                "id", repost_id
+            ).execute().data[0]
+            assert repost_row["repost_of_id"] == post_id
+            assert repost_row["user_id"] == reposter["id"]
+
+            notif = sb.table("notifications").select("id").eq(
+                "recipient_id", author["id"]
+            ).eq("type", "repost").eq("post_id", post_id).execute().data
+            assert notif
+
+        # Aynı orijinali içeriksiz ikinci kez repost etmek 409 döner
+        dup_resp = client.post(f"/api/v1/posts/{post_id}/repost", json={}, headers=headers)
+        assert dup_resp.status_code == 409
+        assert dup_resp.get_json()["error"] == "already_reposted"
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", reposter["id"]).execute()
+            sb.table("notifications").delete().eq("post_id", post_id).execute()
+            sb.table("posts").delete().eq("id", repost_id).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_repost_of_private_account_post_returns_403(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_repost_priv_owner@example.com", password="TestPass123!")
+        reposter = test_user_factory(email="apiv1_repost_priv_reposter@example.com", password="TestPass123!")
+        token = _api_token_for(app, reposter["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("profiles").update({"is_private": True}).eq("id", owner["id"]).execute()
+            post_row = sb.table("posts").insert({
+                "user_id": owner["id"],
+                "content": "gizli hesap postu",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute().data[0]
+        post_id = post_row["id"]
+
+        resp = client.post(f"/api/v1/posts/{post_id}/repost", json={}, headers=headers)
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "private_account"
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", reposter["id"]).execute()
+            sb.table("profiles").update({"is_private": False}).eq("id", owner["id"]).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+
+class TestApiV1Report:
+    def test_report_without_token_returns_401(self, client):
+        resp = client.post("/api/v1/report", json={"target_type": "post", "target_id": "x"})
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_report_post_then_duplicate_returns_409(self, app, client, test_user_factory):
+        author = test_user_factory(email="apiv1_report_author@example.com", password="TestPass123!")
+        reporter = test_user_factory(email="apiv1_report_reporter@example.com", password="TestPass123!")
+        token = _api_token_for(app, reporter["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        with app.app_context():
+            sb = get_sb()
+            post_row = sb.table("posts").insert({
+                "user_id": author["id"],
+                "content": "api_v1 şikayet testi için post",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute().data[0]
+        post_id = post_row["id"]
+
+        resp = client.post(
+            "/api/v1/report",
+            json={"target_type": "post", "target_id": post_id},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
+        dup_resp = client.post(
+            "/api/v1/report",
+            json={"target_type": "post", "target_id": post_id},
+            headers=headers,
+        )
+        assert dup_resp.status_code == 409
+        assert dup_resp.get_json()["error"] == "already_reported"
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", reporter["id"]).execute()
+            sb.table("reports").delete().eq("reporter_id", reporter["id"]).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_report_invalid_target_type_returns_400(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_report_invalid@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/report",
+            json={"target_type": "not_a_type", "target_id": "x"},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "invalid_request"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()

@@ -66,5 +66,5 @@ bp = Blueprint("api_v1", __name__)
 from . import (  # noqa: E402,F401
     auth, feed, profile, reels, messaging, interactions, settings,
     notifications, twofa, blocks, sessions, hashtags, polls, stickers,
-    mutes, stories, bookmarks, gifs, push,
+    mutes, stories, bookmarks, gifs, push, reposts, reports,
 )

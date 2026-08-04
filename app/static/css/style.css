@@ -3766,7 +3766,12 @@ header[role="banner"] {
     scroll-snap-type: y mandatory;
     scroll-behavior: smooth;
     position: relative;
+    /* .tablist ile AYNI gerekçe: tarayıcının varsayılan (çirkin) scrollbar'ı
+       gizlenir — kaydırma scroll-snap ile zaten çalışıyor, scrollbar'ın
+       görünür olması gerekmiyor. */
+    scrollbar-width: none;
 }
+.reels-feed::-webkit-scrollbar { display: none; }
 
 .reel-item {
     height: calc(100vh - 58px);

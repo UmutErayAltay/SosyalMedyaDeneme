@@ -1021,5 +1021,63 @@ def api_leave_group(conversation_id):
     sb.rpc("leave_group_and_reassign_admin", {
         "p_conversation_id": conversation_id, "p_user_id": me
     }).execute()
-
     return jsonify(ok=True)
+
+
+# ----------------------- POST PAYLAŞIMI (DM'e gönder), native Android -----------------------
+# sending.py share_post_multiple()'ın BİREBİR mirror'ı. Hedef seçimi için ayrı
+# bir endpoint İCAT EDİLMEDİ — /messages/forward-targets (yukarıda) zaten
+# kullanıcının TÜM konuşmalarını (grup adı / karşı kullanıcı adı) döndürüyor,
+# native aynı listeyi post paylaşımı için de REUSE edebilir.
+
+@bp.route("/posts/<post_id>/share", methods=["POST"])
+@api_login_required
+def api_share_post(post_id):
+    """Postu seçili birden fazla kullanıcıya DM olarak gönderir —
+    sending.py share_post_multiple() ile AYNI mantık (post önizlemesi +
+    isteğe bağlı not, her hedef için get-or-create 1:1 konuşma)."""
+    sb = get_sb()
+    me = request.api_user["id"]
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
+
+    user_ids = data.get("user_ids", [])
+    if not isinstance(user_ids, list):
+        user_ids = []
+    note = _str_field(data, "note")
+
+    if not user_ids:
+        return jsonify(error="no_recipients"), 400
+
+    post = sb.table("posts").select(
+        "id, content, image_url, image_urls, profiles!posts_user_id_fkey(username)"
+    ).eq("id", post_id).execute().data
+    if not post:
+        return jsonify(error="not_found"), 404
+    post_data = post[0]
+
+    post_image = None
+    if post_data.get("image_urls") and len(post_data["image_urls"]) > 0:
+        post_image = post_data["image_urls"][0]
+    elif post_data.get("image_url"):
+        post_image = post_data["image_url"]
+
+    share_text = note + "\n\n" if note else ""
+    share_text += f"📎 Paylaşılan post: /post/{post_id}\n\"{post_data['content'][:100]}\""
+    if post_data.get("profiles"):
+        share_text += f"\n— @{post_data['profiles']['username']}"
+
+    sent_count = 0
+    for target_id in set(user_ids):
+        cid = _get_or_create_conversation(me, target_id)
+        sb.table("messages").insert({
+            "conversation_id": cid,
+            "sender_id": me,
+            "content": share_text.strip(),
+            "image_url": post_image,
+        }).execute()
+        _notify_conversation(sb, cid, me)
+        sent_count += 1
+
+    return jsonify(sent=sent_count)
