@@ -186,9 +186,12 @@ def _notify_message(sb, recipient_id: str, actor_id: str, conversation_id: str |
 def _push(sb, recipient_id: str, actor_id: str, type_: str, *,
           post_id: str | None = None, conversation_id: str | None = None,
           count: int = 1) -> None:
-    """Web Push gönderir (uygulama kapalıyken de bildirim) — VAPID anahtarı yoksa
-    send_push_to_user() sessizce çıkar, bu fonksiyon ASLA bildirim akışını
-    kesintiye uğratmamalı (bkz. push.py docstring'i).
+    """Web Push (VAPID) ve FCM (native Android) gönderir (uygulama kapalıyken de
+    bildirim) — anahtar/kütüphane yoksa ilgili gönderim sessizce çıkar (bkz.
+    push.py/fcm.py docstring'i). İkisi AYNI body/url hesaplamasını paylaşır
+    ama gönderimleri BAĞIMSIZ try/except'lenir — biri credentials'sız/hatalıyken
+    diğeri etkilenmemeli, bu fonksiyon ASLA bildirim akışını (DB satırı
+    oluşturma) kesintiye uğratmamalı.
 
     Mesaj türü için `count > _MESSAGE_PUSH_LIMIT` olduğunda push ATLANIR —
     art arda gelen mesajlarda her seferinde anlık bildirim istenmiyor
@@ -197,20 +200,30 @@ def _push(sb, recipient_id: str, actor_id: str, type_: str, *,
     if type_ == "message" and count > _MESSAGE_PUSH_LIMIT:
         return
     try:
+        actor_row = sb.table("profiles").select("username").eq("id", actor_id).execute().data
+        actor_name = actor_row[0]["username"] if actor_row else "Biri"
+        if type_ == "message" and count > 1:
+            body = f"{actor_name} sana {count} mesaj gönderdi"
+        else:
+            body = f"{actor_name} {_TEXT.get(type_, 'bir etkileşimde bulundu')}"
+        builder = _TARGET_BUILDERS.get(type_)
+        url = builder({
+            "post_id": post_id, "conversation_id": conversation_id,
+            "actor": {"username": actor_name},
+        }) if builder else "/"
+    except Exception:
+        return
+
+    try:
         from .push import send_push_to_user, VAPID_PRIVATE_KEY
         if VAPID_PRIVATE_KEY:
-            actor_row = sb.table("profiles").select("username").eq("id", actor_id).execute().data
-            actor_name = actor_row[0]["username"] if actor_row else "Biri"
-            if type_ == "message" and count > 1:
-                body = f"{actor_name} sana {count} mesaj gönderdi"
-            else:
-                body = f"{actor_name} {_TEXT.get(type_, 'bir etkileşimde bulundu')}"
-            builder = _TARGET_BUILDERS.get(type_)
-            url = builder({
-                "post_id": post_id, "conversation_id": conversation_id,
-                "actor": {"username": actor_name},
-            }) if builder else "/"
             send_push_to_user(sb, recipient_id, "Sosyal", body, url)
+    except Exception:
+        pass
+
+    try:
+        from .fcm import send_fcm_to_user
+        send_fcm_to_user(sb, recipient_id, "Sosyal", body, url)
     except Exception:
         pass
 
