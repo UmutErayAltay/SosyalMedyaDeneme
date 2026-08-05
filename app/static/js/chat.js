@@ -242,13 +242,16 @@
                 // Instagram tarzı: ayrı bir "Gönderiyi Gör" aksiyon metni YOK —
                 // kartın tamamı zaten tıklanabilir tek bir <a>. Görsel varsa üstte
                 // (aşağıdaki insertAdjacentElement ile eklenir), altında yazar
-                // (küçük/ikincil) + post içeriği (kullanıcı isteği).
+                // (küçük/ikincil) + post içeriği (kullanıcı isteği). Caption
+                // yoksa (görsel-only post) "Görsel gönderisi" gibi bir dolgu
+                // metni YAZILMAZ — Instagram'da da resmin altında caption
+                // yoksa hiçbir şey yazmaz, görsel zaten kendini açıklıyor.
                 var cardHtml = ''
                     + (note ? '<div class="share-note">' + note.replace(/\n/g, '<br>') + '</div>' : '')
                     + '<a href="' + escapeHtml(postUrl) + '" class="shared-card">'
                     + '<div class="shared-card-body">'
                     + (authorText ? '<span class="shared-card-author">' + authorText + '</span>' : '')
-                    + '<p>' + (contentText || 'Görsel gönderisi') + '</p>'
+                    + (contentText ? '<p>' + contentText + '</p>' : '')
                     + '</div></a>';
 
                 p.innerHTML = cardHtml;
