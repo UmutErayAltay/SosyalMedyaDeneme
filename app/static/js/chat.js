@@ -191,6 +191,25 @@
         return html;
     }
 
+    // p.innerHTML'den kesilen bir parça (author/postContent) SUNUCU tarafında
+    // zaten linkify_mentions'tan geçmiş olabilir (ör. "— @artemis" gerçek bir
+    // <a class="mention-link"> etiketine dönüşmüş olarak gelir). Bu ham HTML'i
+    // kart metnine düz metin gibi gömmek KÖK NEDENDİ: kartın tamamını saran
+    // <a class="shared-card"> içine BAŞKA bir <a> (mention linki) iç içe
+    // yerleşince tarayıcı HTML5 parser kuralı gereği (anchor içinde anchor
+    // YASAK) dış <a>'yı otomatik bölüyordu — kullanıcının gördüğü kart gövdesi
+    // gerçek DOM'da linkin dışına düşüyor, bu yüzden karta tıklamak hiçbir şey
+    // yapmıyordu (kullanıcı raporu, gerçek tarayıcıda DOM incelenerek
+    // doğrulandı: <a class="shared-card"></a><div class="shared-card-header">
+    // ... şeklinde div'ler linkin KARDEŞİ oluyordu, çocuğu değil). Çözüm:
+    // gömülü etiketleri STRIP edip düz metne çevir, sonra escapeHtml ile
+    // yeniden güvenli şekilde encode et (XSS round-trip korunur).
+    function htmlFragmentToPlainText(html) {
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        return tmp.textContent || '';
+    }
+
     // Paylaşılan post mesajlarını kart görünümüne çevirir. p.innerHTML kasıtlı
     // kullanılıyor: Jinja {{ m.content }} sunucuda escape ettiği için innerHTML
     // her zaman entity-encoded metin döner; bu metni yeniden innerHTML'e
@@ -215,13 +234,21 @@
 
                 var postContent = lines.slice(1, authorLineIndex).join(' ').replace(/^"|"$/g, '').trim();
 
+                // Düz metne çevir (embedded mention-link vs. STRIP edilir) + yeniden escape —
+                // yukarıdaki yorumdaki iç içe <a> bugu için gerekli.
+                var authorText = author ? escapeHtml(htmlFragmentToPlainText(author)) : '';
+                var contentText = postContent ? escapeHtml(htmlFragmentToPlainText(postContent)) : '';
+
+                // Instagram tarzı: ayrı bir "Gönderiyi Gör" aksiyon metni YOK —
+                // kartın tamamı zaten tıklanabilir tek bir <a>. Görsel varsa üstte
+                // (aşağıdaki insertAdjacentElement ile eklenir), altında yazar
+                // (küçük/ikincil) + post içeriği (kullanıcı isteği).
                 var cardHtml = ''
                     + (note ? '<div class="share-note">' + note.replace(/\n/g, '<br>') + '</div>' : '')
-                    + '<a href="' + postUrl + '" class="shared-card">'
-                    + '<div class="shared-card-header"><strong>' + author + '</strong></div>'
+                    + '<a href="' + escapeHtml(postUrl) + '" class="shared-card">'
                     + '<div class="shared-card-body">'
-                    + '<p>' + (postContent || 'Görsel gönderisi') + '</p>'
-                    + '<span class="shared-card-btn">Gönderiyi Gör</span>'
+                    + (authorText ? '<span class="shared-card-author">' + authorText + '</span>' : '')
+                    + '<p>' + (contentText || 'Görsel gönderisi') + '</p>'
                     + '</div></a>';
 
                 p.innerHTML = cardHtml;

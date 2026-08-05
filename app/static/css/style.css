@@ -121,6 +121,13 @@
     --card-border: var(--border);
     --card-radius: var(--radius);
     --card-padding: var(--space-4);
+    /* --card-hover 5 yerde (.repost-embed, .pinned-bar-item, google-login-btn vs.)
+       KULLANILIYOR ama hiç TANIMLI değildi — var() geçersiz özel property'e
+       düşünce background:initial (şeffaf) olup hover geri bildirimi
+       kayboluyordu (repost embed'in "kötü görünmesi" şikayetinin bir
+       parçası). .inbox-item.active'in zaten kullandığı var(--border) deseniyle
+       tutarlı: liste/kart öğelerinde hover = border rengi. */
+    --card-hover: var(--border);
 
     --modal-bg: var(--card);
     --modal-radius: var(--radius);
@@ -1414,18 +1421,29 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     background: var(--border);
 }
 
-/* Sohbette paylaşılan post kartı (chat.js formatSharedPosts ile oluşturulur) */
+/* Sohbette paylaşılan post kartı (chat.js formatSharedPosts ile oluşturulur).
+   Instagram tarzı: ayrı bir "Gönderiyi Gör" aksiyon metni YOK, kartın tamamı
+   tıklanabilir tek bir <a> (kullanıcı isteği — önceki .shared-card-btn hem
+   gereksizdi hem de .msg.mine üstünde var(--primary) zeminle aynı renkte
+   kayboluyordu, bkz. eski kod/commit geçmişi). */
 .shared-card {
     display: block; border: 1px solid var(--border); border-radius: 12px;
     overflow: hidden; text-decoration: none; color: inherit;
 }
+.shared-card:hover { border-color: var(--primary); }
 .shared-card-img {
+    /* .shared-card zaten overflow:hidden + border-radius ile kırpıyor,
+       görsel köşelere kadar (Instagram önizlemesi gibi) uzanır */
     width: 100%; display: block; max-height: 280px; object-fit: cover;
-    border-radius: 10px; margin-bottom: 10px;
 }
 .shared-card-body { padding: 12px; }
-.shared-card-header { padding: 12px; font-weight: 600; border-bottom: 1px solid var(--border); }
-.shared-card-btn { display: inline-block; margin-top: 10px; color: var(--primary); font-weight: 600; }
+.shared-card-body p { margin: 0; }
+.shared-card-author { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+/* .msg.mine'ın arka planı var(--primary) — .mention-link'teki (yukarısı,
+   satır ~1059) AYNI kontrast tuzağı: var(--muted) burada da kendi
+   gönderdiğim balonun zeminiyle karışıp okunmaz olurdu; balonun kendi metin
+   rengiyle (var(--bg), zaten kontrast için seçilmiş) ayrıştırılır. */
+.msg.mine .shared-card-author { color: var(--bg); opacity: 0.8; }
 
 
 .msg-image {
