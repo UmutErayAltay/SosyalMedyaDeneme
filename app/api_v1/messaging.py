@@ -1,6 +1,9 @@
-from datetime import datetime, timezone
+import os
+from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import request, jsonify, current_app
+from livekit import api as livekit_api
 
 from . import bp
 from ._common import _str_field, api_login_required
@@ -25,8 +28,10 @@ from ..gifs import is_valid_klipy_url
 # (+reply_to) + get-or-create 1:1 konuşma başlatma + okundu işaretleme + grup
 # oluşturma/yönetimi (Faz 4) + mesaj gelişmiş işlemleri (Faz 5: düzenle/sil/
 # tepki/sabitle/ilet/sohbeti sessize al/arama) + sticker/GIF mesaj (Faz 5
-# Dalga 3B, sending.py send_message()'ın AYNI mantığı). KAPSAM DIŞI (hâlâ hiç
-# dokunulmadı): ses mesajı (RECORD_AUDIO izni gerektiriyor), WebRTC/LiveKit arama.
+# Dalga 3B, sending.py send_message()'ın AYNI mantığı) + grup sesli/görüntülü
+# arama token'ı (group_calls.py call_token()'ın AYNI mantığı, aşağıda
+# api_call_token). KAPSAM DIŞI (hâlâ hiç dokunulmadı): ses mesajı (RECORD_AUDIO
+# izni gerektiriyor).
 
 def _serialize_conversation_summary(c: dict) -> dict:
     """_common.py _build_convos() satırını JSON sözleşmesine çevirir.
@@ -685,6 +690,76 @@ def api_mute_conversation(conversation_id):
     except Exception:
         return jsonify(error="unavailable"), 503
     return jsonify(ok=True, muted=new_muted)
+
+
+@bp.route("/messages/conversations/<conversation_id>/call-token", methods=["POST"])
+@api_login_required
+def api_call_token(conversation_id):
+    """LiveKit grup sesli/görüntülü arama token'ı — messaging/group_calls.py
+    call_token()'ın BİREBİR aynı mantığı (env var kontrolü, katılımcı+is_group
+    doğrulaması paralel iki sorguyla, token üretimi), token-auth'a taşındı.
+
+    - LiveKit yapılandırılmamışsa 503: {"error": "group_calls_not_configured"}
+    - Katılımcı değilse VEYA is_group=false ise 404 (enumeration koruması —
+      kaynak fonksiyondaki abort(404) ile AYNI durum kodu; bu dosyanın JSON
+      sözleşmesine uysun diye jsonify+404 kullanıldı, abort() HTML sayfası
+      döndürürdü).
+    - CSRF: bu blueprint zaten Bearer token ile doğruluyor, session/CSRF'e
+      tabi değil (bkz. app/__init__.py before_request api_v1. muafiyeti).
+    """
+    livekit_url = os.environ.get("LIVEKIT_URL")
+    api_key = os.environ.get("LIVEKIT_API_KEY")
+    api_secret = os.environ.get("LIVEKIT_API_SECRET")
+
+    if not livekit_url or not api_key or not api_secret:
+        return jsonify(error="group_calls_not_configured"), 503
+
+    me = request.api_user["id"]
+    # .get: eski token'larda username alanı bulunmayabilir — KeyError yerine boş ad
+    my_username = request.api_user.get("username") or ""
+    sb = get_sb()
+
+    def _check_participant():
+        return sb.table("conversation_participants").select().eq(
+            "conversation_id", conversation_id
+        ).eq("user_id", me).execute().data
+
+    def _fetch_conv_meta():
+        try:
+            conv = sb.table("conversations").select("is_group").eq(
+                "id", conversation_id
+            ).execute().data
+            if conv:
+                return bool(conv[0].get("is_group"))
+        except Exception:
+            pass
+        return False
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        part_future = executor.submit(_check_participant)
+        meta_future = executor.submit(_fetch_conv_meta)
+
+        part = part_future.result()
+        is_group = meta_future.result()
+
+    if not part or not is_group:
+        return jsonify(error="not_found"), 404
+
+    try:
+        room_name = f"grp-{conversation_id}"
+        token = livekit_api.AccessToken(api_key, api_secret)
+        token.with_identity(me)
+        token.with_name(my_username)
+        token.with_grants(
+            livekit_api.VideoGrants(room_join=True, room=room_name)
+        )
+        token.with_ttl(timedelta(hours=1))
+        jwt_token = token.to_jwt()
+
+        return jsonify(token=jwt_token, url=livekit_url, room=room_name), 200
+    except Exception:
+        # Token üretim hatası nadir ama graceful fallback (group_calls.py ile AYNI)
+        return jsonify(error="token_generation_failed"), 500
 
 
 # Arama sayfa boyutu — views.py search_conversation_messages()/

@@ -1230,6 +1230,125 @@ class TestApiV1GroupChat:
         _cleanup_conversation(app, cid, creator["id"], member_b["id"], member_d["id"])
 
 
+class TestApiV1GroupCall:
+    """messaging/group_calls.py call_token()'ın api_v1'e taşınan BİREBİR
+    aynı mantığı — env var kontrolü, katılımcı+is_group doğrulaması,
+    enumeration koruması (404). Gerçek LiveKit sunucusuna bağlanılmaz;
+    AccessToken.to_jwt() sadece HMAC imzalama yaptığından sahte
+    key/secret ile de local olarak üretilebilir (monkeypatch)."""
+
+    def _create_group(self, client, headers, name, member_ids):
+        return client.post(
+            "/api/v1/messages/group/new",
+            json={"name": name, "user_ids": member_ids},
+            headers=headers,
+        )
+
+    def test_call_token_without_auth_returns_401(self, client):
+        resp = client.post("/api/v1/messages/conversations/fake-cid/call-token")
+        assert resp.status_code == 401
+
+    def test_call_token_not_configured_returns_503(self, app, client, test_user_factory, monkeypatch):
+        """LiveKit env var'ları gerçek ortamda büyük olasılıkla YOK — bu
+        testte AYRICA garanti altına alınır (monkeypatch.delenv) ki CI'de
+        yanlışlıkla ayarlıysa test flaky olmasın."""
+        monkeypatch.delenv("LIVEKIT_URL", raising=False)
+        monkeypatch.delenv("LIVEKIT_API_KEY", raising=False)
+        monkeypatch.delenv("LIVEKIT_API_SECRET", raising=False)
+
+        user = test_user_factory(email="apiv1_call_noconf@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp = client.post(
+            "/api/v1/messages/conversations/fake-cid/call-token",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 503
+        assert resp.get_json()["error"] == "group_calls_not_configured"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_call_token_group_participant_gets_token(self, app, client, test_user_factory, monkeypatch):
+        monkeypatch.setenv("LIVEKIT_URL", "wss://fake-livekit.example.com")
+        monkeypatch.setenv("LIVEKIT_API_KEY", "fake_key")
+        monkeypatch.setenv("LIVEKIT_API_SECRET", "fake_secret_at_least_32_bytes_long")
+
+        creator = test_user_factory(email="apiv1_call_grp_a@example.com", password="TestPass123!")
+        member_b = test_user_factory(email="apiv1_call_grp_b@example.com", password="TestPass123!")
+        # api_create_group() en az 2 DİĞER üye zorunlu kılıyor (len(user_ids) < 2
+        # -> 400 too_few_members) — bir üyeli "grup" 1:1 sohbet sayılır, üçüncü
+        # üye bu yüzden gerekli (test yazım hatası, endpoint mantığı DOĞRU).
+        member_c = test_user_factory(email="apiv1_call_grp_c@example.com", password="TestPass123!")
+        headers_creator = {"Authorization": f"Bearer {_api_token_for(app, creator['id'])}"}
+
+        group_resp = self._create_group(
+            client, headers_creator, "arama grubu", [member_b["id"], member_c["id"]]
+        )
+        assert group_resp.status_code == 200
+        cid = group_resp.get_json()["conversation_id"]
+
+        resp = client.post(
+            f"/api/v1/messages/conversations/{cid}/call-token", headers=headers_creator
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["room"] == f"grp-{cid}"
+        assert body["url"] == "wss://fake-livekit.example.com"
+        assert body["token"]
+
+        _cleanup_conversation(app, cid, creator["id"], member_b["id"], member_c["id"])
+
+    def test_call_token_non_participant_and_1on1_return_404(
+        self, app, client, test_user_factory, monkeypatch
+    ):
+        """Enumeration koruması: gruba katılımcı OLMAYAN biri VE bir 1:1
+        konuşma (is_group=false) için call-token isteyen biri AYNI 404'ü
+        alır — 403 DEĞİL (group_calls.py'deki abort(404) mantığıyla aynı)."""
+        monkeypatch.setenv("LIVEKIT_URL", "wss://fake-livekit.example.com")
+        monkeypatch.setenv("LIVEKIT_API_KEY", "fake_key")
+        monkeypatch.setenv("LIVEKIT_API_SECRET", "fake_secret_at_least_32_bytes_long")
+
+        creator = test_user_factory(email="apiv1_call_404_a@example.com", password="TestPass123!")
+        member_b = test_user_factory(email="apiv1_call_404_b@example.com", password="TestPass123!")
+        # api_create_group() en az 2 DİĞER üye zorunlu kılıyor (bkz. üstteki test).
+        member_c = test_user_factory(email="apiv1_call_404_c@example.com", password="TestPass123!")
+        outsider = test_user_factory(email="apiv1_call_404_out@example.com", password="TestPass123!")
+        headers_creator = {"Authorization": f"Bearer {_api_token_for(app, creator['id'])}"}
+        headers_out = {"Authorization": f"Bearer {_api_token_for(app, outsider['id'])}"}
+
+        group_resp = self._create_group(
+            client, headers_creator, "404 testi grubu", [member_b["id"], member_c["id"]]
+        )
+        assert group_resp.status_code == 200
+        cid = group_resp.get_json()["conversation_id"]
+
+        outsider_resp = client.post(
+            f"/api/v1/messages/conversations/{cid}/call-token", headers=headers_out
+        )
+        assert outsider_resp.status_code == 404
+        assert outsider_resp.get_json()["error"] == "not_found"
+
+        dm_resp = client.post(
+            f"/api/v1/messages/start/{member_b['username']}", headers=headers_creator
+        )
+        dm_cid = dm_resp.get_json()["conversation_id"]
+
+        dm_call_resp = client.post(
+            f"/api/v1/messages/conversations/{dm_cid}/call-token", headers=headers_creator
+        )
+        assert dm_call_resp.status_code == 404
+        assert dm_call_resp.get_json()["error"] == "not_found"
+
+        _cleanup_conversation(app, cid, creator["id"], member_b["id"], member_c["id"])
+        _cleanup_conversation(app, dm_cid, creator["id"], member_b["id"])
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", outsider["id"]).execute()
+
+        _cleanup_conversation(app, cid, creator["id"], member_b["id"], outsider["id"])
+        _cleanup_conversation(app, dm_cid, creator["id"], member_b["id"])
+
+
 class TestApiV1Interactions:
     def test_like_without_token_returns_401(self, client):
         resp = client.post("/api/v1/posts/nonexistent/like")
