@@ -99,10 +99,40 @@ def feed():
         # sadece repost orijinali ekleniyor (posts.py feed()'deki aynı ayrım).
         attach_repost_of(sb, posts)
 
+    # "Kimi takip etmeli" önerisi — posts.py feed()'deki _fetch_suggested_users()
+    # ile AYNEN aynı sorgu. Web'de bu SADECE tam sayfa render'ında hesaplanır
+    # (AJAX partial'da hiç çalışmaz, bkz. posts.py "FAZ B" yorumu) — pratikte bu,
+    # sonsuz kaydırmanın HER ZAMAN sonraki sayfaları AJAX ile çektiği anlamına
+    # gelir, yani "tam sayfa" == her zaman ilk sayfa. Native'de bunun karşılığı
+    # cursor == 0: sonraki sayfalarda gereksiz sorgu yapılmaz.
+    suggested_users = []
+    if cursor == 0:
+        try:
+            following_ids = {
+                f["following_id"] for f in sb.table("follows").select("following_id")
+                .eq("follower_id", me_id).execute().data
+            }
+        except Exception:
+            following_ids = set()
+        exclude_ids = following_ids | blocked_user_ids(sb, me_id) | {me_id}
+        su_query = sb.table("profiles").select(
+            "id, username, avatar_url, full_name"
+        ).eq("is_banned", False)
+        if exclude_ids:
+            su_query = su_query.not_.in_("id", list(exclude_ids))
+        try:
+            suggested_users = su_query.order("created_at", desc=True).limit(5).execute().data or []
+        except Exception:
+            suggested_users = []
+
     return jsonify(
         posts=posts,
         has_next=has_next,
         next_cursor=(cursor + limit) if has_next else None,
+        # SÖZLEŞME: alan HER ZAMAN mevcut — cursor==0'da dolu (<=5 kullanıcı),
+        # sonraki sayfalarda boş liste (null DEĞİL, native tarafta nullable
+        # olmayan List<> ile eşleşsin diye tutarlı boş liste tercih edildi).
+        suggested_users=suggested_users,
     )
 
 

@@ -161,6 +161,38 @@ class TestApiV1Feed:
             sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
             sb.table("posts").delete().eq("user_id", user["id"]).execute()
 
+    def test_feed_suggested_users_only_on_first_page(self, app, client, test_user_factory):
+        """suggested_users alanı SADECE cursor==0'da (posts.py feed()'deki
+        FAZ B / tam sayfa render'ıyla eşleşen davranış) hesaplanır; sonraki
+        sayfalarda gereksiz sorgu yapılmaması için boş liste döner (alan yine
+        de HER ZAMAN mevcut — native tarafın nullable olmayan List<> ile
+        parse edebilmesi için)."""
+        user = test_user_factory(email="apiv1_feed_suggested@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp_first = client.get(
+            "/api/v1/feed?limit=1&cursor=0",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp_first.status_code == 200
+        body_first = resp_first.get_json()
+        assert "suggested_users" in body_first
+        assert isinstance(body_first["suggested_users"], list)
+        for u in body_first["suggested_users"]:
+            assert u["id"] != user["id"]  # kendisi önerilmez
+            assert "username" in u and "avatar_url" in u and "full_name" in u
+
+        resp_second = client.get(
+            "/api/v1/feed?limit=1&cursor=1",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp_second.status_code == 200
+        body_second = resp_second.get_json()
+        assert body_second["suggested_users"] == []
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
 
 class TestApiV1Logout:
     def test_logout_revokes_token_and_csrf_exempt(self, app, client, test_user_factory):
