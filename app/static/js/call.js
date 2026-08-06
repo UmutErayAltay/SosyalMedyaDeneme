@@ -732,6 +732,7 @@
                 if (status === 'SUBSCRIBED') resolve(ch);
                 else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
                     delete _outboundChannels[targetId]; // sonraki denemede yeniden kur
+                    if (window.forceRealtimeReauth) window.forceRealtimeReauth();
                     reject(new Error('kanal kurulamadı: ' + status));
                 }
             });
@@ -1025,6 +1026,7 @@
             }).subscribe(function (status) {
                 if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
                     log('Global call channel bağlantı sorunu, durum: ' + status);
+                    if (window.forceRealtimeReauth) window.forceRealtimeReauth();
                 }
             });
 

@@ -50,6 +50,7 @@
                 if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
                     // Polling güvenlik ağı devrede — sessiz log yeterli
                     console.warn('[liveBadges] kanal durumu: ' + status);
+                    if (window.forceRealtimeReauth) window.forceRealtimeReauth();
                 }
             });
     });

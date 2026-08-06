@@ -52,6 +52,30 @@
             .then(handleTokenResponse)
             .catch(function () { /* bir sonraki turda tekrar denenir */ });
     }, 30 * 60 * 1000);
+
+    // Bir kanal CHANNEL_ERROR/TIMED_OUT verdiğinde (call.js/chat.js/
+    // liveBadges.js çağırır) buraya gelinir — normal 30dk'lık döngü SAAT
+    // bazlı yeniliyor (bkz. /auth/realtime-token), bir JWT imza anahtarı
+    // rotasyonu token'ı saat açısından hâlâ geçerliyken ANINDA geçersiz
+    // kılabilir; force olmadan kullanıcı sekmeyi kapatıp yeniden açana
+    // kadar aynı bozuk token'la sonsuza dek denenirdi (canlı bulgu).
+    // setAuth() zaten hâlihazırda subscribe/retry aşamasındaki kanallara
+    // taze token'ı iter (supabase-js), bu yüzden manuel resubscribe
+    // GEREKMİYOR — sadece taze bir token almak yeterli.
+    var _lastForceReauth = 0;
+    var _forceReauthInFlight = null;
+    window.forceRealtimeReauth = function () {
+        var now = Date.now();
+        if (_forceReauthInFlight) return _forceReauthInFlight;
+        if (now - _lastForceReauth < 5000) return Promise.resolve();
+        _lastForceReauth = now;
+        _forceReauthInFlight = fetch('/auth/realtime-token?force=1')
+            .then(function (r) { return r.json(); })
+            .then(handleTokenResponse)
+            .catch(function () { /* bir sonraki hata turunda tekrar denenir */ })
+            .then(function () { _forceReauthInFlight = null; });
+        return _forceReauthInFlight;
+    };
 })();
 </script>
 <script src="{{ url_for('static', filename='js/call.js') }}"></script>

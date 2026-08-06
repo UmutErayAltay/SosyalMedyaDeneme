@@ -493,6 +493,14 @@ def api_realtime_token():
     realtime_session.py docstring'i, fail-open) — bu yüzden burada dönen
     HER hata kodu (503/401) native tarafın Realtime'ı sessizce kapatıp ana
     bearer-token akışına DOKUNMADAN devam edebileceği şekilde tasarlandı.
+
+    ?force=1: istemci art arda CHANNEL_ERROR/subscribe başarısızlığı
+    GÖRDÜĞÜNDE gönderir — normal yol SAAT bazlı yeniler (exp'e 5 dk kaldı
+    mı), bir JWT imza anahtarı rotasyonu token'ı saat açısından hâlâ
+    geçerliyken anlık geçersiz kılabilir; force olmadan sistem bozuk
+    token'ı süresi dolana kadar sonsuza kadar sunardı (canlı bulgu).
+    Kötüye kullanım zaten aşağıdaki realtime_refresh: rate limit
+    bütçesiyle sınırlı.
     """
     import requests as _rq
 
@@ -525,6 +533,8 @@ def api_realtime_token():
         except Exception:
             needs_refresh = True
     else:
+        needs_refresh = True
+    if request.args.get("force") == "1":
         needs_refresh = True
 
     if needs_refresh and is_rate_limited(f"realtime_refresh:{token_hash}", 12, 60):

@@ -981,11 +981,23 @@ def refresh_session_tokens(force: bool = False) -> str | None:
 @bp.route("/auth/realtime-token")
 def realtime_token():
     """Uzun süre açık kalan sekmeler için taze access token (chat.js/init
-    periyodik çağırır, realtime.setAuth ile uygular)."""
+    periyodik çağırır, realtime.setAuth ile uygular).
+
+    ?force=1: istemci bir Realtime kanalının CHANNEL_ERROR/Unauthorized ile
+    reddedildiğini GÖRDÜĞÜNDE gönderir — normal yol sadece SAAT bazlı
+    yeniler (exp'e 5 dk kaldı mı), bir JWT imza anahtarı rotasyonu/proje
+    taşıması token'ı SAAT açısından hâlâ geçerliyken anlık geçersiz
+    kılabilir; bu durumda force olmadan sistem bozuk token'ı süresi
+    dolana kadar sonsuza kadar sunmaya devam ederdi (canlı bulgu, bkz.
+    conversation debug). Kötüye kullanım aynı is_rate_limited bütçesiyle
+    sınırlı (refresh_session_tokens zaten Supabase'e gidiyor)."""
     from flask import jsonify
     if "user" not in session:
         return jsonify(error="unauthorized"), 401
-    token = refresh_session_tokens()
+    force = request.args.get("force") == "1"
+    if force and is_rate_limited(f"realtime_force_refresh:{session['user'].get('id', '')}", 6, 60):
+        force = False  # bütçe aşıldı — normal (saat bazlı) yola düş, hard error YOK
+    token = refresh_session_tokens(force=force)
     if not token and "access_token" not in session:
         # Jetonlar kesin ret sonrası düşürüldü — oturum canlı özellikler
         # için ölü; istemci bu işaretle /logout'a gidip temiz giriş ister

@@ -1391,6 +1391,7 @@
                         stopPollingFallback(); // canlı kanal kuruldu, yoklamaya gerek yok
                     } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
                         console.warn('Realtime bağlantı sorunu, durum:', status);
+                        if (window.forceRealtimeReauth) window.forceRealtimeReauth();
                         startPollingFallback();
                     }
                 });
@@ -1436,7 +1437,12 @@
                         typingIndicator.hidden = true;
                         typingIndicator.textContent = '';
                     }
-                }).subscribe();
+                }).subscribe(function (status) {
+                    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                        console.warn('typing kanalı bağlantı sorunu, durum:', status);
+                        if (window.forceRealtimeReauth) window.forceRealtimeReauth();
+                    }
+                });
 
                 // WebRTC arama sistemi: call.js'i başlat
                 if (window.initCallSystem && !isGroup) {

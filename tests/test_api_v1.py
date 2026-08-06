@@ -2685,6 +2685,37 @@ class TestApiV1RealtimeToken:
         with app.app_context():
             get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
 
+    def test_realtime_token_force_refreshes_even_when_not_near_expiry(self, app, client, test_user_factory):
+        """?force=1: sb_token_expires_at UZAK GELECEKTE olsa bile (saat bazlı
+        yol yenilemezdi) GERÇEK bir Supabase refresh tetiklenir — bir JWT imza
+        anahtarı rotasyonu/proje taşıması token'ı saat açısından hâlâ
+        geçerliyken anlık geçersiz kılabildiği için eklendi (bkz. route
+        docstring'i); force olmadan bozuk token süresi dolana kadar sonsuza
+        kadar sunulurdu (canlı bulgu)."""
+        user = test_user_factory(email="apiv1_realtime_force@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+        far_future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        self._seed_realtime_row(app, token_hash, user["access_token"], user["refresh_token"], far_future)
+
+        # force YOK: exp uzakta olduğu için stored access_token AYNEN döner
+        # (gerçek bir refresh tetiklenmez) — mevcut davranışın regresyon kanıtı.
+        resp_no_force = client.get("/api/v1/realtime-token", headers={"Authorization": f"Bearer {token}"})
+        assert resp_no_force.status_code == 200
+        assert resp_no_force.get_json().get("access_token") == user["access_token"]
+
+        # force=1: AYNI (exp'i uzak) satır olmasına rağmen gerçek bir Supabase
+        # refresh grant'ı tetiklenir — dönen access_token artık FARKLI olmalı.
+        resp_force = client.get(
+            "/api/v1/realtime-token?force=1", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp_force.status_code == 200, resp_force.get_json()
+        assert resp_force.get_json().get("access_token") != user["access_token"]
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
     def test_realtime_token_relogin_required_when_refresh_token_dead(self, app, client, test_user_factory):
         """Refresh token KESİN geçersizse (Supabase 400/401/403 döner) endpoint
         relogin_required döner VE satırdaki sb_* kolonlarını NULL'a çeker
