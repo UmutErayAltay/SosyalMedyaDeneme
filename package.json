@@ -8,6 +8,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:realtime": "python -m pytest tests/test_realtime_broadcast.py::test_realtime_setup && playwright test e2e/realtime-broadcast.spec.js && python -m pytest tests/test_realtime_broadcast.py::test_realtime_cleanup",
+    "test:e2e:call": "python -m pytest tests/test_call_webrtc.py::test_call_setup && playwright test e2e/call-webrtc.spec.js && python -m pytest tests/test_call_webrtc.py::test_call_cleanup",
     "build:js": "node scripts/build-js.mjs",
     "watch:js": "node scripts/build-js.mjs --watch"
   },

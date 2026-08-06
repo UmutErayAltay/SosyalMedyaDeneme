@@ -6,17 +6,16 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-/* Sayfa geçişlerinde native crossfade (MPA) — desteklemeyen tarayıcılarda sessizce yok sayılır */
-@view-transition {
-    navigation: auto;
-}
-@media (prefers-reduced-motion: reduce) {
-    ::view-transition-group(*),
-    ::view-transition-old(*),
-    ::view-transition-new(*) {
-        animation: none !important;
-    }
-}
+/* `@view-transition { navigation: auto; }` (native MPA crossfade) BİLEREK
+   KALDIRILDI — canlı arama testinde kök neden bulundu: bazı navigasyon
+   sıralarından sonra (ör. login → sohbet sayfasına git) Chrome sayfayı
+   sürekli "transition ortasında" sayıyor ("Transition was skipped" konsol
+   hatası) ve bu durumda TIKLANABİLİR elemanlar (arama başlatma butonu dahil)
+   normal fare tıklamasına yanıt vermeyi bırakabiliyor — izole testle
+   doğrulandı: bu kural varken buton hiçbir zaman "stable" sayılmıyordu,
+   kaldırılınca anında tıklanabilir hale geldi. Kullanıcının "aramada genel
+   olarak sıkıntımız var" raporunun kök nedeni buydu, WebRTC/sinyalleşme
+   kodunda bir hata değil. */
 
 :root {
     /* === TİER 1: PRİMİTİVE TOKEN'LAR (Ham Renk Paleti, Tema-Bağımsız) === */

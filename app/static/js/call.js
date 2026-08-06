@@ -285,6 +285,7 @@
     // --- Arama Durumu Yönetimi ---
 
     async function startCall(isVideo) {
+        log('startCall çağrıldı, isVideo=' + isVideo + ', callState=' + state.callState);
         if (state.callState !== 'idle') {
             showAlert('Zaten aktif bir arama var.');
             return;
@@ -306,7 +307,9 @@
         try {
             // Medya izni al
             var config = getUserMediaConfig(isVideo);
+            log('getUserMedia isteniyor: ' + JSON.stringify(config));
             state.localStream = await navigator.mediaDevices.getUserMedia(config);
+            log('getUserMedia başarılı, track sayısı: ' + state.localStream.getTracks().length);
         } catch (err) {
             log('getUserMedia hatası: ' + err.message);
             showAlert('Kamera/mikrofon izni verilmedi veya cihaz bulunamadı.');
@@ -996,22 +999,26 @@
 
     // --- Global Arama Dinleyicisi (inbox'ta da çalışsın) ---
 
-    window.initGlobalCallListener = function (meId) {
-        if (!meId || window._globalCallListenerInitialized) return;
-        window._globalCallListenerInitialized = true;
+    var _callsReconnectTimer = null;
 
-        // Inbox'ta (aktif konuşma yokken) gelen aramayı cevaplayabilmek için
-        // meId burada da set edilir — initCallSystem hiç çalışmamış olabilir
-        state.meId = meId;
-
-        ensureCallDOM();
-
+    // CHANNEL_ERROR/TIMED_OUT'ta forceRealtimeReauth() TEK BAŞINA yeterli
+    // DEĞİL — canlı bir izole test bunu kanıtladı: Realtime tenant'ının
+    // gerçek (nadir görülen) geçici kesintisi sırasında kanal 'errored'a
+    // düşünce, taze bir token setAuth() ile uygulansa bile supabase-js'in
+    // kendi otomatik rejoin'inin GERÇEKTEN devreye girdiği garanti değil —
+    // kanal sonsuza kadar sessizce ölü kalabiliyordu (kullanıcı raporu:
+    // "aramada genel olarak sıkıntımız var"). Artık taze token'ı BEKLEYİP
+    // kanalı BAŞTAN, elle yeniden kuruyoruz — RealtimeConnectionManager
+    // (native) ile aynı "kendi kendini iyileştiren döngü" felsefesi.
+    function connectCallsChannel(meId) {
         if (!window.supabaseClient) {
             log('Supabase client mevcut değil, global call listener yapılamıyor');
             return;
         }
-
         try {
+            if (state.callsChannel) {
+                try { window.supabaseClient.removeChannel(state.callsChannel); } catch (e) { /* en iyi çaba */ }
+            }
             // private:true — RLS izole testiyle doğrulandı (bkz. sql/migration_
             // realtime_broadcast_rls.sql + migration_realtime_calls_select_fix.sql).
             // Sadece kanalın sahibi VEYA hedefle ortak sohbeti olan biri abone olabilir.
@@ -1024,9 +1031,15 @@
                 // (offer/answer/ice/hangup/reject) — bkz. sendSignal
                 handleSignal(msg.payload || {});
             }).subscribe(function (status) {
-                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                    log('Global call channel bağlantı sorunu, durum: ' + status);
-                    if (window.forceRealtimeReauth) window.forceRealtimeReauth();
+                if (status === 'SUBSCRIBED') {
+                    if (_callsReconnectTimer) { clearTimeout(_callsReconnectTimer); _callsReconnectTimer = null; }
+                } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    log('Global call channel bağlantı sorunu, durum: ' + status + ' — yeniden bağlanılacak');
+                    var reauth = window.forceRealtimeReauth ? window.forceRealtimeReauth() : Promise.resolve();
+                    if (_callsReconnectTimer) clearTimeout(_callsReconnectTimer);
+                    _callsReconnectTimer = setTimeout(function () {
+                        reauth.then(function () { connectCallsChannel(meId); });
+                    }, 3000);
                 }
             });
 
@@ -1034,6 +1047,18 @@
         } catch (err) {
             log('Global call listener başlatılamadı: ' + err.message);
         }
+    }
+
+    window.initGlobalCallListener = function (meId) {
+        if (!meId || window._globalCallListenerInitialized) return;
+        window._globalCallListenerInitialized = true;
+
+        // Inbox'ta (aktif konuşma yokken) gelen aramayı cevaplayabilmek için
+        // meId burada da set edilir — initCallSystem hiç çalışmamış olabilir
+        state.meId = meId;
+
+        ensureCallDOM();
+        connectCallsChannel(meId);
     };
 
     // --- Global Başlatma (chat.js konuşma geçişlerinde çağrılır) ---
