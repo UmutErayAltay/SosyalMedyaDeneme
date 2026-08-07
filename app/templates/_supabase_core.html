@@ -7,6 +7,13 @@
     window.SUPABASE_KEY = "{{ config.SUPABASE_PUBLISHABLE_KEY }}";
     window.SB_ACCESS_TOKEN = "{{ session.access_token }}";
     window.ME_ID = "{{ me.id }}";
+    {# KENDİ arama kanalımızın adı. Supabase private kanalları platform
+       tarafında bozulduğu için kanallar public; güvenlik artık kanal adının
+       tahmin edilemezliğinde (bkz. app/realtime_topics.py). Bu ad SADECE
+       oturum sahibine render edilir. Giden sinyallerde `fromTopic` olarak da
+       gönderilir ki karşı taraf bize geri cevap verebilsin — arayanın
+       topic'ini başka türlü öğrenemezdi. #}
+    window.MY_CALLS_TOPIC = "{{ realtime_topic('calls', me.id) }}";
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>

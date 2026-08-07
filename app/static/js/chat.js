@@ -1249,15 +1249,31 @@
             // arkasına alındı.
             (window.SB_TOKEN_READY || Promise.resolve()).then(function () {
             try {
-                var topic = 'messages:' + conversationId;
+                // Kanal adları artık sunucudan gelir (tahmin edilemez HMAC) —
+                // Supabase'in private kanal yetkilendirmesi platform tarafında
+                // bozulduğu için kanallar public'e alındı ve güvenlik kanal
+                // adının gizliliğine taşındı (bkz. app/realtime_topics.py).
+                // Topic yoksa (eski önbellekten gelen panel HTML'i) kanal
+                // kurulmaz, yoklama moduna düşülür — yanlış/public bir adla
+                // abone olup sızıntı yaratmaktansa güvenli tarafta kal.
+                var topic = panel.dataset.messagesTopic;
+                var typingTopic = panel.dataset.typingTopic;
+                if (!topic || !typingTopic) {
+                    console.warn('Realtime kanal adları eksik — yoklama moduna geçiliyor');
+                    startPollingFallback();
+                    return;
+                }
                 // self:false — kendi "yazıyor" broadcast'imizi kendimize geri göstermeyelim.
-                // private:true — RLS izole testiyle doğrulandı (migration_realtime_
-                // messages_channel_rls.sql): sadece bu sohbetin katılımcıları abone
-                // olabilir/gönderebilir; postgres_changes (asıl mesaj teslimi) zaten
-                // tablo RLS'i ile korunuyordu ve private:true'dan ETKİLENMEDİĞİ ayrıca
-                // doğrulandı (gerçek INSERT ile test edildi, olay hâlâ akıyor).
+                // private:true KALDIRILDI (2026-08-07): Supabase'in private kanal
+                // yetkilendirmesi platform tarafında bozuk — kanal JOIN'inde DB'ye
+                // hiç sorulmadan "Unauthorized" dönüyordu (kanıt: .context/
+                // active_context.md "2026-08-07 (devam 6)"). Kanal artık public,
+                // ama adı tahmin edilemez. ASIL mesaj teslimi (aşağıdaki
+                // postgres_changes) bundan ETKİLENMEZ — o hâlâ `messages`
+                // tablosunun KENDİ RLS'i ile korunuyor; public'e açılan sadece
+                // broadcast (msg-preview önizlemesi) yolu.
                 var channel = window.supabaseClient.channel(topic, {
-                    config: { broadcast: { self: false }, private: true }
+                    config: { broadcast: { self: false } }
                 });
                 channel.on('postgres_changes', {
                     event: 'INSERT',
@@ -1408,81 +1424,13 @@
                 activeChannel = channel;
 
                 // "Yazıyor..." broadcast'i AYRI bir kanalda (mesaj kanalına
-                // dokunulmadı, bkz. yukarıdaki not). private:true — izole
-                // Playwright testiyle doğrulandı (gerçek katılımcı SUBSCRIBED,
-                // katılımcı olmayan 3. kullanıcı CHANNEL_ERROR/Unauthorized).
-                // typing: policy'si (select+insert) zaten TÜM katılımcılara
-                // simetrik — call.js'teki calls: kanalının aksine mimari bir
-                // uyumsuzluk yok, bu yüzden ek bir SQL düzeltmesi gerekmedi.
-                // GEÇİCİ TANI LOGLAMASI (Supabase Support talebi) — typing:
-                // subscribe'dan HEMEN önce (a) supabase-js'in KENDİ auth
-                // state'inin bir kullanıcı görüp görmediği (b) /auth/realtime-token
-                // fetch'inin status kodu. NOT: bu client persistSession:false +
-                // setSession() HİÇ çağrılmıyor (bkz. _supabase_core.html yorumu,
-                // "oturumun tek sahibi Flask") — bu yüzden auth.getUser()'ın
-                // user:null dönmesi BEKLENEN bir durum, bug işareti DEĞİL; asıl
-                // kimlik realtime.setAuth() ile AYRI/manuel olarak veriliyor.
-                (async function () {
-                    try {
-                        var userResult = await window.supabaseClient.auth.getUser();
-                        console.log('[DIAG] auth.getUser():', JSON.stringify(userResult));
-                    } catch (e) {
-                        console.log('[DIAG] auth.getUser() hata:', e.message);
-                    }
-                    try {
-                        var tokenResp = await fetch('/auth/realtime-token');
-                        console.log('[DIAG] /auth/realtime-token status:', tokenResp.status);
-                        // NOT: bu endpoint HAM bir JWT string'i DEĞİL, JSON
-                        // {access_token, relogin} döner (bkz. app/auth.py
-                        // realtime_token()) — Supabase support'un verdiği
-                        // r.text() örneği burada çalışmaz, .json() + .access_token
-                        // gerekir.
-                        var tokenBody = await tokenResp.clone().json();
-                        var rawToken = tokenBody.access_token;
-                        if (rawToken) {
-                            var payload = rawToken.split('.')[1];
-                            var base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-                            var json = decodeURIComponent(
-                                atob(base64).split('').map(function (c) {
-                                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-                                }).join(''),
-                            );
-                            var claims = JSON.parse(json);
-                            console.log('[DIAG] realtime-token JWT claims:', JSON.stringify({
-                                sub: claims.sub,
-                                exp: claims.exp,
-                                exp_readable: claims.exp ? new Date(claims.exp * 1000).toISOString() : null,
-                                iat: claims.iat,
-                                aud: claims.aud,
-                                iss: claims.iss,
-                                role: claims.role,
-                            }));
-                        } else {
-                            console.log('[DIAG] realtime-token body access_token YOK:', JSON.stringify(tokenBody));
-                        }
-                    } catch (e) {
-                        console.log('[DIAG] /auth/realtime-token fetch/decode hata:', e.message);
-                    }
-                })();
+                // BİLEREK dokunulmadı, bkz. yukarıdaki not). Kanal adı
+                // sunucudan gelen tahmin edilemez HMAC — private:true
+                // kaldırıldığı için erişim kontrolü artık adın gizliliğinde
+                // (gerekçe: app/realtime_topics.py).
 
-                // GEÇİCİ TANI (Supabase Support hipotezi: "typing subscribe
-                // ANINDA setAuth ile uygulanmış olan token gerçekten taze mi,
-                // yoksa hâlâ Jinja'nın gömdüğü render-anı token'ı mı?") —
-                // YUKARIDAKİ blok AYRI bir taze fetch yapıyor (farklı soruya
-                // cevap veriyor: "şu an /auth/realtime-token neye izin verir"),
-                // BU blok ise o fetch'i HİÇ yapmadan, subscribe anında client'a
-                // GERÇEKTEN uygulanmış olan window.SB_ACCESS_TOKEN'ı okuyor —
-                // asıl kanıt bu, çünkü channel() çağrısı da AYNI window.supabaseClient
-                // üzerinden gidiyor (instanceId ile karşılaştırılabilir).
-                (function () {
-                    var claims = window.__decodeJwt ? window.__decodeJwt(window.SB_ACCESS_TOKEN) : {};
-                    console.log('[DIAG realtime] BEFORE typing subscribe — aktif token sub=' + claims.sub +
-                        ', exp=' + claims.exp +
-                        ', client instanceId=' + (window.supabaseClient && window.supabaseClient.__instanceId));
-                })();
-
-                typingChannel = window.supabaseClient.channel('typing:' + conversationId, {
-                    config: { broadcast: { self: false }, private: true }
+                typingChannel = window.supabaseClient.channel(typingTopic, {
+                    config: { broadcast: { self: false } }
                 });
                 typingChannel.on('broadcast', { event: 'typing' }, function (msg) {
                     if (!typingIndicator) return;
@@ -1523,7 +1471,8 @@
 
                 // WebRTC arama sistemi: call.js'i başlat
                 if (window.initCallSystem && !isGroup) {
-                    window.initCallSystem(conversationId, window.ME_ID, activeChannel, panel.dataset.otherUserId || '');
+                    window.initCallSystem(conversationId, window.ME_ID, activeChannel,
+                        panel.dataset.otherUserId || '', panel.dataset.otherCallTopic || '');
                 }
             } catch (err) {
                 console.warn('Realtime başlatılamadı:', err);

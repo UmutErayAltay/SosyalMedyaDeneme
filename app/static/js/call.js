@@ -7,12 +7,13 @@
         conversationId: null,
         meId: null,
         otherId: null,
+        otherCallTopic: null, // karşı tarafın arama kanalı ADI (id değil, bkz. sendSignal)
         isVideoCall: false, // sesli vs. görüntülü
         peerConnection: null,
         localStream: null,
         remoteStream: null,
         signalingChannel: null, // aktif channel (chat.js'den paylaşılan)
-        callsChannel: null, // calls:<meId> kanalı (global arama dinlemesi)
+        callsChannel: null, // KENDİ arama kanalımız (window.MY_CALLS_TOPIC) — global dinleme
         callState: 'idle', // idle, ringing, active, ended
         callStartedAt: null,
         iceCandidateQueue: [], // answer set edilmeden önce gelen ICE adayları
@@ -712,48 +713,51 @@
     //
     // DİKKAT: supabase-js'te abone OLUNMAMIŞ kanala send() çalışmaz — kanal
     // hedef başına bir kez kurulup SUBSCRIBED olana dek beklenir (cache'li).
+    // Kanal ADI ile anahtarlanır (eskiden kullanıcı id'siydi) — kanallar artık
+    // public, erişim kontrolü adın tahmin edilemezliğinde (app/realtime_topics.py).
     var _outboundChannels = {};
-    function getOutboundChannel(targetId) {
-        if (_outboundChannels[targetId]) return _outboundChannels[targetId];
-        _outboundChannels[targetId] = new Promise(function (resolve, reject) {
+    function getOutboundChannel(targetTopic) {
+        if (_outboundChannels[targetTopic]) return _outboundChannels[targetTopic];
+        _outboundChannels[targetTopic] = new Promise(function (resolve, reject) {
             if (!window.supabaseClient) { reject(new Error('supabase yok')); return; }
-            // private:true — 2026-07-10'daki CHANNEL_ERROR'ın asıl kök nedeni
-            // izole testle bulundu: eski SELECT policy SADECE kanal sahibinin
-            // (hedefin) abone olmasına izin veriyordu, ama supabase-js'te
-            // GÖNDEREN taraf da (biz, burada) send()'den önce subscribe ile
-            // JOIN olmak zorunda — yani arayan taraf hiçbir zaman JOIN olamıyor,
-            // her arama CHANNEL_ERROR veriyordu (bayat token değildi). Düzeltme:
-            // migration_realtime_calls_select_fix.sql SELECT policy'sini INSERT
-            // policy'siyle simetrik yaptı (hedef VEYA hedefle ortak sohbeti olan
-            // biri abone olabilir) — Playwright ile 2 gerçek kullanıcıyla
-            // doğrulandı (pozitif: ortak sohbeti olan abone olup gönderebiliyor;
-            // negatif: alakasız 3. kullanıcı reddediliyor).
-            var ch = window.supabaseClient.channel('calls:' + targetId, {
-                config: { broadcast: { self: false }, private: true }
+            // supabase-js'te GÖNDEREN taraf da send()'den önce subscribe ile
+            // JOIN olmak zorunda — bu yüzden arayan da hedefin kanalına abone olur.
+            // private:true KALDIRILDI (2026-08-07): Supabase'in private kanal
+            // yetkilendirmesi platform tarafında bozuk, JOIN'de DB'ye hiç
+            // sorulmadan "Unauthorized" dönüyordu (kanıt: .context/
+            // active_context.md "2026-08-07 (devam 6)").
+            var ch = window.supabaseClient.channel(targetTopic, {
+                config: { broadcast: { self: false } }
             });
             ch.subscribe(function (status) {
                 if (status === 'SUBSCRIBED') resolve(ch);
                 else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                    delete _outboundChannels[targetId]; // sonraki denemede yeniden kur
+                    delete _outboundChannels[targetTopic]; // sonraki denemede yeniden kur
                     if (window.forceRealtimeReauth) window.forceRealtimeReauth();
                     reject(new Error('kanal kurulamadı: ' + status));
                 }
             });
         });
-        return _outboundChannels[targetId];
+        return _outboundChannels[targetTopic];
     }
 
     function sendSignal(payload) {
-        var targetId = payload.to || state.otherId;
-        if (!targetId) {
-            log('Sinyal hedefi yok (otherId boş)');
+        // Hedef artık kullanıcı id'si değil KANAL ADI. Aramayı BAŞLATIRKEN
+        // hedefin adını sunucu veriyor (panel data-other-call-topic); aramaya
+        // CEVAP verirken ise arayanın adını gelen sinyalin `fromTopic` alanından
+        // öğreniyoruz — karşı tarafın kanal adını başka türlü bilemezdik.
+        var targetTopic = payload.toTopic || state.otherCallTopic;
+        if (!targetTopic) {
+            log('Sinyal hedefi yok (hedef kanal adı boş)');
             return;
         }
         var signal = Object.assign({
             from: state.meId,
+            fromTopic: window.MY_CALLS_TOPIC || '',
             conversation_id: state.conversationId
         }, payload);
-        getOutboundChannel(targetId).then(function (ch) {
+        delete signal.toTopic; // yönlendirme detayı karşı tarafa gitmesin
+        getOutboundChannel(targetTopic).then(function (ch) {
             ch.send({ type: 'broadcast', event: 'call-signal', payload: signal });
         }).catch(function (err) {
             log('Sinyal gönderilemedi: ' + err.message);
@@ -769,13 +773,17 @@
         if (signal.type === 'offer') {
             if (state.callState !== 'idle') {
                 // Meşgulüm — reddi ARAYANA gönder (aktif görüşmedeki kişiye değil)
-                sendSignal({ type: 'reject', to: signal.from });
+                sendSignal({ type: 'reject', toTopic: signal.fromTopic });
                 return;
             }
             // Cevap verirken hedefimiz arayan; konuşma bağlamı payload'dan gelir
             state.conversationId = signal.conversation_id || state.conversationId;
 
             state.otherId = signal.from;
+            // Arayanın kanal adı SADECE buradan öğrenilebilir (sunucu bize
+            // karşı tarafın topic'ini yalnızca konuşma panelinde veriyor,
+            // gelen arama ise inbox dahil her sayfada olabilir).
+            state.otherCallTopic = signal.fromTopic || state.otherCallTopic;
             state.isVideoCall = signal.video || false;
             state.callState = 'ringing';
             state.isCaller = false;
@@ -1019,11 +1027,18 @@
             if (state.callsChannel) {
                 try { window.supabaseClient.removeChannel(state.callsChannel); } catch (e) { /* en iyi çaba */ }
             }
-            // private:true — RLS izole testiyle doğrulandı (bkz. sql/migration_
-            // realtime_broadcast_rls.sql + migration_realtime_calls_select_fix.sql).
-            // Sadece kanalın sahibi VEYA hedefle ortak sohbeti olan biri abone olabilir.
-            state.callsChannel = window.supabaseClient.channel('calls:' + meId, {
-                config: { broadcast: { self: false }, private: true }
+            // Kendi arama kanalımız. Adı sunucudan gelir (tahmin edilemez HMAC,
+            // bkz. app/realtime_topics.py) ve SADECE oturum sahibine render
+            // edilir; private:true kaldırıldı çünkü Supabase'in private kanal
+            // yetkilendirmesi platform tarafında bozuk (bkz. .context/
+            // active_context.md "2026-08-07 (devam 6)").
+            var myTopic = window.MY_CALLS_TOPIC;
+            if (!myTopic) {
+                log('Kendi arama kanalı adı yok — gelen aramalar dinlenemiyor');
+                return;
+            }
+            state.callsChannel = window.supabaseClient.channel(myTopic, {
+                config: { broadcast: { self: false } }
             });
 
             state.callsChannel.on('broadcast', { event: 'call-signal' }, function (msg) {
@@ -1043,7 +1058,7 @@
                 }
             });
 
-            log('Global call listener başlatıldı: calls:' + meId);
+            log('Global call listener başlatıldı: ' + myTopic);
         } catch (err) {
             log('Global call listener başlatılamadı: ' + err.message);
         }
@@ -1063,11 +1078,14 @@
 
     // --- Global Başlatma (chat.js konuşma geçişlerinde çağrılır) ---
 
-    window.initCallSystem = function (conversationId, meId, signalingChannel, otherUserId) {
+    window.initCallSystem = function (conversationId, meId, signalingChannel, otherUserId, otherCallTopic) {
         state.conversationId = conversationId;
         state.meId = meId;
         state.signalingChannel = signalingChannel;
         state.otherId = otherUserId;
+        // Aramayı BAŞLATMAK için gereken hedef kanal adı — sunucu bunu sadece
+        // bu konuşmanın katılımcısına render eder (bkz. _conversation_panel.html).
+        state.otherCallTopic = otherCallTopic || '';
 
         ensureCallDOM();
 

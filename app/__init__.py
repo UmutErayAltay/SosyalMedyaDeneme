@@ -4,6 +4,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from flask import Flask, session, request, abort, send_from_directory, redirect, url_for, jsonify
 from .config import Config
+from .realtime_topics import realtime_topic
 
 # Sabit UTC+3 — Türkiye 2016'dan beri yaz saati uygulamıyor, bu yüzden
 # zoneinfo/tzdata bağımlılığı (Windows'ta IANA veritabanı gelmiyor, ayrıca
@@ -166,6 +167,12 @@ def create_app() -> Flask:
 
     # Şablonlarda {{ csrf_token() }} olarak kullanılabilir
     app.jinja_env.globals["csrf_token"] = _csrf_token
+
+    # Şablonlarda {{ realtime_topic('typing', conversation_id) }} olarak
+    # kullanılır — Supabase private kanalları platform tarafında bozulduğu
+    # için kanallar public'e alındı ve güvenlik tahmin edilemez kanal adına
+    # taşındı (gerekçe ve sınırları: app/realtime_topics.py docstring'i).
+    app.jinja_env.globals["realtime_topic"] = realtime_topic
 
     # --- Statik varlık sürümleme (cache-busting) ---
     # Her url_for('static', ...) çıktısına dosyanın mtime'ı ?v= olarak eklenir:
