@@ -19,8 +19,9 @@ from ..gifs import is_valid_klipy_url
 # app/social.py toggle_like()/add_comment()/reply_comment() ve app/routes/posts.py
 # post_detail()'in BİLİNÇLİ bir alt kümesi JSON'a taşınır. Faz 5 Dalga 3B'de
 # sticker/GIF yorum eklendi (add_comment()/reply_comment() ile AYNI mantık).
-# KAPSAM DIŞI (hâlâ dokunulmadı): yorum düzenleme/silme/tepki (comment_reactions),
-# yorum beğenme (comment_likes).
+# Faz 5'te yorum silme + yorum beğenme (comment_likes) + yorum emoji tepkisi
+# (comment_reactions) da JSON'a taşındı (dosyanın en altı).
+# KAPSAM DIŞI (hâlâ dokunulmadı): yorum düzenleme.
 
 @bp.route("/posts/<post_id>/like", methods=["POST"])
 @api_login_required
@@ -382,3 +383,143 @@ def api_create_post():
     attach_polls(sb, [post], me)
 
     return jsonify(post=post)
+
+
+# ----------------------- YORUM MUTASYONLARI (Faz 5, native Android) -----------------------
+# app/social.py delete_comment()/toggle_comment_like()/react_comment()'in JSON
+# mirror'ı — okuma tarafı (like_count/liked_by_me/reactions) api_post_detail()'de
+# ZATEN vardı, eksik olan SADECE yazma yoluydu.
+
+@bp.route("/comments/<comment_id>/delete", methods=["POST"])
+@api_login_required
+def api_delete_comment(comment_id):
+    """Yorumu siler — sadece sahibi. Web sürümü (social.py delete_comment)
+    sahipliği `.eq("user_id", me)` ile sorguya gömüp sessiz no-op yapıyor;
+    native client'a bu yanıltıcı "silindi" cevabı verirdi. Burada satır ÖNDEN
+    çekilir, sahibi değilse 404 döner (403 değil — 403 "bu yorum var ama senin
+    değil"i sızdırıp enumeration'a izin verirdi, api_delete_post() ile AYNI
+    proje kararı)."""
+    sb = get_sb()
+    me = request.api_user["id"]
+
+    row = sb.table("comments").select("id, user_id").eq("id", comment_id).execute().data
+    if not row or row[0]["user_id"] != me:
+        return jsonify(error="not_found"), 404
+
+    sb.table("comments").delete().eq("id", comment_id).eq("user_id", me).execute()
+    return jsonify(ok=True, comment_id=comment_id)
+
+
+@bp.route("/comments/<comment_id>/like", methods=["POST"])
+@api_login_required
+def api_toggle_comment_like(comment_id):
+    """Yorum beğen/beğenmekten vazgeç (toggle) — social.py toggle_comment_like()
+    ile AYNI mantık, sadece JSON döner (redirect dalı yok). Yorumun ait olduğu
+    posta erişim yoksa 404 (gizli posttaki yorumları beğenerek varlıklarını
+    doğrulamak engellenir)."""
+    sb = get_sb()
+    me = request.api_user["id"]
+
+    c = sb.table("comments").select("post_id, user_id").eq("id", comment_id).execute().data
+    if not c:
+        return jsonify(error="not_found"), 404
+    post = sb.table("posts").select("*").eq("id", c[0]["post_id"]).execute().data
+    if not post or not _can_view_post(sb, post[0], me):
+        return jsonify(error="not_found"), 404
+
+    existing = sb.table("comment_likes").select("user_id").eq(
+        "comment_id", comment_id
+    ).eq("user_id", me).execute()
+    if existing.data:
+        sb.table("comment_likes").delete().eq(
+            "comment_id", comment_id
+        ).eq("user_id", me).execute()
+        liked = False
+    else:
+        sb.table("comment_likes").insert({
+            "comment_id": comment_id, "user_id": me
+        }).execute()
+        liked = True
+        notify(sb, recipient_id=c[0]["user_id"], actor_id=me,
+               type_="comment_like", post_id=c[0]["post_id"], comment_id=comment_id)
+
+    count = len(sb.table("comment_likes").select("user_id").eq(
+        "comment_id", comment_id
+    ).execute().data)
+
+    return jsonify(liked=liked, count=count)
+
+
+@bp.route("/comments/<comment_id>/react", methods=["POST"])
+@api_login_required
+def api_react_comment(comment_id):
+    """Yoruma emoji tepkisi ekle/değiştir/sil (3 yönlü toggle) — social.py
+    react_comment() ile AYNI mantık.
+
+    Body: {"reaction": "❤️"}. Aynı emoji tekrar gelirse SİLİNİR (reaction=null),
+    farklı emoji gelirse GÜNCELLENİR, hiç yoksa EKLENİR (+bildirim).
+    comment_reactions tablosu henüz oluşturulmadıysa 503 feature_not_yet_active.
+
+    Web'deki ayrı `invalid_json` dalı burada yok: get_json(silent=True) bozuk
+    body'yi {} yapar, sonuç yine 400 (empty_reaction) — api_v1'in geri kalanıyla
+    AYNI parse deseni korunur.
+    """
+    sb = get_sb()
+    me = request.api_user["id"]
+
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
+    reaction = _str_field(data, "reaction")
+    if not reaction:
+        return jsonify(error="empty_reaction"), 400
+
+    c = sb.table("comments").select("id, user_id, post_id").eq("id", comment_id).execute()
+    if not c.data:
+        return jsonify(error="not_found"), 404  # Enumeration koruması
+    comment_owner_id = c.data[0]["user_id"]
+    post_id = c.data[0]["post_id"]
+
+    post = sb.table("posts").select("*").eq("id", post_id).execute().data
+    if not post or not _can_view_post(sb, post[0], me):
+        return jsonify(error="not_found"), 404
+
+    try:
+        existing = sb.table("comment_reactions").select().eq(
+            "comment_id", comment_id
+        ).eq("user_id", me).execute()
+
+        if existing.data:
+            if existing.data[0].get("reaction") == reaction:
+                sb.table("comment_reactions").delete().eq(
+                    "comment_id", comment_id
+                ).eq("user_id", me).execute()
+                return jsonify(ok=True, reaction=None), 200
+            sb.table("comment_reactions").update({"reaction": reaction}).eq(
+                "comment_id", comment_id
+            ).eq("user_id", me).execute()
+            return jsonify(ok=True, reaction=reaction), 200
+
+        sb.table("comment_reactions").insert({
+            "comment_id": comment_id,
+            "user_id": me,
+            "reaction": reaction,
+        }).execute()
+        if comment_owner_id != me:
+            try:
+                notify(sb, recipient_id=comment_owner_id, actor_id=me,
+                       type_="comment_reaction", post_id=post_id, comment_id=comment_id)
+            except Exception as notify_error:
+                # notify() başarısızlığı tepki eklemeyi engellemesin;
+                # kolon eksikse (migration uygulanmamışsa) sessizce yut
+                import sys
+                print(f"Bildirim hatası (ignored): {notify_error}", file=sys.stderr)
+        return jsonify(ok=True, reaction=reaction), 201
+
+    except Exception as e:
+        if "comment_reactions" in str(e) or "does not exist" in str(e):
+            return jsonify(error="feature_not_yet_active"), 503
+        # Başka hata: iç hata metnini istemciye SIZDIRMA — detay sunucu loguna
+        import sys
+        print(f"api_react_comment hatası: {e}", file=sys.stderr)
+        return jsonify(error="server_error"), 500

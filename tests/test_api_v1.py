@@ -3439,3 +3439,319 @@ class TestApiV1PostManagement:
         assert prof2["pinned_post_id"] is None
 
         self._cleanup(app, [owner["id"]], [post_id])
+
+
+class TestApiV1CommentMutations:
+    """POST /comments/<id>/delete|like|react — app/api_v1/interactions.py.
+
+    Web'deki (app/social.py) delete_comment/toggle_comment_like/react_comment
+    mirror'ı. Okuma tarafı (like_count/liked_by_me/reactions) api_post_detail()'de
+    zaten test ediliyordu, burada SADECE yazma yolu doğrulanır. Token'lar
+    _api_token_for() ile üretilir (gerçek /auth/login YOK — login:{ip} birikimli
+    rate-limit bütçesi tüketilmez)."""
+
+    @staticmethod
+    def _insert_post_and_comment(app, author_id, commenter_id, content="api_v1 yorum mutasyon testi"):
+        with app.app_context():
+            sb = get_sb()
+            post_id = sb.table("posts").insert({
+                "user_id": author_id,
+                "content": "api_v1 yorum mutasyonu için post",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute().data[0]["id"]
+            comment_id = sb.table("comments").insert({
+                "post_id": post_id, "user_id": commenter_id, "content": content,
+            }).execute().data[0]["id"]
+        return post_id, comment_id
+
+    @staticmethod
+    def _cleanup(app, user_ids, post_ids, comment_ids=()):
+        with app.app_context():
+            sb = get_sb()
+            for cid in comment_ids:
+                for table in ("comment_reactions", "comment_likes"):
+                    try:
+                        sb.table(table).delete().eq("comment_id", cid).execute()
+                    except Exception:
+                        pass
+                try:
+                    sb.table("notifications").delete().eq("comment_id", cid).execute()
+                except Exception:
+                    pass
+            for pid in post_ids:
+                try:
+                    sb.table("notifications").delete().eq("post_id", pid).execute()
+                except Exception:
+                    pass
+                sb.table("comments").delete().eq("post_id", pid).execute()
+                sb.table("posts").delete().eq("id", pid).execute()
+            for uid in user_ids:
+                sb.table("api_tokens").delete().eq("user_id", uid).execute()
+
+    # --- delete ----------------------------------------------------------
+    def test_delete_comment_without_token_returns_401(self, client):
+        resp = client.post("/api/v1/comments/nonexistent/delete")
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_delete_comment_by_non_owner_returns_404_and_comment_survives(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_cdel_owner@example.com", password="TestPass123!")
+        other = test_user_factory(email="apiv1_cdel_other@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, other['id'])}"}
+        post_id, comment_id = self._insert_post_and_comment(app, owner["id"], owner["id"], "silinmemeli")
+
+        resp = client.post(f"/api/v1/comments/{comment_id}/delete", headers=headers)
+        # Web'deki sessiz no-op (ok=True) regresyonuna karşı: açıkça 404 olmalı
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "not_found"
+
+        with app.app_context():
+            assert get_sb().table("comments").select("id").eq("id", comment_id).execute().data
+
+        self._cleanup(app, [other["id"]], [post_id], [comment_id])
+
+    def test_delete_comment_by_owner_removes_row(self, app, client, test_user_factory):
+        author = test_user_factory(email="apiv1_cdel_author@example.com", password="TestPass123!")
+        commenter = test_user_factory(email="apiv1_cdel_commenter@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, commenter['id'])}"}
+        post_id, comment_id = self._insert_post_and_comment(app, author["id"], commenter["id"])
+
+        resp = client.post(f"/api/v1/comments/{comment_id}/delete", headers=headers)
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["comment_id"] == comment_id
+
+        with app.app_context():
+            assert get_sb().table("comments").select("id").eq("id", comment_id).execute().data == []
+
+        self._cleanup(app, [commenter["id"]], [post_id], [comment_id])
+
+    # --- like ------------------------------------------------------------
+    def test_comment_like_without_token_returns_401(self, client):
+        resp = client.post("/api/v1/comments/nonexistent/like")
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_comment_like_toggles_both_directions(self, app, client, test_user_factory):
+        author = test_user_factory(email="apiv1_clike_author@example.com", password="TestPass123!")
+        liker = test_user_factory(email="apiv1_clike_liker@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, liker['id'])}"}
+        post_id, comment_id = self._insert_post_and_comment(app, author["id"], author["id"])
+
+        like = client.post(f"/api/v1/comments/{comment_id}/like", headers=headers)
+        assert like.status_code == 200
+        assert like.get_json() == {"liked": True, "count": 1}
+
+        with app.app_context():
+            assert get_sb().table("comment_likes").select("user_id").eq(
+                "comment_id", comment_id
+            ).eq("user_id", liker["id"]).execute().data
+
+        unlike = client.post(f"/api/v1/comments/{comment_id}/like", headers=headers)
+        assert unlike.status_code == 200
+        assert unlike.get_json() == {"liked": False, "count": 0}
+
+        with app.app_context():
+            assert get_sb().table("comment_likes").select("user_id").eq(
+                "comment_id", comment_id
+            ).execute().data == []
+
+        self._cleanup(app, [liker["id"]], [post_id], [comment_id])
+
+    def test_comment_like_on_followers_only_post_returns_404(self, app, client, test_user_factory):
+        """_can_view_post() koruması: visibility=followers bir postun yorumunu,
+        takipçi OLMAYAN biri beğenerek varlığını doğrulayamaz. (is_draft ile
+        DEĞİL visibility ile test ediliyor — _can_view_post() taslağa bakmaz,
+        o kontrol api_post_detail()'de ayrı yapılır; kaynak fonksiyon
+        toggle_comment_like() de sadece _can_view_post() çağırıyor.)"""
+        author = test_user_factory(email="apiv1_clike_priv_author@example.com", password="TestPass123!")
+        viewer = test_user_factory(email="apiv1_clike_priv_viewer@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, viewer['id'])}"}
+
+        with app.app_context():
+            sb = get_sb()
+            post_id = sb.table("posts").insert({
+                "user_id": author["id"], "content": "api_v1 takipçiye özel yorum beğeni testi",
+                "visibility": "followers", "is_draft": False, "is_archived": False,
+            }).execute().data[0]["id"]
+            comment_id = sb.table("comments").insert({
+                "post_id": post_id, "user_id": author["id"], "content": "gizli yorum",
+            }).execute().data[0]["id"]
+
+        resp = client.post(f"/api/v1/comments/{comment_id}/like", headers=headers)
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "not_found"
+
+        self._cleanup(app, [viewer["id"]], [post_id], [comment_id])
+
+    # --- react -----------------------------------------------------------
+    def test_comment_react_without_token_returns_401(self, client):
+        resp = client.post("/api/v1/comments/nonexistent/react", json={"reaction": "❤️"})
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_comment_react_empty_reaction_returns_400(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_creact_empty@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, user['id'])}"}
+        post_id, comment_id = self._insert_post_and_comment(app, user["id"], user["id"])
+
+        resp = client.post(f"/api/v1/comments/{comment_id}/react", json={"reaction": "  "}, headers=headers)
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "empty_reaction"
+
+        self._cleanup(app, [user["id"]], [post_id], [comment_id])
+
+    def test_comment_react_three_way_toggle(self, app, client, test_user_factory):
+        """Ekle (201) -> farklı emoji ile değiştir (200) -> aynı emoji ile sil
+        (200, reaction=None) — react_comment()'in 3 dallı toggle'ı."""
+        author = test_user_factory(email="apiv1_creact_author@example.com", password="TestPass123!")
+        reactor = test_user_factory(email="apiv1_creact_reactor@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, reactor['id'])}"}
+        post_id, comment_id = self._insert_post_and_comment(app, author["id"], author["id"])
+
+        heart = "❤️"
+        haha = "\U0001f602"
+
+        add = client.post(f"/api/v1/comments/{comment_id}/react", json={"reaction": heart}, headers=headers)
+        assert add.status_code == 201
+        assert add.get_json() == {"ok": True, "reaction": heart}
+
+        with app.app_context():
+            rows = get_sb().table("comment_reactions").select("reaction").eq(
+                "comment_id", comment_id
+            ).eq("user_id", reactor["id"]).execute().data
+        assert [r["reaction"] for r in rows] == [heart]
+
+        change = client.post(f"/api/v1/comments/{comment_id}/react", json={"reaction": haha}, headers=headers)
+        assert change.status_code == 200
+        assert change.get_json() == {"ok": True, "reaction": haha}
+
+        with app.app_context():
+            rows = get_sb().table("comment_reactions").select("reaction").eq(
+                "comment_id", comment_id
+            ).eq("user_id", reactor["id"]).execute().data
+        # Değiştirme UPDATE olmalı, ikinci satır EKLENMEMELİ
+        assert [r["reaction"] for r in rows] == [haha]
+
+        remove = client.post(f"/api/v1/comments/{comment_id}/react", json={"reaction": haha}, headers=headers)
+        assert remove.status_code == 200
+        assert remove.get_json() == {"ok": True, "reaction": None}
+
+        with app.app_context():
+            assert get_sb().table("comment_reactions").select("reaction").eq(
+                "comment_id", comment_id
+            ).execute().data == []
+
+        self._cleanup(app, [reactor["id"]], [post_id], [comment_id])
+
+    def test_comment_react_on_unknown_comment_returns_404(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_creact_404@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, user['id'])}"}
+
+        resp = client.post(
+            "/api/v1/comments/00000000-0000-0000-0000-000000000000/react",
+            json={"reaction": "❤️"}, headers=headers,
+        )
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "not_found"
+
+        self._cleanup(app, [user["id"]], [])
+
+
+class TestApiV1MentionSearch:
+    """GET /mentions/search — app/api_v1/mentions.py (social.py search_mentions
+    mirror'ı). Prefix eşleşme + kendini/engelleneni hariç tutma + takip
+    ilişkisine göre sıralama doğrulanır."""
+
+    @staticmethod
+    def _cleanup(app, user_ids):
+        with app.app_context():
+            sb = get_sb()
+            for uid in user_ids:
+                for table, cols in (("blocks", ("blocker_id", "blocked_id")),
+                                    ("follows", ("follower_id", "following_id"))):
+                    for col in cols:
+                        try:
+                            sb.table(table).delete().eq(col, uid).execute()
+                        except Exception:
+                            pass
+                sb.table("api_tokens").delete().eq("user_id", uid).execute()
+
+    def test_mention_search_without_token_returns_401(self, client):
+        resp = client.get("/api/v1/mentions/search?q=abc")
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_mention_search_empty_query_returns_empty_list(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_mention_empty@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, user['id'])}"}
+
+        resp = client.get("/api/v1/mentions/search?q=   ", headers=headers)
+        assert resp.status_code == 200
+        assert resp.get_json() == {"users": []}
+
+        self._cleanup(app, [user["id"]])
+
+    def test_mention_search_prefix_excludes_self_and_blocked(self, app, client, test_user_factory):
+        """Prefix eşleşen 3 kullanıcı: arayan kendisi + engellediği kişi
+        listeden düşer, geriye SADECE üçüncüsü kalır."""
+        prefix = f"apivmen{secrets.token_hex(3)}"
+        me = test_user_factory(email=f"{prefix}_me@example.com", password="TestPass123!",
+                               username=f"{prefix}_me")
+        blocked = test_user_factory(email=f"{prefix}_blocked@example.com", password="TestPass123!",
+                                    username=f"{prefix}_blocked")
+        visible = test_user_factory(email=f"{prefix}_visible@example.com", password="TestPass123!",
+                                    username=f"{prefix}_visible")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, me['id'])}"}
+
+        with app.app_context():
+            get_sb().table("blocks").insert({
+                "blocker_id": me["id"], "blocked_id": blocked["id"],
+            }).execute()
+
+        resp = client.get(f"/api/v1/mentions/search?q={prefix}", headers=headers)
+        assert resp.status_code == 200
+        usernames = [u["username"] for u in resp.get_json()["users"]]
+        assert usernames == [visible["username"]]
+
+        # Case-insensitive prefix eşleşmesi (ilike) — büyük harfle de bulunur
+        resp_upper = client.get(f"/api/v1/mentions/search?q={prefix.upper()}", headers=headers)
+        assert [u["username"] for u in resp_upper.get_json()["users"]] == [visible["username"]]
+
+        # Eşleşmeyen prefix boş döner
+        resp_none = client.get(f"/api/v1/mentions/search?q={prefix}zzz", headers=headers)
+        assert resp_none.get_json() == {"users": []}
+
+        self._cleanup(app, [me["id"], blocked["id"], visible["id"]])
+
+    def test_mention_search_ranks_mutual_follow_first(self, app, client, test_user_factory):
+        """Sıralama: karşılıklı takip > ben takip ediyorum > beni takip ediyor >
+        diğerleri (en fazla 3 sonuç)."""
+        prefix = f"apivrank{secrets.token_hex(3)}"
+        me = test_user_factory(email=f"{prefix}_me@example.com", password="TestPass123!",
+                               username=f"{prefix}_zzme")
+        mutual = test_user_factory(email=f"{prefix}_mutual@example.com", password="TestPass123!",
+                                   username=f"{prefix}_zmutual")
+        following = test_user_factory(email=f"{prefix}_following@example.com", password="TestPass123!",
+                                      username=f"{prefix}_yfollowing")
+        stranger = test_user_factory(email=f"{prefix}_stranger@example.com", password="TestPass123!",
+                                     username=f"{prefix}_astranger")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, me['id'])}"}
+
+        with app.app_context():
+            get_sb().table("follows").insert([
+                {"follower_id": me["id"], "following_id": mutual["id"], "status": "accepted"},
+                {"follower_id": mutual["id"], "following_id": me["id"], "status": "accepted"},
+                {"follower_id": me["id"], "following_id": following["id"], "status": "accepted"},
+            ]).execute()
+
+        resp = client.get(f"/api/v1/mentions/search?q={prefix}", headers=headers)
+        assert resp.status_code == 200
+        usernames = [u["username"] for u in resp.get_json()["users"]]
+        # stranger alfabetik olarak EN ÖNDE ama takip ilişkisi yok -> en sona düşer
+        assert usernames == [mutual["username"], following["username"], stranger["username"]]
+
+        self._cleanup(app, [me["id"], mutual["id"], following["id"], stranger["id"]])
