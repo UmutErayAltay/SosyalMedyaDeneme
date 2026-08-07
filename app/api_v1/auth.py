@@ -14,6 +14,7 @@ from ..rate_limit import is_rate_limited
 from ..cache import invalidate
 from ..auth import _unique_username, _reset_rate_limited
 from ..realtime_session import _store_realtime_session, _decrypt_token
+from ..realtime_topics import realtime_topic
 
 
 @bp.route("/auth/register", methods=["POST"])
@@ -601,4 +602,12 @@ def api_realtime_token():
         access_token=access_token,
         supabase_url=current_app.config["SUPABASE_URL"],
         supabase_publishable_key=current_app.config["SUPABASE_PUBLISHABLE_KEY"],
+        # Kendi arama kanalı adı (tahmin edilemez HMAC) — web'in
+        # window.MY_CALLS_TOPIC'iyle AYNI gerekçe: Supabase private kanal
+        # yetkilendirmesi platform tarafında bozuk (bkz. .context/
+        # active_context.md "2026-08-07 devam 6/7"), broadcast public'e
+        # alındı, güvenlik kanal adının gizliliğine taşındı. Bu uç nokta
+        # zaten periyodik olarak (20dk'da bir + her reconnect'te) çağrıldığı
+        # için ek bir round-trip GEREKMİYOR.
+        my_calls_topic=realtime_topic("calls", request.api_user["id"]),
     )

@@ -18,6 +18,7 @@ from ..messaging._common import (
     _mark_message_notifications_read, _notify_conversation,
 )
 from ..messaging.views import MESSAGE_PAGE, _write_pool
+from ..realtime_topics import realtime_topic
 from ..notifications import notify
 from ..gifs import is_valid_klipy_url
 
@@ -199,6 +200,15 @@ def api_message_conversation_detail(conversation_id):
             # satırı çekmiş durumda. is_muted kolonu (migration_conversation_
             # mute.sql) yoksa .get() None döner -> False.
             "is_muted": bool(part[0].get("is_muted")),
+            # Karşı tarafın arama kanalı adı (tahmin edilemez HMAC) — web'in
+            # data-other-call-topic'iyle AYNI gerekçe (bkz. app/realtime_topics.py
+            # ve .context/active_context.md "2026-08-07 devam 6/7"). SADECE bu
+            # route'un yetki kontrolünden (yukarıdaki `part` katılımcılık
+            # sorgusu) geçmiş kullanıcıya döner — grup sohbetinde None (1:1
+            # dışında arama yok).
+            "other_call_topic": (
+                realtime_topic("calls", other_user["id"]) if other_user else None
+            ),
         },
     )
 
