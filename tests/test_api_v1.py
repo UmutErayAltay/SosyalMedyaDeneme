@@ -3212,3 +3212,230 @@ class TestApiV1Report:
 
         with app.app_context():
             get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+
+class TestApiV1PostManagement:
+    """POST /posts/<id>/edit|delete|archive|pin — app/api_v1/posts.py.
+
+    Web'deki (app/routes/posts.py) edit_post/delete_post/toggle_archive/
+    toggle_pin mirror'ı. Her endpoint için (a) sahibi olmayan reddediliyor mu
+    (404 — 403 DEĞİL, enumeration koruması), (b) sahibiyken gerçekten yazıyor
+    mu doğrulanır. Token'lar _api_token_for() ile üretilir (gerçek /auth/login
+    YOK — login:{ip} birikimli rate-limit bütçesi tüketilmez)."""
+
+    @staticmethod
+    def _insert_post(app, user_id, content="api_v1 post yönetimi testi"):
+        with app.app_context():
+            return get_sb().table("posts").insert({
+                "user_id": user_id,
+                "content": content,
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute().data[0]["id"]
+
+    @staticmethod
+    def _cleanup(app, user_ids, post_ids):
+        with app.app_context():
+            sb = get_sb()
+            for pid in post_ids:
+                try:
+                    sb.table("post_hashtags").delete().eq("post_id", pid).execute()
+                except Exception:
+                    pass
+                try:
+                    sb.table("notifications").delete().eq("post_id", pid).execute()
+                except Exception:
+                    pass
+                sb.table("posts").delete().eq("id", pid).execute()
+            for uid in user_ids:
+                sb.table("api_tokens").delete().eq("user_id", uid).execute()
+
+    # --- edit ------------------------------------------------------------
+    def test_edit_without_token_returns_401(self, client):
+        resp = client.post("/api/v1/posts/nonexistent/edit", json={"content": "x"})
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_edit_by_non_owner_returns_404_and_does_not_change_content(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_edit_owner@example.com", password="TestPass123!")
+        other = test_user_factory(email="apiv1_edit_other@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, other['id'])}"}
+        post_id = self._insert_post(app, owner["id"], "orijinal metin")
+
+        resp = client.post(f"/api/v1/posts/{post_id}/edit", json={"content": "ele geçirildi"}, headers=headers)
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "not_found"
+
+        with app.app_context():
+            row = get_sb().table("posts").select("content").eq("id", post_id).execute().data[0]
+        assert row["content"] == "orijinal metin"
+
+        self._cleanup(app, [other["id"]], [post_id])
+
+    def test_edit_by_owner_updates_content_and_stamps_edited_at(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_edit_ok@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, owner['id'])}"}
+        post_id = self._insert_post(app, owner["id"], "ilk hali")
+
+        resp = client.post(
+            f"/api/v1/posts/{post_id}/edit",
+            json={"content": "güncellenmiş hali", "visibility": "followers"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["content"] == "güncellenmiş hali"
+        assert body["visibility"] == "followers"
+        assert body["edited_at"]
+
+        with app.app_context():
+            row = get_sb().table("posts").select("content, edited_at, visibility").eq(
+                "id", post_id
+            ).execute().data[0]
+        assert row["content"] == "güncellenmiş hali"
+        assert row["edited_at"]
+        assert row["visibility"] == "followers"
+
+        self._cleanup(app, [owner["id"]], [post_id])
+
+    def test_edit_empty_content_without_media_returns_400(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_edit_empty@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, owner['id'])}"}
+        post_id = self._insert_post(app, owner["id"], "silinmemeli")
+
+        resp = client.post(f"/api/v1/posts/{post_id}/edit", json={"content": "   "}, headers=headers)
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "empty_post"
+
+        with app.app_context():
+            row = get_sb().table("posts").select("content").eq("id", post_id).execute().data[0]
+        assert row["content"] == "silinmemeli"
+
+        self._cleanup(app, [owner["id"]], [post_id])
+
+    # --- delete ----------------------------------------------------------
+    def test_delete_without_token_returns_401(self, client):
+        resp = client.post("/api/v1/posts/nonexistent/delete")
+        assert resp.status_code == 401
+        assert resp.get_json().get("error") == "unauthorized"
+
+    def test_delete_by_non_owner_returns_404_and_post_survives(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_del_owner@example.com", password="TestPass123!")
+        other = test_user_factory(email="apiv1_del_other@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, other['id'])}"}
+        post_id = self._insert_post(app, owner["id"])
+
+        resp = client.post(f"/api/v1/posts/{post_id}/delete", headers=headers)
+        # Web'deki sessiz no-op (ok=True) regresyonuna karşı: açıkça 404 olmalı
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "not_found"
+
+        with app.app_context():
+            assert get_sb().table("posts").select("id").eq("id", post_id).execute().data
+
+        self._cleanup(app, [other["id"]], [post_id])
+
+    def test_delete_by_owner_removes_post(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_del_ok@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, owner['id'])}"}
+        post_id = self._insert_post(app, owner["id"])
+
+        resp = client.post(f"/api/v1/posts/{post_id}/delete", headers=headers)
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
+        with app.app_context():
+            assert not get_sb().table("posts").select("id").eq("id", post_id).execute().data
+
+        self._cleanup(app, [owner["id"]], [])
+
+    # --- archive ---------------------------------------------------------
+    def test_archive_by_non_owner_returns_404(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_arch_owner@example.com", password="TestPass123!")
+        other = test_user_factory(email="apiv1_arch_other@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, other['id'])}"}
+        post_id = self._insert_post(app, owner["id"])
+
+        resp = client.post(f"/api/v1/posts/{post_id}/archive", headers=headers)
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "not_found"
+
+        with app.app_context():
+            row = get_sb().table("posts").select("is_archived").eq("id", post_id).execute().data[0]
+        assert not row["is_archived"]
+
+        self._cleanup(app, [other["id"]], [post_id])
+
+    def test_archive_by_owner_toggles_both_ways(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_arch_ok@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, owner['id'])}"}
+        post_id = self._insert_post(app, owner["id"])
+
+        resp = client.post(f"/api/v1/posts/{post_id}/archive", headers=headers)
+        assert resp.status_code == 200
+        assert resp.get_json()["is_archived"] is True
+        with app.app_context():
+            row = get_sb().table("posts").select("is_archived, archived_at").eq(
+                "id", post_id
+            ).execute().data[0]
+        assert row["is_archived"] is True
+        assert row["archived_at"]
+
+        resp2 = client.post(f"/api/v1/posts/{post_id}/archive", headers=headers)
+        assert resp2.status_code == 200
+        assert resp2.get_json()["is_archived"] is False
+        with app.app_context():
+            row2 = get_sb().table("posts").select("is_archived, archived_at").eq(
+                "id", post_id
+            ).execute().data[0]
+        assert row2["is_archived"] is False
+        assert row2["archived_at"] is None
+
+        self._cleanup(app, [owner["id"]], [post_id])
+
+    # --- pin -------------------------------------------------------------
+    def test_pin_by_non_owner_returns_404(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_pin_owner@example.com", password="TestPass123!")
+        other = test_user_factory(email="apiv1_pin_other@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, other['id'])}"}
+        post_id = self._insert_post(app, owner["id"])
+
+        resp = client.post(f"/api/v1/posts/{post_id}/pin", headers=headers)
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "not_found"
+
+        with app.app_context():
+            prof = get_sb().table("profiles").select("pinned_post_id").eq(
+                "id", other["id"]
+            ).execute().data[0]
+        assert prof["pinned_post_id"] is None
+
+        self._cleanup(app, [other["id"]], [post_id])
+
+    def test_pin_by_owner_toggles_pinned_post_id(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_pin_ok@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, owner['id'])}"}
+        post_id = self._insert_post(app, owner["id"])
+
+        resp = client.post(f"/api/v1/posts/{post_id}/pin", headers=headers)
+        assert resp.status_code == 200
+        assert resp.get_json()["pinned"] is True
+        with app.app_context():
+            prof = get_sb().table("profiles").select("pinned_post_id").eq(
+                "id", owner["id"]
+            ).execute().data[0]
+        assert prof["pinned_post_id"] == post_id
+
+        # Aynı postu tekrar sabitlemek = sabitlemeyi kaldırır (tek kolon toggle)
+        resp2 = client.post(f"/api/v1/posts/{post_id}/pin", headers=headers)
+        assert resp2.status_code == 200
+        assert resp2.get_json()["pinned"] is False
+        with app.app_context():
+            prof2 = get_sb().table("profiles").select("pinned_post_id").eq(
+                "id", owner["id"]
+            ).execute().data[0]
+        assert prof2["pinned_post_id"] is None
+
+        self._cleanup(app, [owner["id"]], [post_id])
