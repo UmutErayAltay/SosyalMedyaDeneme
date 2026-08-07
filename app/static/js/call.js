@@ -1071,9 +1071,24 @@
 
         ensureCallDOM();
 
-        // Global call listener'ı ilk seferinde başlat (inbox'ta da gelen aramalar çalışsın)
+        // Global call listener'ı ilk seferinde başlat (inbox'ta da gelen aramalar çalışsın).
+        // GÜVENLİK AĞI DÜZELTMESİ (Supabase Support teşhisi, canlı log kanıtıyla
+        // doğrulandı): buradan senkron çağrı YAPILIRSA, dosyanın ALT kısmındaki
+        // "her sayfada otomatik başlat" bloğu (SB_TOKEN_READY'yi bekleyen, bkz.
+        // aşağı) devreye giremeden window._globalCallListenerInitialized ÇOKTAN
+        // true olur — initGlobalCallListener'ın kendi guard'ı (fonksiyonun en
+        // başındaki if) o zaman İKİNCİ (doğru, taze-token'lı) çağrıyı SESSİZCE
+        // iptal eder. Sonuç: konuşma sayfasında initCallSystem() chat.js'ten
+        // SENKRON çağrıldığı için (network round-trip'i beklemeyen) bu YARIŞI
+        // HER ZAMAN kazanıyordu — calls: kanalının "taze token'ı bekliyor"
+        // varsayımı konuşma sayfalarında GERÇEKTE YANLIŞTI. Şimdi bu çağrı da
+        // AYNI bariyeri bekliyor; iki .then() çağrısından hangisi önce
+        // gelirse gelsin (guard sayesinde) sonuç aynı, ama HER İKİSİ de artık
+        // gerçekten taze token'la subscribe ediyor.
         if (meId && !window._globalCallListenerInitialized) {
-            window.initGlobalCallListener(meId);
+            (window.SB_TOKEN_READY || Promise.resolve()).then(function () {
+                window.initGlobalCallListener(meId);
+            });
         }
 
         // Başlatma butonları: sesli / görüntülü (yalnızca konuşma sayfasında var).

@@ -10,6 +10,22 @@
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+// GEÇİCİ TANI YARDIMCISI (Supabase Support talebi) — imza doğrulamadan SADECE
+// claim'leri okur, tüm tanı loglarında paylaşılan tek kaynak.
+window.__decodeJwt = function (token) {
+    try {
+        var payload = token.split('.')[1];
+        var base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+        var json = decodeURIComponent(
+            atob(base64).split('').map(function (c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''),
+        );
+        return JSON.parse(json);
+    } catch (e) {
+        return { __decodeError: e.message };
+    }
+};
 (function () {
     if (window.supabaseClient || !window.supabase) return;
     // auth kalıcılığı TAMAMEN kapalı: varsayılan persistSession, localStorage'da
@@ -22,9 +38,21 @@
         window.SUPABASE_KEY,
         { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
     );
+    // GEÇİCİ TANI: bu client örneğine benzersiz bir kimlik damgalıyoruz —
+    // "setAuth çağrılan client ile channel() çağrılan client AYNI mı"
+    // sorusunu, tek bir global singleton olduğu iddiasını VARSAYMADAN,
+    // GERÇEKTEN karşılaştırılabilir kılmak için (Supabase Support'un "wrong
+    // client instance" hipotezi).
+    window.supabaseClient.__instanceId = 'sc-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+    console.log('[DIAG realtime] supabaseClient OLUŞTURULDU, instanceId=' + window.supabaseClient.__instanceId);
     // Token yenileme SADECE sunucuda yapılır (auth.refresh_session_tokens) —
     // tek kullanımlık refresh token iki taraf arasında tüketilmesin (geçmiş
     // 400 hatası). Realtime'ın ihtiyacı olan tek şey geçerli access token.
+    (function () {
+        var claims = window.__decodeJwt(window.SB_ACCESS_TOKEN);
+        console.log('[DIAG realtime] İLK setAuth (gömülü token), instanceId=' + window.supabaseClient.__instanceId +
+            ', sub=' + claims.sub + ', exp=' + claims.exp);
+    })();
     window.supabaseClient.realtime.setAuth(window.SB_ACCESS_TOKEN);
     // Mesajlaşma dışı sayfalarda gömülü token bayat olabilir (render öncesi
     // yenilemeyi yalnızca mesajlaşma view'ları yapıyor) — yüklenir yüklenmez
@@ -38,7 +66,11 @@
         if (d && d.relogin) { window.location.href = '/logout'; return; }
         if (d && d.access_token) {
             window.SB_ACCESS_TOKEN = d.access_token;
+            var claims = window.__decodeJwt(d.access_token);
+            console.log('[DIAG realtime] setAuth (taze /auth/realtime-token), instanceId=' +
+                window.supabaseClient.__instanceId + ', sub=' + claims.sub + ', exp=' + claims.exp);
             window.supabaseClient.realtime.setAuth(d.access_token);
+            console.log('[DIAG realtime] setAuth döndü, instanceId=' + window.supabaseClient.__instanceId);
         }
     }
     window.SB_TOKEN_READY = fetch('/auth/realtime-token')

@@ -1238,6 +1238,16 @@
         if (!window.supabaseClient) startPollingFallback();
 
         if (window.supabaseClient) {
+            // GÜVENLİK AĞI DÜZELTMESİ (Supabase Support teşhisi, canlı log
+            // kanıtıyla doğrulandı — bkz. call.js'teki initCallSystem yorumu):
+            // bu blok ÖNCEDEN senkron çalışıyordu, yani typing:/messages:
+            // kanalları render-anında Jinja'nın gömdüğü BAYAT token'la
+            // subscribe oluyordu — /auth/realtime-token'ın taze token'ı
+            // setAuth ile uygulanması (SB_TOKEN_READY) genelde bundan SONRA
+            // tamamlanıyordu (network round-trip). calls: kanalı zaten bu
+            // bariyeri bekliyordu, şimdi typing:/messages: de aynı bariyerin
+            // arkasına alındı.
+            (window.SB_TOKEN_READY || Promise.resolve()).then(function () {
             try {
                 var topic = 'messages:' + conversationId;
                 // self:false — kendi "yazıyor" broadcast'imizi kendimize geri göstermeyelim.
@@ -1404,6 +1414,73 @@
                 // typing: policy'si (select+insert) zaten TÜM katılımcılara
                 // simetrik — call.js'teki calls: kanalının aksine mimari bir
                 // uyumsuzluk yok, bu yüzden ek bir SQL düzeltmesi gerekmedi.
+                // GEÇİCİ TANI LOGLAMASI (Supabase Support talebi) — typing:
+                // subscribe'dan HEMEN önce (a) supabase-js'in KENDİ auth
+                // state'inin bir kullanıcı görüp görmediği (b) /auth/realtime-token
+                // fetch'inin status kodu. NOT: bu client persistSession:false +
+                // setSession() HİÇ çağrılmıyor (bkz. _supabase_core.html yorumu,
+                // "oturumun tek sahibi Flask") — bu yüzden auth.getUser()'ın
+                // user:null dönmesi BEKLENEN bir durum, bug işareti DEĞİL; asıl
+                // kimlik realtime.setAuth() ile AYRI/manuel olarak veriliyor.
+                (async function () {
+                    try {
+                        var userResult = await window.supabaseClient.auth.getUser();
+                        console.log('[DIAG] auth.getUser():', JSON.stringify(userResult));
+                    } catch (e) {
+                        console.log('[DIAG] auth.getUser() hata:', e.message);
+                    }
+                    try {
+                        var tokenResp = await fetch('/auth/realtime-token');
+                        console.log('[DIAG] /auth/realtime-token status:', tokenResp.status);
+                        // NOT: bu endpoint HAM bir JWT string'i DEĞİL, JSON
+                        // {access_token, relogin} döner (bkz. app/auth.py
+                        // realtime_token()) — Supabase support'un verdiği
+                        // r.text() örneği burada çalışmaz, .json() + .access_token
+                        // gerekir.
+                        var tokenBody = await tokenResp.clone().json();
+                        var rawToken = tokenBody.access_token;
+                        if (rawToken) {
+                            var payload = rawToken.split('.')[1];
+                            var base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+                            var json = decodeURIComponent(
+                                atob(base64).split('').map(function (c) {
+                                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                                }).join(''),
+                            );
+                            var claims = JSON.parse(json);
+                            console.log('[DIAG] realtime-token JWT claims:', JSON.stringify({
+                                sub: claims.sub,
+                                exp: claims.exp,
+                                exp_readable: claims.exp ? new Date(claims.exp * 1000).toISOString() : null,
+                                iat: claims.iat,
+                                aud: claims.aud,
+                                iss: claims.iss,
+                                role: claims.role,
+                            }));
+                        } else {
+                            console.log('[DIAG] realtime-token body access_token YOK:', JSON.stringify(tokenBody));
+                        }
+                    } catch (e) {
+                        console.log('[DIAG] /auth/realtime-token fetch/decode hata:', e.message);
+                    }
+                })();
+
+                // GEÇİCİ TANI (Supabase Support hipotezi: "typing subscribe
+                // ANINDA setAuth ile uygulanmış olan token gerçekten taze mi,
+                // yoksa hâlâ Jinja'nın gömdüğü render-anı token'ı mı?") —
+                // YUKARIDAKİ blok AYRI bir taze fetch yapıyor (farklı soruya
+                // cevap veriyor: "şu an /auth/realtime-token neye izin verir"),
+                // BU blok ise o fetch'i HİÇ yapmadan, subscribe anında client'a
+                // GERÇEKTEN uygulanmış olan window.SB_ACCESS_TOKEN'ı okuyor —
+                // asıl kanıt bu, çünkü channel() çağrısı da AYNI window.supabaseClient
+                // üzerinden gidiyor (instanceId ile karşılaştırılabilir).
+                (function () {
+                    var claims = window.__decodeJwt ? window.__decodeJwt(window.SB_ACCESS_TOKEN) : {};
+                    console.log('[DIAG realtime] BEFORE typing subscribe — aktif token sub=' + claims.sub +
+                        ', exp=' + claims.exp +
+                        ', client instanceId=' + (window.supabaseClient && window.supabaseClient.__instanceId));
+                })();
+
                 typingChannel = window.supabaseClient.channel('typing:' + conversationId, {
                     config: { broadcast: { self: false }, private: true }
                 });
@@ -1451,6 +1528,7 @@
             } catch (err) {
                 console.warn('Realtime başlatılamadı:', err);
             }
+            });
         }
     };
 
