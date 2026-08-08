@@ -135,8 +135,25 @@ def register():
             return redirect(url_for("auth.register"))
 
         try:
-            # 1) Admin API ile kullanıcı oluştur (email onayını atla)
             admin = get_sb()
+
+            # 1) Kullanıcı adı ÖN-KONTROLÜ — admin.create_user'dan ÖNCE.
+            # CANLI OLAY (2026-08-08): "deneme" adı zaten alınmışken bu
+            # kontrol YOKTU, admin.create_user zaten çalıştı, profiles
+            # upsert'i UNIQUE(username) ihlaliyle patladı ama eski kod bunu
+            # `except: pass` ile SESSİZCE yutuyordu (yorumdaki "trigger zaten
+            # oluşturmuş olabilir" gerekçesi de yanlıştı — information_schema
+            # sorgusuyla doğrulandı, auth.users üzerinde HİÇ trigger yok).
+            # Sonuç: Supabase Auth kullanıcısı oluşup otomatik giriş yapıldı
+            # ama profiles satırı hiç yoktu — sonraki her girişte feed.html
+            # -> url_for('routes.profile', username=None) BuildError/500
+            # veriyordu. Artık boşuna bir Auth kullanıcısı oluşturulmadan ÖNCE
+            # kontrol ediliyor.
+            if admin.table("profiles").select("id").eq("username", username).execute().data:
+                flash("Bu kullanıcı adı zaten alınmış.", "error")
+                return redirect(url_for("auth.register"))
+
+            # 2) Admin API ile kullanıcı oluştur (email onayını atla)
             res = admin.auth.admin.create_user({
                 "email": email,
                 "password": password,
@@ -148,7 +165,11 @@ def register():
                 flash("Kayıt başarısız: " + str(res), "error")
                 return redirect(url_for("auth.register"))
 
-            # 2) profiles tablosunu garantiye al
+            # 3) profiles tablosunu garantiye al — başarısız olursa (ör. adım
+            # 1'deki kontrolden SONRA, çok nadir bir yarışla aynı kullanıcı
+            # adı başkası tarafından kapıldıysa) auth.users'daki kullanıcı
+            # GERİ ALINIR — yetim (profilsiz) bir hesap ASLA oluşmaz, önceki
+            # sessiz `except: pass` bir daha tekrarlanmasın diye.
             try:
                 admin.table("profiles").upsert({
                     "id": user.id,
@@ -157,9 +178,14 @@ def register():
                     "is_private": True,  # yeni hesaplar varsayılan gizli (ürün kararı)
                 }, on_conflict="id").execute()
             except Exception:
-                pass  # trigger zaten oluşturmuş olabilir
+                try:
+                    admin.auth.admin.delete_user(user.id)
+                except Exception:
+                    pass  # en iyi-çaba geri alma — DB tarafında yetim hesap kalabilir
+                flash("Bu kullanıcı adı az önce alındı, lütfen farklı bir kullanıcı adı dene.", "error")
+                return redirect(url_for("auth.register"))
 
-            # 3) Otomatik giriş (sign_in ile geçerli session al) — tek
+            # 4) Otomatik giriş (sign_in ile geçerli session al) — tek
             # kullanımlık client: paylaşılan get_auth() singleton'ı başka bir
             # cihazın AYNI ANDA login/logout işlemiyle çakışabilir (bkz.
             # _check_banned üzerindeki not).
