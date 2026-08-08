@@ -1,13 +1,21 @@
-// Web Push abonelik akışı — bildirim tercihleri sayfasındaki "Anlık
-// Bildirimler" kartını yönetir. Tarayıcı izni + service worker gerektirir;
-// desteklenmiyorsa veya sunucuda VAPID anahtarı yoksa buton devre dışı kalır
-// (feature-flag deseni, GIF/Klipy ile aynı graceful degradation).
-
+// Web Push bildirimleri — 3 bağımsız bölüm, hepsi aynı VAPID/subscribe
+// akışını paylaştığı için tek dosyada. common-auth bundle'ına eklendi (bkz.
+// scripts/build-js.mjs MANIFEST) — HER giriş yapılmış sayfada yükleniyor:
+//
+//  1) Ayarlar sayfasındaki (#push-toggle-btn) manuel "Bildirimleri Aç/Kapat"
+//     butonu — sadece o eleman DOM'daysa çalışır (bildirim tercihleri
+//     sayfası), diğer sayfalarda sessizce atlanır.
+//  2) Çıkış yaparken (.logout linkine tıklanınca) bu cihazın push
+//     subscription'ını sunucudan siler. Kullanıcı raporu: "çıkış yaptım ama
+//     bildirim gelmeye devam ediyordu" — subscription'ın endpoint'i SADECE
+//     tarayıcıda bilindiği için bu SUNUCU tarafında yapılamaz, istemci
+//     /logout'a giderken paralel olarak /push/unsubscribe'ı tetiklemeli.
+//  3) Giriş yapılmış herhangi bir sayfada, tarayıcı daha önce HİÇ
+//     sorulmamışsa (Notification.permission === 'default') kısa bir
+//     gecikmeyle otomatik izin iste + abone ol — native uygulamanın
+//     açılışta izin istemesiyle aynı ruh. 'denied' ise ASLA tekrar sorulmaz
+//     (tarayıcı zaten engelliyor, tekrar sormak spam sayılır).
 (function () {
-    var btn = document.getElementById('push-toggle-btn');
-    var statusText = document.getElementById('push-status-text');
-    if (!btn) return;
-
     function csrfToken() {
         var meta = document.querySelector('meta[name="csrf-token"]');
         return meta ? meta.content : '';
@@ -26,44 +34,64 @@
         return outputArray;
     }
 
+    var supported = ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
+
+    // ============ Bölüm 1: Ayarlar sayfası butonu ============
+    var btn = document.getElementById('push-toggle-btn');
+    var statusText = document.getElementById('push-status-text');
+
     function setStatus(text) {
         if (statusText) statusText.textContent = text;
     }
 
-    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
-        btn.disabled = true;
-        btn.textContent = 'Tarayıcın desteklemiyor';
-        return;
-    }
-
-    var vapidKey = null;
-
+    // btn bu sayfada yoksa (ayarlar dışındaki her sayfa) no-op — Bölüm 2/3
+    // btn'siz de çalışabildiği için burada erken return YOK, sadece bu
+    // fonksiyon kendi içinde korunuyor.
     function updateButton(subscribed) {
+        if (!btn) return;
         btn.textContent = subscribed ? 'Bildirimleri Kapat' : 'Bildirimleri Aç';
         btn.dataset.subscribed = subscribed ? '1' : '0';
     }
 
-    async function init() {
-        try {
-            var res = await fetch('/push/vapid-public-key');
-            var data = await res.json();
-            if (!data.enabled) {
-                btn.disabled = true;
-                btn.textContent = 'Şu anda kullanılamıyor';
-                return;
-            }
-            vapidKey = data.key;
-
-            var reg = await navigator.serviceWorker.ready;
-            var sub = await reg.pushManager.getSubscription();
-            updateButton(!!sub);
-        } catch (err) {
+    if (btn) {
+        if (!supported) {
             btn.disabled = true;
-            btn.textContent = 'Yüklenemedi';
+            btn.textContent = 'Tarayıcın desteklemiyor';
+        } else {
+            (async function initButton() {
+                try {
+                    var res = await fetch('/push/vapid-public-key');
+                    var data = await res.json();
+                    if (!data.enabled) {
+                        btn.disabled = true;
+                        btn.textContent = 'Şu anda kullanılamıyor';
+                        return;
+                    }
+                    var reg = await navigator.serviceWorker.ready;
+                    var sub = await reg.pushManager.getSubscription();
+                    updateButton(!!sub);
+                    // Click listener veriler yüklendikten SONRA bağlanıyor —
+                    // erken tıklamada henüz bilinmeyen vapid key'e karşı
+                    // subscribeWithKey çağrılmasını önler.
+                    btn.addEventListener('click', function () {
+                        if (btn.dataset.subscribed === '1') {
+                            unsubscribeCurrent();
+                        } else {
+                            subscribeWithKey(data.key);
+                        }
+                    });
+                } catch (err) {
+                    btn.disabled = true;
+                    btn.textContent = 'Yüklenemedi';
+                }
+            })();
         }
     }
 
-    async function subscribe() {
+    // Bölüm 1 (buton) ve Bölüm 3 (otomatik prompt) AYNI abonelik akışını
+    // paylaşır — setStatus/updateButton ilgili eleman yoksa no-op olduğu
+    // için otomatik tetiklemede (ayarlar sayfası dışında) güvenle kullanılır.
+    async function subscribeWithKey(vapidKey) {
         // Push API yalnızca HTTPS veya localhost'ta çalışır. Güvensiz origin'de
         // (ör. LAN IP'siyle erişim, http://192.168.x.x:5000) tarayıcı
         // pushManager.subscribe()'ı kriptik "Registration failed - push service
@@ -136,7 +164,7 @@
         }
     }
 
-    async function unsubscribe() {
+    async function unsubscribeCurrent() {
         try {
             var reg = await navigator.serviceWorker.ready;
             var sub = await reg.pushManager.getSubscription();
@@ -157,13 +185,52 @@
         }
     }
 
-    btn.addEventListener('click', function () {
-        if (btn.dataset.subscribed === '1') {
-            unsubscribe();
-        } else {
-            subscribe();
-        }
-    });
+    // ============ Bölüm 2: Çıkışta otomatik unsubscribe ============
+    // Document-level delegation: navbar sonradan başka bir bundle'la
+    // değişse/yeniden çizilse bile çalışmaya devam eder (proje deseni).
+    if (supported) {
+        document.addEventListener('click', function (e) {
+            var link = e.target.closest && e.target.closest('.logout');
+            if (!link) return;
+            // preventDefault YOK — logout ASLA gecikmemeli/engellenmemeli, isteğin
+            // başarısız/yavaş olması normal navigasyonu etkilememeli. fetch'e
+            // keepalive:true veriliyor ki sayfa navigasyon sırasında kapansa bile
+            // istek tamamlansın (sendBeacon bu endpoint'in zorunlu tuttuğu
+            // X-CSRF-Token header'ını taşıyamadığı için kullanılamadı — sendBeacon
+            // sadece Content-Type'ı body tipinden türetir, özel header eklenemez).
+            navigator.serviceWorker.getRegistration().then(function (reg) {
+                return reg && reg.pushManager.getSubscription();
+            }).then(function (sub) {
+                if (!sub) return;
+                fetch('/push/unsubscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+                    body: JSON.stringify({ endpoint: sub.endpoint }),
+                    keepalive: true,
+                }).catch(function () {});
+            }).catch(function () {});
+        });
+    }
 
-    init();
+    // ============ Bölüm 3: Otomatik izin isteği ============
+    if (supported && Notification.permission === 'default') {
+        // Sayfa açılır AÇILMAZ değil, kısa bir gecikmeyle — bazı tarayıcılar
+        // "sayfa yüklenir yüklenmez izin iste" desenini agresif/kötü UX sayıp
+        // prompt'u otomatik bastırabiliyor.
+        setTimeout(function () {
+            fetch('/push/vapid-public-key').then(function (res) {
+                return res.json();
+            }).then(function (data) {
+                if (!data.enabled) return; // VAPID anahtarı yok — özellik kapalı
+                return navigator.serviceWorker.ready.then(function (reg) {
+                    return reg.pushManager.getSubscription();
+                }).then(function (existing) {
+                    if (existing) return; // bu cihaz zaten abone
+                    return subscribeWithKey(data.key);
+                });
+            }).catch(function (err) {
+                console.warn('Otomatik push aboneliği denemesi başarısız:', err);
+            });
+        }, 1500);
+    }
 })();

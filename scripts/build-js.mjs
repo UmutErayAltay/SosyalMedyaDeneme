@@ -31,7 +31,10 @@ const MANIFEST = {
     'postMore.js', 'lightbox.js', 'postClick.js',
   ],
   // base.html — SADECE giriş yapılmışsa ({% if me %})
-  'common-auth': ['notifications.js', 'messagesBadge.js'],
+  // pushNotifications.js burada: logout-unsubscribe hook'u ve otomatik izin
+  // prompt'u (Notification.permission === 'default') HER giriş yapılmış
+  // sayfada çalışmalı, sadece bildirim tercihleri sayfasında değil.
+  'common-auth': ['notifications.js', 'messagesBadge.js', 'pushNotifications.js'],
 
   // feed/profile/post_detail/discover/search/hashtag/follow_list ortak seti
   // (likes/polls/bookmarks/follow document-level delegation kullanıyor —

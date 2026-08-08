@@ -29,5 +29,7 @@
     </section>
     <button type="submit" class="btn btn-primary">Kaydet</button>
 </form>
-<script src="{{ url_for('static', filename='js/pushNotifications.js') }}"></script>
+{# pushNotifications.js artık common-auth bundle'ında (base.html, HER giriş
+   yapılmış sayfada yükleniyor) — burada AYRICA yüklenirse dosya iki kez
+   çalışır (çift event listener/otomatik prompt). #}
 {% endblock %}

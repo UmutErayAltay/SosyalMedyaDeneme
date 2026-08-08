@@ -1553,7 +1553,9 @@ class TestApiV1CreatePost:
         post = resp.get_json()["post"]
         assert post["content"] == "api_v1 post oluşturma testi #apiv1createposttest"
         assert post["user_id"] == user["id"]
-        assert post["visibility"] == "public"
+        # Site politikası (2026-08-08): visibility alanı gönderilmezse
+        # varsayılan artık "followers" (bkz. api_v1/interactions.py).
+        assert post["visibility"] == "followers"
         assert post["like_count"] == 0
         assert post["comment_count"] == 0
         assert post["liked_by_me"] is False
@@ -1571,7 +1573,7 @@ class TestApiV1CreatePost:
             sb.table("post_hashtags").delete().eq("post_id", post_id).execute()
             sb.table("posts").delete().eq("id", post_id).execute()
 
-    def test_create_post_invalid_visibility_falls_back_to_public(self, app, client, test_user_factory):
+    def test_create_post_invalid_visibility_falls_back_to_followers(self, app, client, test_user_factory):
         user = test_user_factory(email="apiv1_createpost_vis@example.com", password="TestPass123!")
         token = _api_token_for(app, user["id"])
         headers = {"Authorization": f"Bearer {token}"}
@@ -1583,7 +1585,8 @@ class TestApiV1CreatePost:
         )
         assert resp.status_code == 200
         post = resp.get_json()["post"]
-        assert post["visibility"] == "public"
+        # Site politikası (2026-08-08): geçersiz değerde son çare artık "followers".
+        assert post["visibility"] == "followers"
         post_id = post["id"]
 
         with app.app_context():

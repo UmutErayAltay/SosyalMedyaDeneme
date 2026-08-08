@@ -85,6 +85,11 @@ def api_create_repost(post_id):
             return jsonify(error="already_reposted"), 409
 
     # 5) Repost'u oluştur
+    # NOT (2026-08-08): "public" burada da posts.py create_repost() ile AYNI
+    # gerekçeyle sabit — repost SADECE 43. satırdaki not_public kontrolünü
+    # geçen (zaten public olan) postlarda oluşur, site genelindeki yeni-post
+    # varsayılanı "followers" olsa da bu bir varsayılan değil orijinalin
+    # (zorunlu public) görünürlüğünü yansıtan sabit davranış — DOKUNULMADI.
     try:
         insert_data = {
             "user_id": me,

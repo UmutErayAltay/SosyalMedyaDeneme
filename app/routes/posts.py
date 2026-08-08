@@ -350,9 +350,12 @@ def create_post():
     if image_urls:
         insert_data["image_url"] = image_urls[0]
 
-    visibility = request.form.get("visibility", "public")
+    # Site politikası (2026-08-08): yeni postların varsayılanı artık
+    # "followers" — kullanıcı formda elle "Herkese açık" seçmedikçe
+    # gizli/takipçiye özel paylaşılır (form alanı hiç gelmezse son çare).
+    visibility = request.form.get("visibility", "followers")
     if visibility not in ("public", "followers", "close_friends"):
-        visibility = "public"
+        visibility = "followers"
 
     # Taslak veya planlanmış post olarak kaydet
     action = request.form.get("action", "")
@@ -452,9 +455,12 @@ def edit_post(post_id):
             flash("Boş post olamaz.", "error")
             return redirect(url_for("routes.edit_post", post_id=post_id))
 
-        visibility = request.form.get("visibility", post.get("visibility") or "public")
+        # Post'un mevcut visibility'si KORUNUR; hiç set edilmemiş eski bir
+        # postta (migration öncesi) son çare artık "followers" (2026-08-08
+        # site politikası — bkz. posts.py create_post()).
+        visibility = request.form.get("visibility", post.get("visibility") or "followers")
         if visibility not in ("public", "followers", "close_friends"):
-            visibility = "public"
+            visibility = "followers"
 
         old_mentions = set(extract_mentions(post.get("content") or ""))
         new_mentions = set(extract_mentions(content))
@@ -664,6 +670,13 @@ def create_repost(post_id):
 
     # 5) Repost'u oluştur
     try:
+        # NOT (2026-08-08): "public" burada bilinçli — repost SADECE
+        # yukarıdaki (620. satır) "orijinal visibility=='public' değilse
+        # 403" kontrolünü geçen postlarda oluşur, yani repost her zaman
+        # zaten herkese açık bir postun üstüne kurulur. Site genelindeki
+        # yeni-post varsayılanı "followers" olsa da, burası bir "varsayılan"
+        # değil orijinalin (zorunlu public) görünürlüğünü yansıtan sabit bir
+        # davranış — DOKUNULMADI.
         insert_data = {
             "user_id": me,
             "content": content,

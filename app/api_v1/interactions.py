@@ -281,7 +281,7 @@ def api_create_post():
     """Yeni post oluştur — multipart/form-data (web formuyla AYNI kodlama,
     JSON DEĞİL, çünkü görsel/video dosyası içeriyor). Alanlar: `content`
     (metin), `visibility` (public/followers/close_friends, varsayılan
-    public), `image` (opsiyonel, TEK dosya — create_post()'daki `images`
+    followers), `image` (opsiyonel, TEK dosya — create_post()'daki `images`
     çoklu alanının BİLİNÇLİ olarak tekil hali), `video` (opsiyonel, TEK
     dosya) + `is_reel` ("true"/"false" — native her zaman açık gönderir,
     web'in checkbox `"on"`'undan FARKLI, bkz. settings.py _bool_form_field) +
@@ -324,9 +324,12 @@ def api_create_post():
     if is_reel and not has_video:
         return jsonify(error="reel_requires_video"), 400
 
-    visibility = request.form.get("visibility", "public")
+    # Site politikası (2026-08-08): web create_post() ile AYNI karar —
+    # varsayılan artık "followers", native de elle "public" seçilmedikçe
+    # gizli/takipçiye özel paylaşır.
+    visibility = request.form.get("visibility", "followers")
     if visibility not in ("public", "followers", "close_friends"):
-        visibility = "public"
+        visibility = "followers"
 
     image_urls = []
     if has_image:
