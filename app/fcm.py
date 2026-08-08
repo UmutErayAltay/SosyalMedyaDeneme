@@ -87,3 +87,65 @@ def send_fcm_to_user(sb, user_id: str, title: str, body: str, url: str = "/") ->
                 pass
         except Exception:
             pass  # Tek bir cihaza gönderim hatası diğer cihazları etkilemesin
+
+
+def send_call_wake_fcm(sb, user_id: str) -> None:
+    """1:1 arama başlatılınca hedefi UYANDIRMAK için data-only, yüksek
+    öncelikli bir FCM mesajı gönderir (2026-08-08, kullanıcı raporu: "bir
+    süre sonra web'den mobile arama gelmiyor").
+
+    1:1 arama sinyalleşmesi (offer/answer/ice) TAMAMEN client-to-client
+    Supabase Realtime broadcast üzerinden yürüyor (bkz. app/realtime_topics.py,
+    CallSignalingManager.kt) — backend bu akışa hiç KARIŞMAZ, sadece kanal
+    adlarını üretir. Realtime broadcast KALICI DEĞİLDİR: alıcı o an bağlı
+    değilse mesaj bir daha asla teslim edilmez. Android'in arka plan pil
+    optimizasyonu bir süre sonra bu WebSocket'i sessizce bayatlatabiliyor —
+    normal (4sn aralıklı) yeniden bağlanma döngüsü bunu YETERİNCE HIZLI
+    yakalamayabilir. Bu fonksiyon `notification=` BLOĞU OLMADAN (sistem
+    otomatik bir bildirim göstermesin, sessiz/data-only) gönderir — hedefin
+    FcmService'i bunu görünce arama dinleyicisini ZORLA/ANINDA yeniden
+    bağlar (bkz. FcmService.kt onMessageReceived). Arayan taraf, hedefin
+    yeniden bağlanması için gereken birkaç saniyeyi karşılamak üzere offer
+    broadcast'ini ZATEN periyodik tekrarlıyor (bkz. CallSessionManager.
+    startCall() resend deseni) — bu ikisi BİRLİKTE çalışır.
+
+    send_fcm_to_user() ile AYNI graceful-degradation (anahtar/tablo yoksa
+    sessizce çık, tek cihaz hatası diğerlerini etkilemez) — arama sinyal
+    akışını ASLA kesintiye uğratmamalı, bu yüzden HİÇBİR İSTİSNA çağırana
+    yansıtılmaz.
+    """
+    if not FIREBASE_SERVICE_ACCOUNT_JSON:
+        return
+    try:
+        from firebase_admin import messaging
+    except ImportError:
+        return
+
+    if not _ensure_initialized():
+        return
+
+    try:
+        tokens = sb.table("fcm_tokens").select(
+            "id, token"
+        ).eq("user_id", user_id).execute().data
+    except Exception:
+        return
+
+    if not tokens:
+        return
+
+    for row in tokens:
+        try:
+            message = messaging.Message(
+                data={"type": "incoming_call_wake"},
+                token=row["token"],
+                android=messaging.AndroidConfig(priority="high"),
+            )
+            messaging.send(message)
+        except messaging.UnregisteredError:
+            try:
+                sb.table("fcm_tokens").delete().eq("id", row["id"]).execute()
+            except Exception:
+                pass
+        except Exception:
+            pass

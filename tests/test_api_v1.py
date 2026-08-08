@@ -1349,6 +1349,58 @@ class TestApiV1GroupCall:
         _cleanup_conversation(app, dm_cid, creator["id"], member_b["id"])
 
 
+class TestApiV1CallRing:
+    """1:1 arama FCM uyandırma tetikleyicisi (2026-08-08, bkz. app/fcm.py::
+    send_call_wake_fcm() ve app/api_v1/messaging.py::api_call_ring()
+    yorumları) — gerçek FCM gönderimi FIREBASE_SERVICE_ACCOUNT_JSON yoksa/
+    varsa fark etmeksizin sessizce çıkar (graceful degradation), bu yüzden
+    test SADECE endpoint'in auth/doğrulama/rate-limit davranışını kapsar."""
+
+    def test_ring_without_auth_returns_401(self, client):
+        resp = client.post("/api/v1/calls/ring", json={"target_user_id": "fake"})
+        assert resp.status_code == 401
+
+    def test_ring_missing_target_returns_400(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_ring_missing@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, user['id'])}"}
+
+        resp = client.post("/api/v1/calls/ring", json={}, headers=headers)
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "eksik_veri"
+
+    def test_ring_ok_for_normal_target(self, app, client, test_user_factory):
+        caller = test_user_factory(email="apiv1_ring_caller@example.com", password="TestPass123!")
+        target = test_user_factory(email="apiv1_ring_target@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, caller['id'])}"}
+
+        resp = client.post(
+            "/api/v1/calls/ring", json={"target_user_id": target["id"]}, headers=headers
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
+    def test_ring_blocked_target_returns_403(self, app, client, test_user_factory):
+        caller = test_user_factory(email="apiv1_ring_blocker@example.com", password="TestPass123!")
+        target = test_user_factory(email="apiv1_ring_blockee@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, caller['id'])}"}
+
+        with app.app_context():
+            get_sb().table("blocks").insert({
+                "blocker_id": caller["id"], "blocked_id": target["id"],
+            }).execute()
+
+        resp = client.post(
+            "/api/v1/calls/ring", json={"target_user_id": target["id"]}, headers=headers
+        )
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "blocked"
+
+        with app.app_context():
+            get_sb().table("blocks").delete().eq("blocker_id", caller["id"]).eq(
+                "blocked_id", target["id"]
+            ).execute()
+
+
 class TestApiV1Interactions:
     def test_like_without_token_returns_401(self, client):
         resp = client.post("/api/v1/posts/nonexistent/like")

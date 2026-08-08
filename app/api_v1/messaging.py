@@ -788,6 +788,43 @@ def api_call_token(conversation_id):
         return jsonify(error="token_generation_failed"), 500
 
 
+@bp.route("/calls/ring", methods=["POST"])
+@api_login_required
+def api_call_ring():
+    """1:1 arama başlatılınca hedefi FCM ile UYANDIRIR (2026-08-08, bkz.
+    app/fcm.py::send_call_wake_fcm() docstring'i — arka planda bayatlayan
+    Realtime bağlantısı için "hemen yeniden bağlan" tetikleyicisi). Arama
+    sinyalinin (offer/SDP) KENDİSİ bu endpoint'ten HİÇ geçmez — o hâlâ
+    tamamen client-to-client Realtime broadcast, backend'in tek işi hedefi
+    uyandırmak. Bu yüzden gövde SADECE `target_user_id` taşır.
+
+    Rate limit: send_message ile AYNI mantık (kullanıcı bazlı, dakikada 30) —
+    bir arama denemesi ZATEN tek bir ring tetikler, bu limit sadece kötüye
+    kullanımı (art arda ring spam'i) önler.
+    """
+    data = request.get_json() or {}
+    target_user_id = (data.get("target_user_id") or "").strip()
+    if not target_user_id:
+        return jsonify(error="eksik_veri"), 400
+
+    sb = get_sb()
+    me = request.api_user["id"]
+
+    if is_rate_limited(f"call_ring:{me}", 30, 60):
+        return jsonify(error="rate_limited"), 429
+
+    if is_blocked_either_way(sb, me, target_user_id):
+        return jsonify(error="blocked"), 403
+
+    from ..fcm import send_call_wake_fcm
+    try:
+        send_call_wake_fcm(sb, target_user_id)
+    except Exception:
+        pass  # best-effort — arayanın kendi arama akışı bundan ETKİLENMEMELİ
+
+    return jsonify(ok=True)
+
+
 # Arama sayfa boyutu — views.py search_conversation_messages()/
 # search_all_messages() ile AYNI (31 satır çekilir, 31.'nin varlığı has_next'i
 # belirtir; MESSAGE_PAGE'den BAĞIMSIZ, kaynak fonksiyonların sabiti budur).
