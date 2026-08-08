@@ -10,7 +10,7 @@ from ._common import _str_field, api_login_required
 from ..supabase_client import get_sb
 from ..rate_limit import is_rate_limited
 from ..blocks import blocked_user_ids, is_blocked_either_way
-from ..storage_helper import upload_image
+from ..storage_helper import upload_image, upload_video
 from ..cache import invalidate
 from ..mentions import notify_mentions
 from ..messaging._common import (
@@ -217,14 +217,19 @@ def api_message_conversation_detail(conversation_id):
 @api_login_required
 def api_send_message(conversation_id):
     """Mesaj gönder — messaging/sending.py send_message()'ın metin+reply_to_id+
-    GÖRSEL+sticker+GIF dalları port edildi (SADECE ses dalı BİLİNÇLİ olarak
-    atlandı — RECORD_AUDIO izni+MediaRecorder gerektiriyor, ayrı bir iterasyon).
+    GÖRSEL+sticker+GIF dalları port edildi (ses dalı hâlâ bilerek atlandı —
+    RECORD_AUDIO izni+MediaRecorder gerektiriyor, ayrı bir iterasyon; video
+    eklendi, 2026-08-08).
     `sticker_id` (form, /stickers/* katalogundan — app/api_v1/stickers.py) ve
     `gif_url` (form, Klipy CDN'inden) opsiyonel — send_message()'daki AYNI
     kurallar: sticker_id `stickers` tablosunda yoksa sessizce None'a düşer,
     gif_url `is_valid_klipy_url()` geçmezse yok sayılır, GIF ayrı bir kolona
     DEĞİL (messages'ta gif_url kolonu yok) `image_url`'e yazılır (görsel
-    yoksa).
+    yoksa). `video` (form, multipart dosya) — `upload_video()` ile AYNI
+    MIME+magic-byte+boyut doğrulaması (postlar/reels/stories'teki gibi),
+    ayrı `video_url` kolonuna yazılır (image_url ile karışmaz, biri diğerini
+    override ETMEZ — bir mesajda hem görsel hem video teorik olarak birlikte
+    olabilir).
 
     BİLİNÇLİ SAPMA: JSON'dan multipart/form-data'ya geçildi (api_create_post()
     ile AYNI kodlama deseni) — native henüz gerçek kullanıcıya çıkmadığı için
@@ -257,6 +262,8 @@ def api_send_message(conversation_id):
     reply_to_id = (request.form.get("reply_to_id") or "").strip() or None
     image_file = request.files.get("image")
     has_image = bool(image_file and image_file.filename)
+    video_file = request.files.get("video")
+    has_video = bool(video_file and video_file.filename)
     sticker_id = (request.form.get("sticker_id") or "").strip() or None
     gif_url = (request.form.get("gif_url") or "").strip() or None
 
@@ -274,13 +281,19 @@ def api_send_message(conversation_id):
     if gif_url and not is_valid_klipy_url(gif_url):
         gif_url = None
 
-    if not content and not has_image and not sticker_id and not gif_url:
+    if not content and not has_image and not sticker_id and not gif_url and not has_video:
         return jsonify(error="empty"), 400
 
     image_url = None
     if has_image:
         image_url = upload_image(image_file, folder="messages")
         if not image_url:
+            return jsonify(error="upload_failed"), 400
+
+    video_url = None
+    if has_video:
+        video_url = upload_video(video_file, folder="messages")
+        if not video_url:
             return jsonify(error="upload_failed"), 400
 
     # GIF ayrı bir kolona DEĞİL image_url'e yazılır — messages'ta gif_url
@@ -298,7 +311,10 @@ def api_send_message(conversation_id):
         if not reply_msg:
             reply_to_id = None
 
-    insert_data = {"conversation_id": conversation_id, "sender_id": me, "content": content, "image_url": image_url}
+    insert_data = {
+        "conversation_id": conversation_id, "sender_id": me, "content": content,
+        "image_url": image_url, "video_url": video_url,
+    }
     try:
         # Opsiyonel kolonlar: sticker_id, reply_to_id — migration henüz
         # uygulanmamışsa kolonsuz insert'e düş (send_message()'daki AYNI desen).
