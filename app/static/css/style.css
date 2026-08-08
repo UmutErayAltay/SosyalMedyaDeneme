@@ -360,7 +360,18 @@ textarea:focus-visible, select:focus-visible {
         order: unset;
         flex-basis: unset;
     }
-    .nav-links.open { max-height: 400px; }
+    /* Kullanıcı raporu: "navbar yarım gözüküyor" — açık menü ile altındaki
+       içerik arasında HİÇ görsel ayrım (gölge/kenar) yoktu, menü sanki
+       yarım kalmış/eksik bir panel gibi görünüyordu. Gölge panelin kendi
+       KAPSAMINI netleştirir. max-height 400px'ten 70vh'ye çıkarıldı —
+       sabit 400px, uzun bir ekranda menü içeriği (arama+7 satır) bazı
+       cihazlarda gereğinden kısıtlı kalabiliyordu; 70vh her ekran
+       boyutuna orantılı ölçeklenir. */
+    .nav-links.open {
+        max-height: 70vh;
+        overflow-y: auto;
+        box-shadow: 0 8px 16px rgba(43, 36, 32, 0.15);
+    }
     .nav-links a { margin-left: 0; padding: 10px 8px; border-radius: 6px; }
     .nav-profile { justify-content: flex-start; }
 
@@ -385,7 +396,19 @@ textarea:focus-visible, select:focus-visible {
         padding: 10px 8px; margin-left: 0; border-radius: 6px;
     }
     .nav-links .nav-bell::after { content: "Bildirimler"; }
-    .nav-links .notif-badge { position: static; margin-left: auto; }
+    /* Kullanıcı raporu: "Mesajlar" satırındaki rozet tam genişlikte kırmızı
+       bir çubuk gibi görünüyordu. Kök neden: .notif-badge'in TEMEL kuralı
+       (satır ~272) position:absolute İÇİNDİR, o context'te display:flex
+       sorun yaratmaz (rozet kendi min-width'ine göre boyutlanır). Burada
+       position:static'e geçilince rozet artık NORMAL AKIŞTA bir kutu —
+       display:flex (inline-flex DEĞİL) blok-seviyeli bir kutudur ve mevcut
+       genişliği (mobil menüde satırın TAMAMI) doldurur. inline-flex bunu
+       içeriğine göre boyutlandırır, flex-shrink:0 ebeveyn flex satırında
+       sıkışmasını önler. */
+    .nav-links .notif-badge {
+        position: static; margin-left: auto;
+        display: inline-flex; flex-shrink: 0;
+    }
 
     /* Post kartı aksiyon satırı dar ekranda 6 ikon+"⋯"u tek satıra sığdıramıyor
        (kullanıcı raporu: sil/⋯ butonu kart dışına taşıyordu) — "Gönder"
@@ -824,7 +847,16 @@ main.feed-page {
    sorun hiç oluşmaz — üç kolon da doğal olarak TEK satırda üst hizalanır. */
 .flash-container { grid-column: 1 / -1; }
 main.feed-page .feed-left-col { grid-column: 1; }
-main.feed-page .feed-layout { grid-column: 2; }
+/* min-width: 0 ŞART (kullanıcı raporu: mobilde postlar/medya viewport'a
+   sığmıyordu, yatay scroll çıkıyordu) — grid item'ların varsayılan
+   min-width'ü `auto`dur, bu da tarayıcının 1fr kolon genişliğini İÇERİĞİN
+   min-content boyutuna göre (satır kırılmayan metin/görsel varsa ONA göre)
+   hesaplamasına yol açar; 360px'lik bir viewport'ta gerçek genişlik 613px'e
+   kadar çıktığı ÖLÇÜLEREK doğrulandı (main.feed-page'in computed
+   gridTemplateColumns'u "613.406px" dönüyordu, container'ın kendisi 360px
+   olmasına RAĞMEN). min-width:0 kolonun container'a göre GERÇEKTEN
+   küçülmesine izin verir, içindeki taşan öğeler kendi içinde sarar/kırpılır. */
+main.feed-page .feed-layout { grid-column: 2; min-width: 0; }
 main.feed-page .feed-sidebar { grid-column: 3; }
 /* Sol kolon sarmalayıcısı: profil kartı + yakın arkadaşlar kartı TEK grid
    öğesi olarak (yukarıdaki "her kolonda tek öğe" kuralı) — sticky davranışı
@@ -922,7 +954,10 @@ main.post-detail-page {
 main.post-detail-page .feed-left-col { grid-column: 1; }
 main.post-detail-page .post-detail-layout { grid-column: 2; }
 main.post-detail-page .post-detail-sidebar { grid-column: 3; }
-.post-detail-layout { display: flex; flex-direction: column; }
+/* min-width: 0 — main.feed-page .feed-layout ile AYNI gerekçe/bug (bkz. o
+   kuralın yorumu), post detay sayfası da AYNI 3 kolonlu grid desenini
+   kullanıyor. */
+.post-detail-layout { display: flex; flex-direction: column; min-width: 0; }
 .post-detail-sidebar {
     position: sticky;
     top: calc(var(--navbar-height) + 16px);
