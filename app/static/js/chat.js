@@ -154,6 +154,13 @@
                 + '<audio src="' + escapeHtml(msg.audio_url) + '" class="msg-audio" preload="metadata" hidden></audio>'
                 + '</div>';
         }
+        if (msg.video_url) {
+            // Native (Android) uygulamasından gönderilen video mesajı — web
+            // kendisi video GÖNDEREMEZ, realtime/panel yenilemede sadece
+            // görüntüler (_conversation_panel.html'deki sunucu render'ıyla
+            // aynı yapı: <video controls>, image_url deseninin video karşılığı).
+            html += '<video src="' + escapeHtml(msg.video_url) + '" class="msg-video" controls preload="metadata"></video>';
+        }
         if (msg.content) {
             html += '<p>' + linkifyMentionsClient(msg.content) + '</p>';
         }

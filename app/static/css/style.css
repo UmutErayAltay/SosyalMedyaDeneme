@@ -1457,6 +1457,17 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     margin-bottom: 4px;
 }
 
+/* Native (Android) uygulamasından gönderilen video mesajı — web sadece
+   görüntüler, .msg-image ile aynı boyut/köşe dili (kullanıcı raporu: video
+   mesajı web'de tamamen boş balon olarak görünüyordu). */
+.msg-video {
+    display: block;
+    max-width: 240px;
+    border-radius: 10px;
+    margin-bottom: 4px;
+}
+.msg-video[hidden] { display: none; }
+
 .msg-image-wrapper {
     position: relative;
     display: inline-block;

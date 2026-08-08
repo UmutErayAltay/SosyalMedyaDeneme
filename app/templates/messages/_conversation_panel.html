@@ -173,6 +173,8 @@
                     {{ icons.icon('image', size=12) }} Görsel
                 {%- elif pm.audio_url -%}
                     {{ icons.icon('mic', size=12) }} Sesli mesaj
+                {%- elif pm.video_url -%}
+                    {{ icons.icon('film', size=12) }} Video
                 {%- elif pm.sticker_id -%}
                     Sticker
                 {%- else -%}
@@ -223,6 +225,8 @@
                         {{ m.reply_to.content[:60] }}{% if m.reply_to.content|length > 60 %}…{% endif %}
                     {%- elif m.reply_to.image_url -%}
                         {{ icons.icon('image', size=12) }} Görsel
+                    {%- elif m.reply_to.video_url -%}
+                        {{ icons.icon('film', size=12) }} Video
                     {%- else -%}
                         (Boş mesaj)
                     {%- endif -%}
@@ -254,6 +258,11 @@
                     <span class="voice-duration">0:00</span>
                     <audio src="{{ m.audio_url }}" class="msg-audio" preload="metadata" hidden></audio>
                 </div>
+            {% endif %}
+            {% if m.video_url %}
+                {# Native (Android) uygulamasından gönderilen video mesajı — web
+                   kendisi video GÖNDEREMEZ, sadece görüntüler (native köprü). #}
+                <video src="{{ m.video_url }}" class="msg-video" controls preload="metadata"></video>
             {% endif %}
             {% if m.content %}
                 <p>{{ m.content|linkify_mentions(valid_usernames) }}</p>
