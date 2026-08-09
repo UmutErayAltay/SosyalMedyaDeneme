@@ -214,7 +214,7 @@ def share_post(conversation_id, post_id):
 
     # Postu, görselleriyle birlikte çek
     post = sb.table("posts").select(
-        "id, content, image_url, image_urls, profiles!posts_user_id_fkey(username)"
+        "id, content, image_url, image_urls, video_url, profiles!posts_user_id_fkey(username)"
     ).eq("id", post_id).execute().data
 
     if not post: abort(404)
@@ -226,6 +226,7 @@ def share_post(conversation_id, post_id):
         first_img = p["image_urls"][0]
     elif p.get("image_url"):
         first_img = p["image_url"]
+    first_video = p.get("video_url")
 
     # Mesajın metin kısmını hazırla
     share_text = f"📎 Post paylaştı: @{p['profiles']['username']}\n{p['content'][:50]}..."
@@ -236,6 +237,7 @@ def share_post(conversation_id, post_id):
         "sender_id": me,
         "content": share_text,
         "image_url": first_img, # Görseli buraya ekliyoruz!
+        "video_url": first_video, # Video postu paylaşımında da video akmalı — image_url ile aynı boru hattı
     }).execute()
     _notify_conversation(sb, conversation_id, me)
 
@@ -259,7 +261,7 @@ def share_post_multiple(post_id):
 
     # Post önizlemesini çek (GÖRSELLERİ DE DAHİL ETTİK)
     post = sb.table("posts").select(
-        "id, content, image_url, image_urls, profiles!posts_user_id_fkey(username)"
+        "id, content, image_url, image_urls, video_url, profiles!posts_user_id_fkey(username)"
     ).eq("id", post_id).execute().data
 
     if not post:
@@ -272,6 +274,7 @@ def share_post_multiple(post_id):
         post_image = post_data["image_urls"][0]
     elif post_data.get("image_url"):
         post_image = post_data["image_url"]
+    post_video = post_data.get("video_url")
 
     share_text = note + "\n\n" if note else ""
     share_text += f"📎 Paylaşılan post: /post/{post_id}\n\"{post_data['content'][:100]}\""
@@ -285,7 +288,8 @@ def share_post_multiple(post_id):
             "conversation_id": cid,
             "sender_id": me,
             "content": share_text.strip(),
-            "image_url": post_image
+            "image_url": post_image,
+            "video_url": post_video,
         }).execute()
         _notify_conversation(sb, cid, me)
         sent_count += 1

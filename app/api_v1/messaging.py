@@ -1286,7 +1286,7 @@ def api_share_post(post_id):
         return jsonify(error="no_recipients"), 400
 
     post = sb.table("posts").select(
-        "id, content, image_url, image_urls, profiles!posts_user_id_fkey(username)"
+        "id, content, image_url, image_urls, video_url, profiles!posts_user_id_fkey(username)"
     ).eq("id", post_id).execute().data
     if not post:
         return jsonify(error="not_found"), 404
@@ -1297,6 +1297,7 @@ def api_share_post(post_id):
         post_image = post_data["image_urls"][0]
     elif post_data.get("image_url"):
         post_image = post_data["image_url"]
+    post_video = post_data.get("video_url")
 
     share_text = note + "\n\n" if note else ""
     share_text += f"📎 Paylaşılan post: /post/{post_id}\n\"{post_data['content'][:100]}\""
@@ -1311,6 +1312,7 @@ def api_share_post(post_id):
             "sender_id": me,
             "content": share_text.strip(),
             "image_url": post_image,
+            "video_url": post_video,
         }).execute()
         _notify_conversation(sb, cid, me)
         sent_count += 1

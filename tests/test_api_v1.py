@@ -1190,6 +1190,93 @@ class TestApiV1ShareTargets:
             sb.table("api_tokens").delete().eq("user_id", blocked["id"]).execute()
 
 
+class TestApiV1SharePost:
+    """POST /api/v1/posts/<post_id>/share — messaging.py api_share_post().
+    Regresyon: video postu (sadece video_url dolu, image_url/image_urls boş)
+    DM'e paylaşılınca video_url hiç SELECT/INSERT edilmiyordu, alıcı tarafta
+    sadece not metni görünüyordu (video sessizce kayboluyordu)."""
+
+    def test_share_video_only_post_carries_video_url(self, app, client, test_user_factory):
+        sharer = test_user_factory(email="apiv1_share_video_sharer@example.com", password="TestPass123!")
+        target = test_user_factory(email="apiv1_share_video_target@example.com", password="TestPass123!")
+        token = _api_token_for(app, sharer["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        with app.app_context():
+            sb = get_sb()
+            post_row = sb.table("posts").insert({
+                "user_id": sharer["id"],
+                "content": "api_v1 video post paylaşım testi",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+                "video_url": "https://example.com/apiv1-share-video.mp4",
+            }).execute().data[0]
+        post_id = post_row["id"]
+
+        resp = client.post(
+            f"/api/v1/posts/{post_id}/share",
+            json={"user_ids": [target["id"]]},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["sent"] == 1
+
+        detail_resp = client.get("/api/v1/messages/conversations", headers=headers)
+        cid = next(
+            c["id"] for c in detail_resp.get_json()["conversations"] if c["name"] == target["username"]
+        )
+        conv_detail = client.get(f"/api/v1/messages/conversations/{cid}", headers=headers).get_json()
+        shared_msg = conv_detail["messages"][-1]
+        assert shared_msg["video_url"] == "https://example.com/apiv1-share-video.mp4"
+        assert shared_msg["image_url"] is None
+
+        _cleanup_conversation(app, cid, sharer["id"], target["id"])
+        with app.app_context():
+            get_sb().table("posts").delete().eq("id", post_id).execute()
+
+    def test_share_image_post_still_carries_image_url(self, app, client, test_user_factory):
+        """Regresyon karşıtı: görsel post paylaşımı video_url eklenmeden ÖNCEKİ
+        davranışıyla AYNI kalmalı (image_url taşınmaya devam etmeli)."""
+        sharer = test_user_factory(email="apiv1_share_image_sharer@example.com", password="TestPass123!")
+        target = test_user_factory(email="apiv1_share_image_target@example.com", password="TestPass123!")
+        token = _api_token_for(app, sharer["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        with app.app_context():
+            sb = get_sb()
+            post_row = sb.table("posts").insert({
+                "user_id": sharer["id"],
+                "content": "api_v1 görsel post paylaşım testi",
+                "visibility": "public",
+                "is_draft": False,
+                "is_archived": False,
+                "image_url": "https://example.com/apiv1-share-image.jpg",
+            }).execute().data[0]
+        post_id = post_row["id"]
+
+        resp = client.post(
+            f"/api/v1/posts/{post_id}/share",
+            json={"user_ids": [target["id"]]},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["sent"] == 1
+
+        detail_resp = client.get("/api/v1/messages/conversations", headers=headers)
+        cid = next(
+            c["id"] for c in detail_resp.get_json()["conversations"] if c["name"] == target["username"]
+        )
+        conv_detail = client.get(f"/api/v1/messages/conversations/{cid}", headers=headers).get_json()
+        shared_msg = conv_detail["messages"][-1]
+        assert shared_msg["image_url"] == "https://example.com/apiv1-share-image.jpg"
+        assert shared_msg.get("video_url") is None
+
+        _cleanup_conversation(app, cid, sharer["id"], target["id"])
+        with app.app_context():
+            get_sb().table("posts").delete().eq("id", post_id).execute()
+
+
 class TestApiV1GroupChat:
     """messaging/creation.py create_group() + messaging/group_admin.py'nin
     TAMAMININ (rename/üye ekle-çıkar/admin toggle/ayrılma) JSON API'si."""
@@ -4171,3 +4258,130 @@ class TestApiV1MentionSearch:
         assert usernames == [mutual["username"], following["username"], stranger["username"]]
 
         self._cleanup(app, [me["id"], mutual["id"], following["id"], stranger["id"]])
+
+
+class TestApiV1StoryOverlayImage:
+    """POST /api/v1/stories — overlay_image_url/_position_x/_y/_scale (GIF/etiket
+    sürükle-bırak, sql/migration_story_overlay_image.sql). caption_position_x/y
+    ile AYNI parse/clamp deseni, ama SADECE overlay_image_url doluysa aktif
+    olur (url yoksa dörtlü de null kalmalı — regresyon guard'ı aşağıda)."""
+
+    @staticmethod
+    def _cleanup(app, user_id, story_id=None):
+        with app.app_context():
+            sb = get_sb()
+            if story_id:
+                sb.table("stories").delete().eq("id", story_id).execute()
+            sb.table("api_tokens").delete().eq("user_id", user_id).execute()
+
+    def test_create_story_with_overlay_image_round_trips(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_story_overlay_ok@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/stories",
+            data={
+                "caption": "overlay testi",
+                "overlay_image_url": "https://media.klipy.co/sticker/deneme.gif",
+                "overlay_image_position_x": "0.25",
+                "overlay_image_position_y": "0.8",
+                "overlay_image_scale": "1.5",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        story_id = body["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
+        assert fetch.status_code == 200
+        stories = fetch.get_json()["stories"]
+        matching = [s for s in stories if s["id"] == story_id]
+        assert len(matching) == 1
+        story = matching[0]
+        assert story["overlay_image_url"] == "https://media.klipy.co/sticker/deneme.gif"
+        assert story["overlay_image_position_x"] == pytest.approx(0.25)
+        assert story["overlay_image_position_y"] == pytest.approx(0.8)
+        assert story["overlay_image_scale"] == pytest.approx(1.5)
+
+        self._cleanup(app, user["id"], story_id)
+
+    def test_create_story_with_overlay_image_defaults_position_and_scale(self, app, client, test_user_factory):
+        """overlay_image_url dolu ama pozisyon/scale gönderilmemiş — poll_position/
+        caption_position'daki AYNI varsayılan-fallback deseni: 0.5/0.5/1.0."""
+        user = test_user_factory(email="apiv1_story_overlay_defaults@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/stories",
+            data={"overlay_image_url": "https://media.klipy.co/sticker/varsayilan.gif"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        assert story["overlay_image_position_x"] == pytest.approx(0.5)
+        assert story["overlay_image_position_y"] == pytest.approx(0.5)
+        assert story["overlay_image_scale"] == pytest.approx(1.0)
+
+        self._cleanup(app, user["id"], story_id)
+
+    def test_create_story_without_overlay_image_leaves_fields_null(self, app, client, test_user_factory):
+        """Regresyon guard'ı: overlay_image_url gönderilmezse dörtlü ZORLA
+        varsayılana düşmemeli, null kalmalı (caption_position'ın aksine)."""
+        user = test_user_factory(email="apiv1_story_overlay_none@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/stories",
+            data={"caption": "overlaysiz normal hikaye"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        assert story["overlay_image_url"] is None
+        assert story["overlay_image_position_x"] is None
+        assert story["overlay_image_position_y"] is None
+        assert story["overlay_image_scale"] is None
+        # Regresyon guard'ı: caption_position bu değişiklikten ETKİLENMEMELİ
+        assert story["caption_position_x"] == pytest.approx(0.5)
+        assert story["caption_position_y"] == pytest.approx(0.75)
+
+        self._cleanup(app, user["id"], story_id)
+
+    def test_create_story_overlay_image_invalid_position_falls_back_to_default(self, app, client, test_user_factory):
+        """Aralık dışı/parse edilemeyen pozisyon+scale değerleri —
+        caption_position/poll_position'daki AYNI clamp-then-default davranışı."""
+        user = test_user_factory(email="apiv1_story_overlay_invalid@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/stories",
+            data={
+                "overlay_image_url": "https://media.klipy.co/sticker/gecersiz.gif",
+                "overlay_image_position_x": "5.0",  # aralık dışı (0..1)
+                "overlay_image_position_y": "not-a-float",  # parse edilemez
+                "overlay_image_scale": "99",  # aralık dışı (0.3..3)
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        assert story["overlay_image_position_x"] == pytest.approx(0.5)
+        assert story["overlay_image_position_y"] == pytest.approx(0.5)
+        assert story["overlay_image_scale"] == pytest.approx(1.0)
+
+        self._cleanup(app, user["id"], story_id)
