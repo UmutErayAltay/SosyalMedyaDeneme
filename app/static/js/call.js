@@ -273,14 +273,22 @@
     }
 
     // TURN + STUN sunucuları ICE candidate bulma için (internet üzerinden çalışmasını sağlar)
-    function getIceServers() {
-        return [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun.relay.metered.ca:80' },
-            { urls: 'turn:standard.relay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:standard.relay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turns:standard.relay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-        ];
+    // Backend'den anlık/kısa ömürlü kimlik bilgisi çekilir (gömülü paylaşılan demo
+    // kimlik bilgisi ortak kota aşımına takılıyordu) — hata/eksik key durumunda
+    // endpoint 200 ile sadece STUN döner, biz de burada aynı fallback'i tutuyoruz.
+    async function getIceServers() {
+        try {
+            var resp = await fetch('/api/v1/calls/turn-credentials', {
+                headers: { 'Accept': 'application/json' }
+            });
+            if (!resp.ok) throw new Error('turn-credentials HTTP ' + resp.status);
+            var servers = await resp.json();
+            if (!Array.isArray(servers) || servers.length === 0) throw new Error('boş liste');
+            return servers;
+        } catch (err) {
+            log('TURN kimlik bilgisi alınamadı, sadece STUN ile devam ediliyor: ' + err.message);
+            return [{ urls: 'stun:stun.l.google.com:19302' }];
+        }
     }
 
     // --- Arama Durumu Yönetimi ---
@@ -321,7 +329,7 @@
         try {
             // RTCPeerConnection kur (TURN + STUN sunucularıyla)
             state.peerConnection = new RTCPeerConnection({
-                iceServers: getIceServers()
+                iceServers: await getIceServers()
             });
 
             // Local stream'i bağla — video track'e 'motion' ipucu (contentHint)
@@ -445,7 +453,7 @@
         try {
             // RTCPeerConnection kur (TURN + STUN sunucularıyla)
             state.peerConnection = new RTCPeerConnection({
-                iceServers: getIceServers()
+                iceServers: await getIceServers()
             });
 
             // Local stream'i bağla — video track'e 'motion' ipucu (contentHint)

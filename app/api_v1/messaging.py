@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 
+import requests
 from flask import request, jsonify, current_app
 from livekit import api as livekit_api
 
@@ -823,6 +824,45 @@ def api_call_ring():
         pass  # best-effort — arayanın kendi arama akışı bundan ETKİLENMEMELİ
 
     return jsonify(ok=True)
+
+
+@bp.route("/calls/turn-credentials", methods=["GET"])
+@api_login_required
+def api_calls_turn_credentials():
+    """WebRTC 1:1 arama için TURN/STUN sunucu listesini metered.ca'dan ANLIK
+    çeker (kısa ömürlü kimlik bilgisi). API key SADECE burada (env var) —
+    client'a (web/native) hiç gömülmez: eski openrelayproject herkese-açık
+    demo kimliği paylaşılmış/kota tükenmiş durumdaydı, kendi key'imizi de
+    client'a gömersek AYNI sızma riskini tekrarlarız (bkz.
+    .context/active_context.md 2026-08-09).
+
+    metered.ca'ya erişilemezse (key yok/timeout/hata) 500 DÖNMEZ — sadece
+    Google'ın herkese açık STUN'unu içeren fallback döner, böylece aynı ağdaki
+    aramalar hâlâ çalışır (livekit token üretim hatasındaki ~satır 786-788
+    ile AYNI graceful-degradation felsefesi).
+    """
+    me = request.api_user["id"]
+    if is_rate_limited(f"turn_credentials:{me}", 20, 60):
+        return jsonify(error="rate_limited"), 429
+
+    fallback = [{"urls": "stun:stun.l.google.com:19302"}]
+    api_key = os.environ.get("METERED_TURN_API_KEY")
+    if not api_key:
+        return jsonify(fallback), 200
+
+    try:
+        resp = requests.get(
+            "https://sosyalmedya.metered.live/api/v1/turn/credentials",
+            params={"apiKey": api_key},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        ice_servers = resp.json()
+        if not isinstance(ice_servers, list) or not ice_servers:
+            return jsonify(fallback), 200
+        return jsonify(ice_servers), 200
+    except Exception:
+        return jsonify(fallback), 200
 
 
 # Arama sayfa boyutu — views.py search_conversation_messages()/

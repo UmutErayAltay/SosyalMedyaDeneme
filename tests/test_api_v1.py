@@ -1401,6 +1401,29 @@ class TestApiV1CallRing:
             ).execute()
 
 
+class TestApiV1TurnCredentials:
+    """GET /api/v1/calls/turn-credentials — metered.ca'ya gerçek ağ isteği
+    test ortamında YAPILMAZ (METERED_TURN_API_KEY test ortamında yok), bu
+    yüzden sadece fallback (Google STUN) yolunun 200 + JSON liste döndürdüğü
+    doğrulanır; spesifik URL assert EDİLMEZ (bkz. app/api_v1/messaging.py::
+    api_calls_turn_credentials() docstring'i)."""
+
+    def test_turn_credentials_without_auth_returns_401(self, client):
+        resp = client.get("/api/v1/calls/turn-credentials")
+        assert resp.status_code == 401
+
+    def test_turn_credentials_ok_returns_ice_server_list(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_turn_creds@example.com", password="TestPass123!")
+        headers = {"Authorization": f"Bearer {_api_token_for(app, user['id'])}"}
+
+        resp = client.get("/api/v1/calls/turn-credentials", headers=headers)
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert isinstance(body, list)
+        assert len(body) >= 1
+        assert "urls" in body[0]
+
+
 class TestApiV1Interactions:
     def test_like_without_token_returns_401(self, client):
         resp = client.post("/api/v1/posts/nonexistent/like")
