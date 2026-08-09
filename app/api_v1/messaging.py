@@ -11,7 +11,7 @@ from ._common import _str_field, api_login_required
 from ..supabase_client import get_sb
 from ..rate_limit import is_rate_limited
 from ..blocks import blocked_user_ids, is_blocked_either_way
-from ..storage_helper import upload_image, upload_video
+from ..storage_helper import upload_image, upload_video, upload_audio
 from ..cache import invalidate
 from ..mentions import notify_mentions
 from ..messaging._common import (
@@ -226,9 +226,8 @@ def api_message_conversation_detail(conversation_id):
 @api_login_required
 def api_send_message(conversation_id):
     """Mesaj gönder — messaging/sending.py send_message()'ın metin+reply_to_id+
-    GÖRSEL+sticker+GIF dalları port edildi (ses dalı hâlâ bilerek atlandı —
-    RECORD_AUDIO izni+MediaRecorder gerektiriyor, ayrı bir iterasyon; video
-    eklendi, 2026-08-08).
+    GÖRSEL+sticker+GIF dalları port edildi (video eklendi, 2026-08-08; ses
+    eklendi, 2026-08-09 — native RECORD_AUDIO+MediaRecorder akışı).
     `sticker_id` (form, /stickers/* katalogundan — app/api_v1/stickers.py) ve
     `gif_url` (form, Klipy CDN'inden) opsiyonel — send_message()'daki AYNI
     kurallar: sticker_id `stickers` tablosunda yoksa sessizce None'a düşer,
@@ -238,7 +237,10 @@ def api_send_message(conversation_id):
     MIME+magic-byte+boyut doğrulaması (postlar/reels/stories'teki gibi),
     ayrı `video_url` kolonuna yazılır (image_url ile karışmaz, biri diğerini
     override ETMEZ — bir mesajda hem görsel hem video teorik olarak birlikte
-    olabilir).
+    olabilir). `audio` (form, multipart dosya) — `upload_audio()` ile AYNI
+    MIME+magic-byte+boyut doğrulaması (izin listesi: webm/ogg/mp3/m4a/wav —
+    native MediaRecorder çıktısı tipik olarak .m4a, MIME audio/mp4), ayrı
+    `audio_url` kolonuna yazılır (image_url/video_url'den bağımsız).
 
     BİLİNÇLİ SAPMA: JSON'dan multipart/form-data'ya geçildi (api_create_post()
     ile AYNI kodlama deseni) — native henüz gerçek kullanıcıya çıkmadığı için
@@ -273,6 +275,8 @@ def api_send_message(conversation_id):
     has_image = bool(image_file and image_file.filename)
     video_file = request.files.get("video")
     has_video = bool(video_file and video_file.filename)
+    audio_file = request.files.get("audio")
+    has_audio = bool(audio_file and audio_file.filename)
     sticker_id = (request.form.get("sticker_id") or "").strip() or None
     gif_url = (request.form.get("gif_url") or "").strip() or None
 
@@ -290,7 +294,7 @@ def api_send_message(conversation_id):
     if gif_url and not is_valid_klipy_url(gif_url):
         gif_url = None
 
-    if not content and not has_image and not sticker_id and not gif_url and not has_video:
+    if not content and not has_image and not sticker_id and not gif_url and not has_video and not has_audio:
         return jsonify(error="empty"), 400
 
     image_url = None
@@ -303,6 +307,12 @@ def api_send_message(conversation_id):
     if has_video:
         video_url = upload_video(video_file, folder="messages")
         if not video_url:
+            return jsonify(error="upload_failed"), 400
+
+    audio_url = None
+    if has_audio:
+        audio_url = upload_audio(audio_file, folder="messages")
+        if not audio_url:
             return jsonify(error="upload_failed"), 400
 
     # GIF ayrı bir kolona DEĞİL image_url'e yazılır — messages'ta gif_url
@@ -325,13 +335,15 @@ def api_send_message(conversation_id):
         "image_url": image_url, "video_url": video_url,
     }
     try:
-        # Opsiyonel kolonlar: sticker_id, reply_to_id — migration henüz
-        # uygulanmamışsa kolonsuz insert'e düş (send_message()'daki AYNI desen).
+        # Opsiyonel kolonlar: sticker_id, reply_to_id, audio_url — migration
+        # henüz uygulanmamışsa kolonsuz insert'e düş (send_message()'daki AYNI desen).
         data_full = dict(insert_data)
         if sticker_id:
             data_full["sticker_id"] = sticker_id
         if reply_to_id:
             data_full["reply_to_id"] = reply_to_id
+        if audio_url:
+            data_full["audio_url"] = audio_url
         inserted = sb.table("messages").insert(data_full).execute()
     except Exception:
         inserted = sb.table("messages").insert(insert_data).execute()

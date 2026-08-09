@@ -1017,6 +1017,56 @@ class TestApiV1Messaging:
 
         _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
 
+    def test_send_audio_message_uploads_and_returns_url(self, app, client, test_user_factory):
+        """Sesli mesaj (native RECORD_AUDIO+MediaRecorder, 2026-08-09) — web
+        tarafındaki messaging/sending.py send_message() ile AYNI upload_audio()
+        doğrulaması: minimal ama geçerli bir WAV magic-byte header'ı
+        (storage_helper._detect_audio_kind()'ı geçer, mock yok)."""
+        user_a = test_user_factory(email="apiv1_msg_audio_a@example.com", password="TestPass123!")
+        user_b = test_user_factory(email="apiv1_msg_audio_b@example.com", password="TestPass123!")
+        token_a = _api_token_for(app, user_a["id"])
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+
+        start_resp = client.post(f"/api/v1/messages/start/{user_b['username']}", headers=headers_a)
+        cid = start_resp.get_json()["conversation_id"]
+
+        # RIFF....WAVE — _detect_audio_kind() sadece header[:4]=="RIFF" ve
+        # header[8:12]=="WAVE" kontrol ediyor, gerçek bir fmt/data chunk şart değil.
+        wav_bytes = b"RIFF" + b"\x24\x00\x00\x00" + b"WAVE" + b"\x00" * 32
+        resp = client.post(
+            f"/api/v1/messages/conversations/{cid}/send",
+            data={"audio": (BytesIO(wav_bytes), "voice.wav", "audio/wav")},
+            headers=headers_a,
+        )
+        assert resp.status_code == 200
+        sent = resp.get_json()["message"]
+        assert sent["content"] == ""
+        assert sent["audio_url"]
+        assert sent["audio_url"].startswith("http")
+
+        _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
+
+    def test_send_audio_message_invalid_file_returns_upload_failed(self, app, client, test_user_factory):
+        """Geçersiz uzantı/gövde — upload_audio() None döner, endpoint
+        upload_failed ile 400 vermeli (send_message()'daki AYNI davranış)."""
+        user_a = test_user_factory(email="apiv1_msg_audio_bad_a@example.com", password="TestPass123!")
+        user_b = test_user_factory(email="apiv1_msg_audio_bad_b@example.com", password="TestPass123!")
+        token_a = _api_token_for(app, user_a["id"])
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+
+        start_resp = client.post(f"/api/v1/messages/start/{user_b['username']}", headers=headers_a)
+        cid = start_resp.get_json()["conversation_id"]
+
+        resp = client.post(
+            f"/api/v1/messages/conversations/{cid}/send",
+            data={"audio": (BytesIO(b"not-a-real-audio-file"), "voice.txt", "text/plain")},
+            headers=headers_a,
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "upload_failed"
+
+        _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
+
     def test_send_message_without_content_or_image_returns_400(self, app, client, test_user_factory):
         user_a = test_user_factory(email="apiv1_msg_empty_a@example.com", password="TestPass123!")
         user_b = test_user_factory(email="apiv1_msg_empty_b@example.com", password="TestPass123!")
