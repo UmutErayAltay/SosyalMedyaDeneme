@@ -1802,11 +1802,13 @@ class TestApiV1Interactions:
 
 
 class TestApiV1CreatePost:
-    """Not: image dosya yükleme (upload_image) yolu BİLEREK burada test
-    EDİLMİYOR — bu test suite'inde hiçbir yerde gerçek Supabase Storage'a
-    dosya yükleyen bir test yok (temizlik/kirlilik riski), bu endpoint de
-    aynı sınırı korur; sadece metin-yolu (endpoint'in kendi mantığı:
-    doğrulama/görünürlük/hashtag senkronu/response şekli) test edilir."""
+    """Not: çoğu test SADECE metin-yolu (endpoint'in kendi mantığı:
+    doğrulama/görünürlük/hashtag senkronu/response şekli) kapsar — gerçek
+    Supabase Storage'a dosya yükleyip suite'i kirletmemek için. Görsel
+    yükleme (çoklu `images` + geriye dönük tekil `image`) testleri ise
+    upload_image() fonksiyonunu monkeypatch'leyerek endpoint'in kendi
+    dosya-ayrıştırma/öncelik mantığını (aşağıdaki 3 test) gerçek ağ I/O'su
+    OLMADAN doğrular."""
 
     def test_create_post_without_token_returns_401(self, client):
         resp = client.post("/api/v1/posts", data={"content": "deneme"})
@@ -1951,6 +1953,131 @@ class TestApiV1CreatePost:
 
         with app.app_context():
             get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_create_post_multiple_images_via_plural_field_returns_all_urls(
+        self, app, client, test_user_factory, monkeypatch
+    ):
+        """`images` (çoklu) alanı — create_post()'daki AYNI upload_images()
+        yolu. Gerçek Supabase Storage'a yüklememek için app.storage_helper
+        modülündeki upload_image() monkeypatch'lenir (upload_images() bunu
+        KENDİ modül içi ismiyle çağırır, api_v1.interactions'daki isim DEĞİL
+        — bu yüzden hedef app.storage_helper.upload_image olmalı)."""
+        user = test_user_factory(email="apiv1_createpost_multi_img@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        def _fake_upload_image(file_storage, folder="avatars"):
+            return f"https://fake.storage.test/{folder}/{file_storage.filename}"
+
+        monkeypatch.setattr("app.storage_helper.upload_image", _fake_upload_image)
+
+        resp = client.post(
+            "/api/v1/posts",
+            data={
+                "content": "api_v1 çoklu görsel testi",
+                "images": [
+                    (BytesIO(b"fake-bytes-1"), "a.png"),
+                    (BytesIO(b"fake-bytes-2"), "b.png"),
+                ],
+            },
+            headers=headers,
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 200
+        post = resp.get_json()["post"]
+        assert post["image_urls"] == [
+            "https://fake.storage.test/posts/a.png",
+            "https://fake.storage.test/posts/b.png",
+        ]
+        assert post["image_url"] == "https://fake.storage.test/posts/a.png"
+        post_id = post["id"]
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_create_post_legacy_singular_image_field_still_works(
+        self, app, client, test_user_factory, monkeypatch
+    ):
+        """Eski native build'lerin gönderdiği tekil `image` alanı — `images`
+        boşken devreye giren geriye dönük uyumluluk dalı (regresyon testi)."""
+        user = test_user_factory(email="apiv1_createpost_legacy_img@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        def _fake_upload_image(file_storage, folder="avatars"):
+            return f"https://fake.storage.test/{folder}/{file_storage.filename}"
+
+        # Tekil dal doğrudan api_v1.interactions'a import edilen ismi
+        # çağırır (storage_helper'daki değil) — hedef modül FARKLI.
+        monkeypatch.setattr("app.api_v1.interactions.upload_image", _fake_upload_image)
+
+        resp = client.post(
+            "/api/v1/posts",
+            data={
+                "content": "api_v1 tekil (legacy) görsel testi",
+                "image": (BytesIO(b"fake-bytes-legacy"), "legacy.png"),
+            },
+            headers=headers,
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 200
+        post = resp.get_json()["post"]
+        assert post["image_urls"] == ["https://fake.storage.test/posts/legacy.png"]
+        assert post["image_url"] == "https://fake.storage.test/posts/legacy.png"
+        post_id = post["id"]
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_create_post_more_than_four_images_capped_at_four(
+        self, app, client, test_user_factory, monkeypatch
+    ):
+        """upload_images(..., max_count=4) 4'ten fazla dosyayı sessizce keser
+        (app/storage_helper.py:304-306) — 5 dosya gönderilince postta SADECE
+        ilk 4'ünün URL'si kalır."""
+        user = test_user_factory(email="apiv1_createpost_capped_img@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        def _fake_upload_image(file_storage, folder="avatars"):
+            return f"https://fake.storage.test/{folder}/{file_storage.filename}"
+
+        monkeypatch.setattr("app.storage_helper.upload_image", _fake_upload_image)
+
+        resp = client.post(
+            "/api/v1/posts",
+            data={
+                "content": "api_v1 5 görsel limit testi",
+                "images": [
+                    (BytesIO(b"1"), "1.png"),
+                    (BytesIO(b"2"), "2.png"),
+                    (BytesIO(b"3"), "3.png"),
+                    (BytesIO(b"4"), "4.png"),
+                    (BytesIO(b"5"), "5.png"),
+                ],
+            },
+            headers=headers,
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 200
+        post = resp.get_json()["post"]
+        assert len(post["image_urls"]) == 4
+        assert post["image_urls"] == [
+            "https://fake.storage.test/posts/1.png",
+            "https://fake.storage.test/posts/2.png",
+            "https://fake.storage.test/posts/3.png",
+            "https://fake.storage.test/posts/4.png",
+        ]
+        post_id = post["id"]
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
 
 
 class TestApiV1ProfileEdit:

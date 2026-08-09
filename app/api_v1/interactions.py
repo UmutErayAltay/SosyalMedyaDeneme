@@ -10,7 +10,7 @@ from ..mentions import notify_mentions
 from ..cache import invalidate
 from ..social import REACTIONS, _find_recent_duplicate_comment, _notify_pool
 from ..post_views import record_view
-from ..storage_helper import upload_image, upload_video
+from ..storage_helper import upload_image, upload_images, upload_video
 from ..hashtags import sync_post_hashtags, notify_hashtag_followers, extract_hashtags
 from ..gifs import is_valid_klipy_url
 
@@ -271,9 +271,11 @@ def api_add_comment(post_id):
 
 
 # ----------------------- POST OLUŞTURMA (Faz 4, native Android) -----------------------
-# app/routes/posts.py create_post()'un BİLİNÇLİ bir alt kümesi: metin + TEK
-# görsel + TEK video/reel + görünürlük + GIF (Faz 5 Dalga 3B). KAPSAM DIŞI
-# (hâlâ dokunulmadı): çoklu görsel (max 4), anket, taslak/planlama, konum.
+# app/routes/posts.py create_post()'un BİLİNÇLİ bir alt kümesi: metin + çoklu
+# görsel (max 4) + TEK video/reel + görünürlük + GIF (Faz 5 Dalga 3B; çoklu
+# görsel desteği sonradan eklendi — create_post()'daki `images` alanıyla
+# BİREBİR aynı yol, upload_images() paylaşılıyor). KAPSAM DIŞI (hâlâ
+# dokunulmadı): taslak/planlama, konum.
 
 @bp.route("/posts", methods=["POST"])
 @api_login_required
@@ -281,9 +283,13 @@ def api_create_post():
     """Yeni post oluştur — multipart/form-data (web formuyla AYNI kodlama,
     JSON DEĞİL, çünkü görsel/video dosyası içeriyor). Alanlar: `content`
     (metin), `visibility` (public/followers/close_friends, varsayılan
-    followers), `image` (opsiyonel, TEK dosya — create_post()'daki `images`
-    çoklu alanının BİLİNÇLİ olarak tekil hali), `video` (opsiyonel, TEK
-    dosya) + `is_reel` ("true"/"false" — native her zaman açık gönderir,
+    followers), `images` (opsiyonel, ÇOKLU dosya alanı, en fazla 4 —
+    create_post()'daki (posts.py:299) `images` alanıyla BİREBİR aynı,
+    `upload_images()` paylaşılıyor) + `image` (opsiyonel, TEK dosya, ESKİ/geriye
+    dönük alan adı — `images` doluysa YOK SAYILIR, sadece `images` boşken
+    devreye girer; eski native build'ler hâlâ bu alanı gönderdiği için
+    istemci değişikliği gerektirmeden çalışmaya devam eder), `video`
+    (opsiyonel, TEK dosya) + `is_reel` ("true"/"false" — native her zaman açık gönderir,
     web'in checkbox `"on"`'undan FARKLI, bkz. settings.py _bool_form_field) +
     `gif_url` (opsiyonel, Klipy CDN'inden — create_post()'daki AYNI kural:
     SADECE görsel/video YOKSA ve `is_valid_klipy_url()` geçerse kullanılır,
@@ -302,8 +308,14 @@ def api_create_post():
     me = request.api_user["id"]
 
     content = (request.form.get("content") or "").strip()
+    # create_post()'daki (posts.py:299) AYNI çoklu alan — `images` (plural).
+    # `image` (singular) ESKİ native build'lerin gönderdiği geriye dönük
+    # alan adı, `images` boşken devreye girer (aşağıdaki yükleme dalına bkz.).
+    image_files = request.files.getlist("images")
+    valid_image_files = [f for f in image_files if f and f.filename]
     image_file = request.files.get("image")
-    has_image = bool(image_file and image_file.filename)
+    has_image_legacy = bool(image_file and image_file.filename)
+    has_image = bool(valid_image_files) or has_image_legacy
     video_file = request.files.get("video")
     has_video = bool(video_file and video_file.filename)
     is_reel = request.form.get("is_reel") == "true"
@@ -332,7 +344,13 @@ def api_create_post():
         visibility = "followers"
 
     image_urls = []
-    if has_image:
+    if valid_image_files:
+        # Çoklu görsel — create_post()'daki (posts.py:328-333) AYNI yol,
+        # upload_images() max_count=4'ten fazlasını sessizce keser.
+        image_urls = upload_images(valid_image_files, folder="posts", max_count=4)
+        if not image_urls:
+            return jsonify(error="upload_failed"), 400
+    elif has_image_legacy:
         image_url = upload_image(image_file, folder="posts")
         if not image_url:
             return jsonify(error="upload_failed"), 400
