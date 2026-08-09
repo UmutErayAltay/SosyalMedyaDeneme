@@ -210,6 +210,14 @@ def api_message_conversation_detail(conversation_id):
             "other_call_topic": (
                 realtime_topic("calls", other_user["id"]) if other_user else None
             ),
+            # Karşı tarafın kullanıcı id'si (2026-08-09) — native ÖNCEDEN bunu
+            # DÖNDÜRMEDİĞİMİZ için mesaj listesinden TAHMİN ediyordu
+            # ("gönderen_id != benim_id olan İLK mesaj"), bu yüzden karşı taraf
+            # HENÜZ HİÇ mesaj göndermemişse (veya sohbet boşsa) arama butonları
+            # HİÇ görünmüyordu — kullanıcı raporu: "aynı sohbette emülatörde
+            # arama butonu var, telefonumda yok". Grup sohbetinde None
+            # (other_call_topic ile AYNI koşul).
+            "other_user_id": other_user["id"] if other_user else None,
         },
     )
 
