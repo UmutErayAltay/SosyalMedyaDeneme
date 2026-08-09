@@ -4,7 +4,7 @@ from . import bp
 from ._common import api_login_required
 from ..supabase_client import get_sb
 from ..routes._common import _attach_post_metrics, PAGE_SIZE
-from ..visibility import followed_and_self_ids
+from ..visibility import followed_and_self_ids, close_friend_author_ids, filter_visible
 from ..blocks import blocked_user_ids
 
 
@@ -16,7 +16,13 @@ from ..blocks import blocked_user_ids
 def api_reels():
     """Dikey video akışı — reels.py reels()'in AYNI filtre/sıralama mantığı,
     JSON döner. is_reel migration'ı henüz uygulanmamışsa boş liste döner
-    (hata değil, web'deki AYNI graceful degradation)."""
+    (hata değil, web'deki AYNI graceful degradation).
+
+    Visibility filtresi (2026-08-09): DB seviyesinde visibility=public
+    ZORUNLU DEĞİL artık — reels.py::reels() ile AYNI gerekçe, filter_visible()
+    ile Python tarafında public/followers/close_friends uygulanır (kullanıcı
+    kararı: takipçiye özel bir reel, izin verilen görüntüleyicilere reels
+    akışında da görünmeli)."""
     sb = get_sb()
     me = request.api_user["id"]
     page = max(request.args.get("page", 1, type=int), 1)
@@ -27,8 +33,8 @@ def api_reels():
 
     try:
         posts = sb.table("posts").select(select_cols).eq(
-            "visibility", "public"
-        ).eq("is_reel", True).not_.is_(
+            "is_reel", True
+        ).not_.is_(
             "video_url", "null"
         ).eq("is_draft", False).eq("is_archived", False).order(
             "created_at", desc=True
@@ -38,24 +44,15 @@ def api_reels():
 
     visible_author_ids = followed_and_self_ids(sb, me)
     if posts:
-        author_ids = {p.get("user_id") for p in posts if p.get("user_id")}
-        is_private_map = {}
-        is_deactivated_map = {}
-        if author_ids:
-            try:
-                profiles = sb.table("profiles").select("id, is_private, is_deactivated").in_(
-                    "id", list(author_ids)
-                ).execute().data
-                is_private_map = {p["id"]: p.get("is_private", False) for p in profiles}
-                is_deactivated_map = {p["id"]: p.get("is_deactivated", False) for p in profiles}
-            except Exception:
-                pass
-        posts = [p for p in posts if not (
-            is_deactivated_map.get(p.get("user_id"), False) or
-            (is_private_map.get(p.get("user_id"), False) and
-             p.get("user_id") != me and
-             p.get("user_id") not in visible_author_ids)
-        )]
+        close_friend_ids = close_friend_author_ids(sb, me)
+        posts = filter_visible(sb, posts, visible_author_ids, close_friend_ids, me)
+
+        deactivated_ids = {
+            p.get("user_id") for p in posts
+            if p.get("profiles", {}).get("is_deactivated")
+        }
+        if deactivated_ids:
+            posts = [p for p in posts if p.get("user_id") not in deactivated_ids]
 
     blocked_ids = blocked_user_ids(sb, me)
     posts = [p for p in posts if p.get("user_id") not in blocked_ids]

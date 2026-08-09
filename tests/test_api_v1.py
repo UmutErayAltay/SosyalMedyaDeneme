@@ -739,6 +739,59 @@ class TestApiV1Reels:
             sb.table("api_tokens").delete().eq("user_id", viewer["id"]).execute()
             sb.table("posts").delete().eq("user_id", author["id"]).execute()
 
+    def test_reels_shows_followers_only_reel_to_followers_but_not_strangers(self, app, client, test_user_factory):
+        # 2026-08-09 kullanıcı raporu: post oluştururken "reel" işaretlenip
+        # görünürlük elle "Herkese açık" yapılmazsa (varsayılan artık
+        # "followers", bkz. posts.py create_post()) reel HİÇBİR YERDE
+        # görünmüyordu — kendi reels akışında bile. Kök neden: bu endpoint
+        # DB seviyesinde visibility=public ZORUNLU tutuyordu. Artık
+        # filter_visible() ile takipçiye özel bir reel, takipçilere VE
+        # yazarın kendisine görünüyor, takipçi OLMAYAN bir yabancıya
+        # görünmüyor (discover() ile AYNI gizlilik kuralı).
+        follower = test_user_factory(email="apiv1_reels_follower@example.com", password="TestPass123!")
+        stranger = test_user_factory(email="apiv1_reels_stranger@example.com", password="TestPass123!")
+        author = test_user_factory(email="apiv1_reels_fauthor@example.com", password="TestPass123!")
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("follows").insert({
+                "follower_id": follower["id"], "following_id": author["id"], "status": "accepted",
+            }).execute()
+            sb.table("posts").insert({
+                "user_id": author["id"],
+                "content": "api_v1 reels testi — takipçiye özel reel",
+                "visibility": "followers",
+                "is_draft": False,
+                "is_archived": False,
+                "is_reel": True,
+                "video_url": "https://example.com/test-followers-reel.mp4",
+            }).execute()
+
+        follower_token = _api_token_for(app, follower["id"])
+        stranger_token = _api_token_for(app, stranger["id"])
+        author_token = _api_token_for(app, author["id"])
+
+        try:
+            follower_resp = client.get("/api/v1/reels?page=1", headers={"Authorization": f"Bearer {follower_token}"})
+            stranger_resp = client.get("/api/v1/reels?page=1", headers={"Authorization": f"Bearer {stranger_token}"})
+            author_resp = client.get("/api/v1/reels?page=1", headers={"Authorization": f"Bearer {author_token}"})
+
+            follower_contents = [p.get("content") for p in follower_resp.get_json()["posts"]]
+            stranger_contents = [p.get("content") for p in stranger_resp.get_json()["posts"]]
+            author_contents = [p.get("content") for p in author_resp.get_json()["posts"]]
+
+            assert "api_v1 reels testi — takipçiye özel reel" in follower_contents
+            assert "api_v1 reels testi — takipçiye özel reel" in author_contents
+            assert "api_v1 reels testi — takipçiye özel reel" not in stranger_contents
+        finally:
+            with app.app_context():
+                sb = get_sb()
+                sb.table("api_tokens").delete().in_(
+                    "user_id", [follower["id"], stranger["id"], author["id"]]
+                ).execute()
+                sb.table("follows").delete().eq("follower_id", follower["id"]).eq("following_id", author["id"]).execute()
+                sb.table("posts").delete().eq("user_id", author["id"]).execute()
+
 
 def _cleanup_conversation(app, cid, *user_ids):
     """Konuşma testlerinin ürettiği messages/conversation_participants/
