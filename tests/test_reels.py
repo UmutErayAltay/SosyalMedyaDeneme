@@ -97,12 +97,22 @@ class TestReels:
             latest_post = max(posts, key=lambda p: p.get("created_at", ""))
             assert latest_post.get("is_reel") is True
 
-    def test_reels_page_only_shows_public_reel_posts(self, app, client, logged_in_session):
-        """GET /reels sadece public, is_reel=true, video_url not null, draft/archived olmayan postları gösterir."""
+    def test_reels_page_only_shows_public_reel_posts(self, app, client, logged_in_session, test_user_factory):
+        """GET /reels is_reel=true, video_url not null, draft/archived olmayan VE
+        görüntüleyene GÖRÜNÜR (public/takip ettiği/kendi) postları gösterir.
+
+        2026-08-09: reels artık discover() ile AYNI filter_visible() gizlilik
+        kuralını kullanıyor (kullanıcı kararı — bkz. .context/active_context.md
+        "reels'e düşmeme" turu) — bu yüzden takipçiye özel bir reel ARTIK
+        yazarın KENDİSİNE görünüyor (aşağıdaki #4, viewer'ın KENDİ postu).
+        Takip ETMEDİĞİ bir yabancının takipçiye özel reel'i (#7) HÂLÂ
+        görünmüyor — bu, testin ORİJİNAL amacını (gizlilik dışlaması)
+        gerçek bir yabancı üzerinden koruyor."""
         user, _ = logged_in_session(
             email="reel_viewer@example.com",
             password="TestPass123!"
         )
+        stranger = test_user_factory(email="reel_stranger_author@example.com", password="TestPass123!")
 
         # Test verisi: çeşitli post türleri oluştur
         with app.app_context():
@@ -140,12 +150,25 @@ class TestReels:
                 "is_archived": False,
             }).execute()
 
-            # 4. Followers-only reel (görünmemeli — visibility != public)
+            # 4. KENDİ takipçiye özel reel'i (2026-08-09'dan beri GÖRÜNMELİ —
+            # filter_visible() yazarın kendisini HER ZAMAN görünür sayar).
             sb.table("posts").insert({
                 "user_id": user["id"],
                 "content": "Followers reel",
                 "is_reel": True,
                 "video_url": "https://example.com/video2.mp4",
+                "visibility": "followers",
+                "is_draft": False,
+                "is_archived": False,
+            }).execute()
+
+            # 7. Takip ETMEDİĞİ bir YABANCININ takipçiye özel reel'i
+            # (görünmemeli — asıl gizlilik dışlaması BURADA test ediliyor).
+            sb.table("posts").insert({
+                "user_id": stranger["id"],
+                "content": "Stranger followers reel",
+                "is_reel": True,
+                "video_url": "https://example.com/video5.mp4",
                 "visibility": "followers",
                 "is_draft": False,
                 "is_archived": False,
@@ -178,14 +201,15 @@ class TestReels:
         assert resp.status_code == 200
         body = resp.data.decode("utf-8", errors="ignore")
 
-        # Sadece #1 (public reel with video) görünmeli
+        # #1 (public reel) VE #4 (kendi takipçiye özel reel'i) görünmeli
         assert "Public reel" in body
-        # #2, #3, #4, #5, #6 görünmemeli
+        assert "Followers reel" in body
+        # #2, #3, #5, #6, #7 görünmemeli
         assert "Public regular post" not in body
         assert "Public reel without video" not in body
-        assert "Followers reel" not in body
         assert "Draft reel" not in body
         assert "Archived reel" not in body
+        assert "Stranger followers reel" not in body
 
     def test_reels_page_filters_blocked_users(self, app, client, logged_in_session):
         """GET /reels engellenen kullanıcının reel'lerini göstermez."""
