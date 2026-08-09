@@ -818,6 +818,11 @@ class TestApiV1Messaging:
         assert detail_body["conversation"]["id"] == cid
         assert detail_body["conversation"]["is_group"] is False
         assert detail_body["conversation"]["name"] == user_a["username"]
+        # other_user_id (2026-08-09): native'in 1:1 arama butonlarını
+        # göstermesi BUNA bağlı. Önceden dönmüyordu ve native karşı tarafı
+        # mesaj listesinden tahmin ediyordu — karşı taraf hiç mesaj
+        # göndermemişse buton HİÇ çıkmıyordu. B'nin gözünden karşı taraf A.
+        assert detail_body["conversation"]["other_user_id"] == user_a["id"]
         contents = [m["content"] for m in detail_body["messages"]]
         assert "api_v1 mesajlaşma testi - merhaba" in contents
         assert "api_v1 mesajlaşma testi - cevap" in contents
