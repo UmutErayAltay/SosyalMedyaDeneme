@@ -1333,6 +1333,11 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 .reply-preview-cancel:hover { color: var(--text); }
 
 .composer-msg { display: flex; gap: 8px; align-items: flex-end; }
+/* Karşı tarafın hesabı silinmişse composer `hidden` ile gizlenir (DOM'dan
+   kaldırılmaz — bkz. _conversation_panel.html'deki gerekçe). display:flex
+   [hidden]'ı ezdiği için bu varyant ZORUNLU (projede 3+ kez tekrarlanan
+   hata, bkz. .claude/rules/css.md). */
+.composer-msg[hidden] { display: none; }
 .composer-msg input { flex: 1; }
 
 /* Tek satırlık girdi kutusu — textarea/kayıt-durumu/ses-önizleme aynı

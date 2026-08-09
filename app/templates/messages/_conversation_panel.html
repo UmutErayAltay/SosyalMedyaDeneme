@@ -104,7 +104,7 @@
                 {% if other_user %}
                     <a href="{{ url_for('routes.profile', username=other_user.username) }}" class="conv-header-profile-link">{{ other_user.username }}</a>
                 {% else %}
-                    Bilinmeyen
+                    Hesap silinmiş
                 {% endif %}
             </h2>
             {# Çevrimiçi göstergesi — chat.js /active ping yanıtıyla "şu anda burada"ya
@@ -137,6 +137,7 @@
                         <path d="M21 15l-5-5L5 21"/>
                     </svg>
                 </button>
+                {% if other_user %}
                 <button type="button" class="conv-call-btn" id="call-voice-btn"
                         aria-label="Sesli arama başlat" title="Sesli arama">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -155,6 +156,7 @@
                         <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
                     </svg>
                 </button>
+                {% endif %}
             </div>
         {% endif %}
     </header>
@@ -341,7 +343,18 @@
         <button type="button" id="reply-preview-cancel" class="reply-preview-cancel" aria-label="Yanıtı iptal et">{{ icons.icon('x', size=16) }}</button>
     </div>
 
-    <form id="msg-form" class="composer-msg" enctype="multipart/form-data">
+    {% if not (is_group or other_user) %}
+    {# Karşı tarafın hesabı silinmiş — mesaj geçmişi görünmeye devam eder,
+       ama yeni mesaj gönderilemez. DİKKAT: composer DOM'dan KALDIRILMAZ,
+       sadece gizlenir — chat.js initConversation() #msg-form/#msg-input
+       bulamazsa ERKEN RETURN ediyor (satır ~373) ve AYNI fonksiyonda
+       bağlanan sessize alma (satır ~1215), sohbette arama (satır ~862),
+       realtime akış vb. HER ŞEY sessizce ölürdü (butonlar görünür ama
+       tıklayınca hiçbir şey olmaz). #}
+    <p class="muted center conv-deleted-account-notice">Bu kullanıcının hesabı silinmiş, mesaj gönderilemez.</p>
+    {% endif %}
+    <form id="msg-form" class="composer-msg" enctype="multipart/form-data"
+          {% if not (is_group or other_user) %}hidden{% endif %}>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="sticker_id" value="">
         <input type="hidden" name="gif_url" value="">
