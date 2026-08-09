@@ -58,7 +58,11 @@ def api_create_story():
     VEYA `video` (tek biri, ikisi de gönderilirse image kazanır),
     `poll_option_1..4`, `poll_position_x/y`, `poll_scale`,
     `caption_position_x/y`, `background_color` (medya varsa yok sayılır),
-    `visibility` (public/followers/close_friends, varsayılan public)."""
+    `visibility` (public/followers/close_friends, varsayılan public),
+    `overlay_image_url` (GIF/etiket görseli — zaten yüklenmiş bir URL,
+    dosya YÜKLEMESİ değil, gif_url'deki (interactions.py) AYNI güven
+    seviyesiyle client'tan olduğu gibi kabul edilir) + varsa
+    `overlay_image_position_x/y`, `overlay_image_scale`."""
     sb = get_sb()
     me = request.api_user["id"]
     caption = (request.form.get("caption") or "").strip()
@@ -112,7 +116,40 @@ def api_create_story():
     except ValueError:
         caption_position_y = 0.75
 
-    if not caption and not has_image and not has_video and not has_poll:
+    # Overlay görseli (GIF/etiket) — gif_url (interactions.py) ile AYNI güven
+    # seviyesi: düz metin URL, dosya yükleme yok, boş-değil dışında doğrulama
+    # yok. Pozisyon/scale SADECE url doluysa parse edilir — url yoksa dörtlü
+    # de null kalmalı (overlay'siz bir hikayeye zorla pozisyon dayatılmaz).
+    overlay_image_url = (request.form.get("overlay_image_url") or "").strip() or None
+    overlay_image_position_x = None
+    overlay_image_position_y = None
+    overlay_image_scale = None
+    if overlay_image_url:
+        overlay_image_position_x = 0.5
+        try:
+            overlay_image_position_x = float(request.form.get("overlay_image_position_x", "0.5"))
+            if not (0 <= overlay_image_position_x <= 1):
+                overlay_image_position_x = 0.5
+        except ValueError:
+            overlay_image_position_x = 0.5
+
+        overlay_image_position_y = 0.5
+        try:
+            overlay_image_position_y = float(request.form.get("overlay_image_position_y", "0.5"))
+            if not (0 <= overlay_image_position_y <= 1):
+                overlay_image_position_y = 0.5
+        except ValueError:
+            overlay_image_position_y = 0.5
+
+        overlay_image_scale = 1.0
+        try:
+            overlay_image_scale = float(request.form.get("overlay_image_scale", "1.0"))
+            if not (0.3 <= overlay_image_scale <= 3):
+                overlay_image_scale = 1.0
+        except ValueError:
+            overlay_image_scale = 1.0
+
+    if not caption and not has_image and not has_video and not has_poll and not overlay_image_url:
         return jsonify(error="empty_story"), 400
 
     image_url = None
@@ -140,11 +177,18 @@ def api_create_story():
         "user_id": me, "image_url": image_url, "video_url": video_url, "caption": caption,
         "background_color": background_color, "visibility": visibility,
         "caption_position_x": caption_position_x, "caption_position_y": caption_position_y,
+        "overlay_image_url": overlay_image_url,
+        "overlay_image_position_x": overlay_image_position_x,
+        "overlay_image_position_y": overlay_image_position_y,
+        "overlay_image_scale": overlay_image_scale,
     }
     try:
         result = sb.table("stories").insert(story_data).execute()
     except Exception:
         try:
+            # overlay_image_* kolonları migration'sız ortamda yoksa (503
+            # değil) fallback: caption_position gibi eski kolonları da atıp
+            # SADECE çekirdek alanlarla tekrar dene.
             story_data_legacy = {
                 "user_id": me, "image_url": image_url, "video_url": video_url, "caption": caption,
             }
@@ -183,7 +227,8 @@ def api_user_stories(user_id):
     try:
         rows = sb.table("stories").select(
             "id, user_id, image_url, video_url, caption, created_at, visibility, background_color, "
-            "caption_position_x, caption_position_y"
+            "caption_position_x, caption_position_y, overlay_image_url, "
+            "overlay_image_position_x, overlay_image_position_y, overlay_image_scale"
         ).eq("user_id", user_id).gt("expires_at", now).order("created_at").execute().data
     except Exception:
         rows = []
