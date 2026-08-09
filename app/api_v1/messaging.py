@@ -1222,6 +1222,43 @@ def api_leave_group(conversation_id):
     return jsonify(ok=True)
 
 
+@bp.route("/messages/share-targets")
+@api_login_required
+def api_share_targets():
+    """Post/reel paylaşım ekranında (Instagram tarzı) varsayılan/aranan
+    kullanıcı önerileri — messaging/creation.py share_targets()'ın BİREBİR
+    aynı mantığı: `q` yoksa takip edilenler, `q` varsa (2+ karakter) username
+    ILIKE araması, her iki dalda da engellenenler filtrelenir. Yanıt şekli
+    web'le BİREBİR aynı (düz dizi `[{id, username, avatar_url}, ...]`) —
+    native UserSearchDto bunu bekliyor.
+    """
+    sb = get_sb()
+    me = request.api_user["id"]
+    q = request.args.get("q", "").strip()
+    blocked_ids = blocked_user_ids(sb, me)
+
+    if q:
+        if len(q) < 2:
+            return jsonify([])
+        users = sb.table("profiles").select("id, username, avatar_url").ilike(
+            "username", f"%{q}%"
+        ).neq("id", me).limit(20).execute().data
+        users = [u for u in users if u["id"] not in blocked_ids]
+        return jsonify(users)
+
+    follows = sb.table("follows").select(
+        "profiles!follows_following_id_fkey(id, username, avatar_url)"
+    ).eq("follower_id", me).execute().data
+
+    user_dict = {}
+    for f in follows:
+        if f.get("profiles") and f["profiles"]["id"] not in blocked_ids:
+            p = f["profiles"]
+            user_dict[p["id"]] = p
+
+    return jsonify(list(user_dict.values()))
+
+
 # ----------------------- POST PAYLAŞIMI (DM'e gönder), native Android -----------------------
 # sending.py share_post_multiple()'ın BİREBİR mirror'ı. Hedef seçimi için ayrı
 # bir endpoint İCAT EDİLMEDİ — /messages/forward-targets (yukarıda) zaten

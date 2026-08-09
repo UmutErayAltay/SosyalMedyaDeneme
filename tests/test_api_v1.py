@@ -1087,6 +1087,109 @@ class TestApiV1Messaging:
         _cleanup_conversation(app, cid, user_a["id"], user_b["id"])
 
 
+class TestApiV1ShareTargets:
+    """GET /api/v1/messages/share-targets — messaging/creation.py
+    share_targets()'ın BİREBİR native mirror'ı (post/reel paylaşım ekranı
+    varsayılan/aranan kullanıcı önerileri). Yanıt şekli web'le AYNI: düz
+    dizi [{id, username, avatar_url}, ...]."""
+
+    def test_without_token_returns_401(self, client):
+        resp = client.get("/api/v1/messages/share-targets")
+        assert resp.status_code == 401
+
+    def test_default_returns_followed_users(self, app, client, test_user_factory):
+        me = test_user_factory(email="apiv1_share_default_me@example.com", password="TestPass123!")
+        followed = test_user_factory(email="apiv1_share_default_f@example.com", password="TestPass123!")
+        token = _api_token_for(app, me["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        follow_resp = client.post(f"/api/v1/profile/{followed['username']}/follow", headers=headers)
+        assert follow_resp.status_code == 200
+
+        resp = client.get("/api/v1/messages/share-targets", headers=headers)
+        assert resp.status_code == 200
+        body = resp.get_json()
+        ids = [u["id"] for u in body]
+        assert followed["id"] in ids
+        match = next(u for u in body if u["id"] == followed["id"])
+        assert match["username"] == followed["username"]
+        assert "avatar_url" in match
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("follows").delete().eq("follower_id", me["id"]).eq(
+                "following_id", followed["id"]
+            ).execute()
+            sb.table("api_tokens").delete().eq("user_id", me["id"]).execute()
+            sb.table("api_tokens").delete().eq("user_id", followed["id"]).execute()
+
+    def test_search_query_matches_even_when_not_followed(self, app, client, test_user_factory):
+        me = test_user_factory(email="apiv1_share_search_me@example.com", password="TestPass123!")
+        stranger = test_user_factory(
+            email="apiv1_share_search_stranger@example.com", password="TestPass123!",
+            username="apivsharesearchtarget",
+        )
+        token = _api_token_for(app, me["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.get(
+            "/api/v1/messages/share-targets", query_string={"q": "apivsharesearch"}, headers=headers
+        )
+        assert resp.status_code == 200
+        ids = [u["id"] for u in resp.get_json()]
+        assert stranger["id"] in ids
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", me["id"]).execute()
+            get_sb().table("api_tokens").delete().eq("user_id", stranger["id"]).execute()
+
+    def test_search_query_too_short_returns_empty_list(self, app, client, test_user_factory):
+        me = test_user_factory(email="apiv1_share_short_me@example.com", password="TestPass123!")
+        token = _api_token_for(app, me["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.get("/api/v1/messages/share-targets", query_string={"q": "a"}, headers=headers)
+        assert resp.status_code == 200
+        assert resp.get_json() == []
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", me["id"]).execute()
+
+    def test_blocked_user_filtered_from_default_and_search(self, app, client, test_user_factory):
+        me = test_user_factory(email="apiv1_share_block_me@example.com", password="TestPass123!")
+        blocked = test_user_factory(
+            email="apiv1_share_block_target@example.com", password="TestPass123!",
+            username="apivshareblocktarget",
+        )
+        token = _api_token_for(app, me["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        follow_resp = client.post(f"/api/v1/profile/{blocked['username']}/follow", headers=headers)
+        assert follow_resp.status_code == 200
+
+        block_resp = client.post(f"/api/v1/block/{blocked['username']}", headers=headers)
+        assert block_resp.status_code == 200
+
+        default_resp = client.get("/api/v1/messages/share-targets", headers=headers)
+        default_ids = [u["id"] for u in default_resp.get_json()]
+        assert blocked["id"] not in default_ids
+
+        search_resp = client.get(
+            "/api/v1/messages/share-targets", query_string={"q": "apivshareblock"}, headers=headers
+        )
+        search_ids = [u["id"] for u in search_resp.get_json()]
+        assert blocked["id"] not in search_ids
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("blocks").delete().eq("blocker_id", me["id"]).eq("blocked_id", blocked["id"]).execute()
+            sb.table("follows").delete().eq("follower_id", me["id"]).eq(
+                "following_id", blocked["id"]
+            ).execute()
+            sb.table("api_tokens").delete().eq("user_id", me["id"]).execute()
+            sb.table("api_tokens").delete().eq("user_id", blocked["id"]).execute()
+
+
 class TestApiV1GroupChat:
     """messaging/creation.py create_group() + messaging/group_admin.py'nin
     TAMAMININ (rename/üye ekle-çıkar/admin toggle/ayrılma) JSON API'si."""
