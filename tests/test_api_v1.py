@@ -24,6 +24,7 @@ _NOTIF_PREF_COLUMNS = [
     "notify_comment_reaction", "notify_follow", "notify_follow_request",
     "notify_follow_accept", "notify_message", "notify_mention",
     "notify_hashtag_post", "notify_story_reaction", "notify_repost",
+    "notify_story_mention",
 ]
 
 
@@ -2262,7 +2263,7 @@ class TestApiV1NotificationPreferences:
         resp = client.get("/api/v1/notifications/preferences", headers=headers)
         assert resp.status_code == 200
         prefs = resp.get_json()["preferences"]
-        assert len(prefs) == 13
+        assert len(prefs) == 14
         assert all(v is True for v in prefs.values())
 
         with app.app_context():
@@ -2271,9 +2272,9 @@ class TestApiV1NotificationPreferences:
     def test_post_preferences_updates_one_field_others_stay_true(self, app, client, test_user_factory):
         """POST body eksik/yok alanı False sayar (web checkbox'ın "yoksa kapalı"
         davranışının JSON karşılığı) — bu yüzden native client, web formu gibi,
-        TÜM 13 alanı her seferinde açıkça gönderir (bir ayarlar ekranının tüm
+        TÜM 14 alanı her seferinde açıkça gönderir (bir ayarlar ekranının tüm
         toggle durumunu tek seferde göndermesi doğal kullanımdır). Burada
-        notify_like DIŞINDAKİ 12 alan True gönderilip DB'de True kaldığı,
+        notify_like DIŞINDAKİ 13 alan True gönderilip DB'de True kaldığı,
         notify_like'ın False yazıldığı doğrulanır."""
         user = test_user_factory(email="apiv1_notifpref_post@example.com", password="TestPass123!")
         token = _api_token_for(app, user["id"])
