@@ -84,6 +84,27 @@ def notify_mentions(sb, *, actor_id: str, content: str,
         pass
 
 
+def notify_story_mention(sb, *, actor_id: str, recipient_id: str) -> None:
+    """Hikaye sticker'ında (@mention) etiketlenen ZATEN ÇÖZÜLMÜŞ tek bir
+    kullanıcıya bildirim yollar — notify_mentions()'ın regex tabanlı
+    content-parsing yolunu (extract_mentions) KULLANMAZ, çünkü çağıran taraf
+    (api_v1/stories.py) kullanıcı adını zaten `profiles`'a karşı doğrulamış
+    olarak gelir; tekrar regex/DB araması gereksiz.
+
+    Ayrı bir "story_mention" tipi kullanılır ('mention' DEĞİL): notifications
+    tablosundaki mevcut 'mention' tipinin hedef URL'i (bkz.
+    app/notifications.py _TARGET_BUILDERS) post_id/conversation_id'ye bağlı,
+    hikaye sticker'ında ikisi de yok — story_reaction ile AYNI desen
+    benimsendi (hedef her zaman etiketleyenin profili).
+
+    sql/migration_story_caption_style_and_stickers.sql notifications.type
+    CHECK kısıtına 'story_mention' ekler; migration henüz uygulanmamışsa
+    insert hata fırlatır — ÇAĞIRAN TARAF bunu try/except ile sarmalı, hikaye
+    oluşturmayı ASLA bloklamamalı (poll_error'un aksine burada dönecek bir
+    hata alanı da yok, tamamen sessiz best-effort)."""
+    notify(sb, recipient_id=recipient_id, actor_id=actor_id, type_="story_mention")
+
+
 def linkify_mentions(content, valid_usernames: dict | None = None):
     """@kullanıcı adlarını profiline link yapar; SADECE valid_usernames'te
     (küçük harfli anahtar -> gerçek kullanıcı adı) bulunan, yani gerçekten var

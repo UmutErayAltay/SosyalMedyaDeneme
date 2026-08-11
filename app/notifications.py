@@ -27,6 +27,7 @@ NOTIFICATION_TYPES = [
     ("hashtag_post", "notify_hashtag_post", "Takip edilen etiketler", "Takip ettiğin bir etikette yeni paylaşım olduğunda"),
     ("story_reaction", "notify_story_reaction", "Hikaye tepkileri", "Hikayene biri emoji tepkisi verdiğinde"),
     ("repost", "notify_repost", "Yeniden paylaşımlar", "Gönderini biri yeniden paylaştığında"),
+    ("story_mention", "notify_story_mention", "Hikaye etiketlemeleri", "Bir hikayede etiketlendiğinde"),
 ]
 _TYPE_TO_COLUMN = {t[0]: t[1] for t in NOTIFICATION_TYPES}
 
@@ -62,6 +63,9 @@ _TARGET_BUILDERS = {
     "hashtag_post": lambda n: url_for("routes.post_detail", post_id=n["post_id"]),
     "story_reaction": lambda n: url_for("routes.profile", username=n["actor"]["username"]),
     "repost": lambda n: url_for("routes.post_detail", post_id=n["post_id"]),
+    # Hikaye sticker'ı 24 saatte kaybolur, kalıcı bir "hikaye detay" sayfası
+    # yok — story_reaction ile AYNI desen: hedef etiketleyenin profili.
+    "story_mention": lambda n: url_for("routes.profile", username=n["actor"]["username"]),
 }
 
 _TEXT = {
@@ -78,6 +82,7 @@ _TEXT = {
     "hashtag_post": "takip ettiğin bir etikette yeni post paylaştı",
     "story_reaction": "hikayene tepki verdi",
     "repost": "gönderini yeniden paylaştı",
+    "story_mention": "seni bir hikayede etiketledi",
 }
 
 

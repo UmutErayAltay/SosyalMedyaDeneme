@@ -27,6 +27,7 @@ from ..storage_helper import upload_image, upload_video
 from ..blocks import is_blocked_either_way, blocked_user_ids
 from ..messaging._common import _get_or_create_conversation, _notify_conversation
 from ..polls import create_poll
+from ..mentions import notify_story_mention
 from ..stories import (
     active_stories_bar,
     attach_story_poll,
@@ -58,12 +59,24 @@ def api_create_story():
     (görsel/video içerdiği için JSON değil). Alanlar: `caption`, `image`
     VEYA `video` (tek biri, ikisi de gönderilirse image kazanır),
     `poll_option_1..4`, `poll_position_x/y`, `poll_scale`,
-    `caption_position_x/y`, `background_color` (medya varsa yok sayılır),
+    `caption_position_x/y`, `caption_style` (opsiyonel, tam olarak
+    "pill_light"/"pill_dark" — geçersiz/boşsa sessizce null'a düşer, render
+    tamamen client-side), `background_color` (medya varsa yok sayılır),
     `visibility` (public/followers/close_friends, varsayılan public),
-    `overlay_elements` (ÇOKLU GIF/etiket görseli — JSON-ENCODED STRING, dizi:
-    `[{"url":..., "position_x":..., "position_y":..., "scale":...}, ...]`;
-    dosya YÜKLEMESİ değil, gif_url'deki (interactions.py) AYNI güven
-    seviyesiyle client'tan olduğu gibi kabul edilir, en fazla 3 eleman)."""
+    `overlay_elements` (ÇOKLU sticker — JSON-ENCODED STRING, dizi, en fazla
+    3 eleman TOPLAM, `type` alanına göre 3 şekilden biri:
+    `{"type":"image","url":...,"position_x":...,"position_y":...,"scale":...}`
+    (dosya YÜKLEMESİ değil, gif_url'deki (interactions.py) AYNI güven
+    seviyesiyle client'tan olduğu gibi kabul edilir; `type` YOKSA ama `url`
+    VARSA geriye dönük uyumluluk için image sayılır),
+    `{"type":"mention","username":...,"position_x":...,"position_y":...,"scale":...}`
+    (username `profiles`'ta case-insensitive doğrulanır, bulunamazsa eleman
+    SESSİZCE atlanır; bulunursa etiketlenen kullanıcıya "story_mention"
+    bildirimi gider — kendine etiket HARİÇ),
+    `{"type":"hashtag","tag":...,"position_x":...,"position_y":...,"scale":...}`
+    (baştaki '#' ve büyük/küçük harf normalize edilir, `extract_hashtags()`
+    ile AYNI kural — var olmayan bir etiket REDDEDİLMEZ, yeni oluşturulabilir
+    bir sticker olduğu için hashtags tablosuna dokunulmaz))."""
     sb = get_sb()
     me = request.api_user["id"]
     caption = (request.form.get("caption") or "").strip()
@@ -117,17 +130,30 @@ def api_create_story():
     except ValueError:
         caption_position_y = 0.75
 
-    # Overlay görselleri (GIF/etiket, ÇOKLU) — tek `overlay_elements` alanı,
-    # JSON-encoded string olarak gelir (multipart form'da dizi/nesne taşımanın
-    # standart yolu). Dekoratif/kritik-olmayan bir özellik olduğu için
-    # bozuk JSON tüm isteği ERROR ETMEZ, poll_scale parse fallback'iyle AYNI
-    # fail-open felsefesi: sessizce boş listeye düşer. Her eleman ayrı ayrı
-    # doğrulanır (url boşsa o eleman ATLANIR, pozisyon/scale clamp edilir,
-    # caption_position/poll_position ile AYNI desen) ve en fazla 3 elemanla
-    # sınırlanır (upload_images max_count=4'teki "sessiz kırpma" emsaliyle
-    # aynı). Boş liste DEĞİL None saklanır — "yokluk = render etme" kontratı.
+    # Altyazı render stili (hap-şekilli arka plan) — SADECE bu iki string
+    # değerinden biri saklanır, aksi halde (boş/geçersiz/caption yokken bile
+    # gönderilmiş olması fark etmez) sessizce null'a düşer; caption_position
+    # gibi caption'ın varlığına özel olarak BAĞLANMAZ, boşta dursa da zararsız.
+    caption_style = (request.form.get("caption_style") or "").strip()
+    if caption_style not in ("pill_light", "pill_dark"):
+        caption_style = None
+
+    # Overlay sticker'ları (görsel/GIF, @mention, #hashtag — ÇOKLU) — tek
+    # `overlay_elements` alanı, JSON-encoded string olarak gelir (multipart
+    # form'da dizi/nesne taşımanın standart yolu). Dekoratif/kritik-olmayan
+    # bir özellik olduğu için bozuk JSON tüm isteği ERROR ETMEZ, poll_scale
+    # parse fallback'iyle AYNI fail-open felsefesi: sessizce boş listeye
+    # düşer. Her eleman `type`'a göre ayrı doğrulanır (geçersiz/eksik alanlı
+    # eleman ATLANIR, pozisyon/scale clamp edilir, caption_position/
+    # poll_position ile AYNI desen) ve TÜR FARK ETMEKSİZİN toplam en fazla 3
+    # elemanla sınırlanır (upload_images max_count=4'teki "sessiz kırpma"
+    # emsaliyle aynı). Boş liste DEĞİL None saklanır — "yokluk = render
+    # etme" kontratı.
     overlay_elements_raw = request.form.get("overlay_elements")
     overlay_elements = []
+    # @mention sticker'ı ile etiketlenen (kendisi HARİÇ) kullanıcı id'leri —
+    # bildirim story_id oluştuktan SONRA (poll ile AYNI sıra) gönderilir.
+    story_mention_recipient_ids: set = set()
     if overlay_elements_raw:
         try:
             parsed = json.loads(overlay_elements_raw)
@@ -137,8 +163,13 @@ def api_create_story():
             for item in parsed:
                 if not isinstance(item, dict):
                     continue
-                url = item.get("url")
-                if not isinstance(url, str) or not url.strip():
+
+                elem_type = item.get("type")
+                if elem_type not in ("image", "mention", "hashtag"):
+                    # type alanı yoksa ama url varsa eski (type'sız) format —
+                    # geriye dönük uyumluluk için image say.
+                    elem_type = "image" if isinstance(item.get("url"), str) else None
+                if elem_type is None:
                     continue
 
                 position_x = 0.5
@@ -165,10 +196,53 @@ def api_create_story():
                 except (TypeError, ValueError):
                     scale = 1.0
 
-                overlay_elements.append({
-                    "url": url.strip(), "position_x": position_x,
-                    "position_y": position_y, "scale": scale,
-                })
+                if elem_type == "image":
+                    url = item.get("url")
+                    if not isinstance(url, str) or not url.strip():
+                        continue
+                    overlay_elements.append({
+                        "type": "image", "url": url.strip(),
+                        "position_x": position_x, "position_y": position_y, "scale": scale,
+                    })
+                elif elem_type == "mention":
+                    uname = item.get("username")
+                    if not isinstance(uname, str) or not uname.strip():
+                        continue
+                    # notify_mentions()'daki AYNI case-insensitive doğrulama —
+                    # var olmayan kullanıcıya işaret eden sticker SESSİZCE
+                    # atlanır (mevcut olmayan bir hesaba "mention" saklanmaz).
+                    try:
+                        prof = sb.table("profiles").select("id, username").ilike(
+                            "username", uname.strip()
+                        ).execute().data
+                    except Exception:
+                        prof = []
+                    if not prof:
+                        continue
+                    real_username = prof[0]["username"]
+                    mentioned_id = prof[0]["id"]
+                    # Görüntülenen kullanıcı adı, linkify_mentions ile AYNI
+                    # şekilde profildeki GERÇEK harflere düzeltilir.
+                    overlay_elements.append({
+                        "type": "mention", "username": real_username,
+                        "position_x": position_x, "position_y": position_y, "scale": scale,
+                    })
+                    if mentioned_id != me:
+                        story_mention_recipient_ids.add(mentioned_id)
+                elif elem_type == "hashtag":
+                    tag = item.get("tag")
+                    if not isinstance(tag, str):
+                        continue
+                    # extract_hashtags() ile AYNI normalizasyon (küçük harf);
+                    # baştaki '#' client'tan gelmiş olabilir, saklanmaz.
+                    tag = tag.strip().lstrip("#").lower()
+                    if not tag:
+                        continue
+                    overlay_elements.append({
+                        "type": "hashtag", "tag": tag,
+                        "position_x": position_x, "position_y": position_y, "scale": scale,
+                    })
+
                 if len(overlay_elements) >= 3:
                     break
 
@@ -200,6 +274,7 @@ def api_create_story():
         "user_id": me, "image_url": image_url, "video_url": video_url, "caption": caption,
         "background_color": background_color, "visibility": visibility,
         "caption_position_x": caption_position_x, "caption_position_y": caption_position_y,
+        "caption_style": caption_style,
         # Supabase python client jsonb kolonuna native list/dict kabul eder —
         # burada string'e ÇEVRİLMEZ, JSON-encode SADECE gelen form alanında.
         "overlay_elements": overlay_elements or None,
@@ -208,9 +283,9 @@ def api_create_story():
         result = sb.table("stories").insert(story_data).execute()
     except Exception:
         try:
-            # overlay_elements kolonu migration'sız ortamda yoksa (503
-            # değil) fallback: caption_position gibi eski kolonları da atıp
-            # SADECE çekirdek alanlarla tekrar dene.
+            # overlay_elements/caption_style kolonları migration'sız ortamda
+            # yoksa (503 değil) fallback: caption_position gibi eski
+            # kolonları da atıp SADECE çekirdek alanlarla tekrar dene.
             story_data_legacy = {
                 "user_id": me, "image_url": image_url, "video_url": video_url, "caption": caption,
             }
@@ -225,6 +300,18 @@ def api_create_story():
                         position_x=poll_position_x, position_y=poll_position_y, scale=poll_scale)
         except Exception:
             return jsonify(ok=True, story_id=story_id, poll_error=True)
+
+    if story_id and story_mention_recipient_ids:
+        # Bildirim gönderimi hikaye oluşturmayı ASLA bloklamamalı — notify()
+        # sql/migration_story_caption_style_and_stickers.sql henüz
+        # uygulanmamışsa (notifications.type CHECK'inde 'story_mention' yoksa)
+        # hata fırlatır, burada sessizce yutulur (poll_error'un aksine bu
+        # dekoratif bir yan etki, isteği 200 dışında bir şeyle sonuçlandırmaz).
+        try:
+            for recipient_id in story_mention_recipient_ids:
+                notify_story_mention(sb, actor_id=me, recipient_id=recipient_id)
+        except Exception:
+            pass
 
     return jsonify(ok=True, story_id=story_id)
 
@@ -249,7 +336,7 @@ def api_user_stories(user_id):
     try:
         rows = sb.table("stories").select(
             "id, user_id, image_url, video_url, caption, created_at, visibility, background_color, "
-            "caption_position_x, caption_position_y, overlay_elements"
+            "caption_position_x, caption_position_y, caption_style, overlay_elements"
         ).eq("user_id", user_id).gt("expires_at", now).order("created_at").execute().data
     except Exception:
         rows = []
@@ -275,6 +362,45 @@ def api_user_stories(user_id):
         is_mine=(user_id == me),
         stories=rows,
     )
+
+
+# ----------------------- GÖRÜNTÜLEYENLER (kim gördü) -----------------------
+
+@bp.route("/stories/<story_id>/viewers")
+@api_login_required
+def api_story_viewers(story_id):
+    """Bir hikayeyi kimlerin gördüğü listesi — SADECE hikaye sahibi görebilir.
+    Bu, sql/migration_stories.sql'deki BİLİNÇLİ orijinal kapsam dışı bırakma
+    kararının (comment: "hikayeni kim gördü listesi YOK") kullanıcı isteğiyle
+    GENİŞLETİLMESİ; story_views tablosu zaten her görüntülemede upsert
+    ediliyordu (bkz. api_user_stories), burada sadece OKUNUYOR. get_sb()
+    service-role RLS'i bypass ettiği için sahiplik kontrolü burada
+    (uygulama katmanında) zorlanır — story_views'in kendi RLS'i
+    (auth.uid() = user_id) bu route için hiçbir koruma SAĞLAMAZ."""
+    sb = get_sb()
+    me = request.api_user["id"]
+
+    story = sb.table("stories").select("user_id").eq("id", story_id).execute().data
+    if not story:
+        return jsonify(error="not_found"), 404
+    if story[0]["user_id"] != me:
+        return jsonify(error="forbidden"), 403
+
+    try:
+        rows = sb.table("story_views").select(
+            "user_id, viewed_at, profiles(username, avatar_url)"
+        ).eq("story_id", story_id).order("viewed_at", desc=True).limit(200).execute().data
+    except Exception:
+        rows = []
+
+    viewers = [{
+        "user_id": r["user_id"],
+        "username": (r.get("profiles") or {}).get("username", "Bilinmeyen"),
+        "avatar_url": (r.get("profiles") or {}).get("avatar_url"),
+        "viewed_at": r["viewed_at"],
+    } for r in rows]
+
+    return jsonify(viewers=viewers, count=len(viewers))
 
 
 # ----------------------- TEPKİ / YANIT (DM olarak kaydedilir) -----------------------

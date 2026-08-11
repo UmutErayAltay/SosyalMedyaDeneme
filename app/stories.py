@@ -343,15 +343,15 @@ def user_stories(user_id):
         # user_id select'te ŞART: _visible_story_filter r["user_id"] okur —
         # eksikse close_friends hikayesinde KeyError (500) + sahibi kendi
         # hikayesini göremezdi
-        # overlay_elements (ÇOKLU GIF/etiket, jsonb dizi) kolonu da select
-        # edilir — web'de bu özelliği set eden bir UI YOK (sadece native
-        # tarafında var), ama native'in oluşturduğu bir hikaye web'de
-        # görüntülenirse JSON'da eksik/tutarsız kalmasın diye SELECT'e
-        # eklendi (INSERT'e DOKUNULMADI, web formunda bu alan yok zaten null
-        # gelir).
+        # overlay_elements (ÇOKLU sticker: görsel/mention/hashtag, jsonb dizi)
+        # ve caption_style kolonları da select edilir — web'de bu özellikleri
+        # set eden bir UI YOK (sadece native tarafında var), ama native'in
+        # oluşturduğu bir hikaye web'de görüntülenirse JSON'da eksik/tutarsız
+        # kalmasın diye SELECT'e eklendi (INSERT'e DOKUNULMADI, web formunda
+        # bu alanlar yok zaten null gelir).
         rows = sb.table("stories").select(
             "id, user_id, image_url, video_url, caption, created_at, visibility, background_color, "
-            "caption_position_x, caption_position_y, overlay_elements"
+            "caption_position_x, caption_position_y, caption_style, overlay_elements"
         ).eq("user_id", user_id).gt("expires_at", now).order("created_at").execute().data
     except Exception:
         rows = []

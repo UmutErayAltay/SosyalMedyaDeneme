@@ -4424,3 +4424,368 @@ class TestApiV1StoryOverlayElements:
         assert stored[0]["scale"] == pytest.approx(1.0)
 
         self._cleanup(app, user["id"], story_id)
+
+
+class TestApiV1StoryViewers:
+    """GET /api/v1/stories/<story_id>/viewers — sql/migration_stories.sql'deki
+    BİLİNÇLİ orijinal kapsam dışı bırakmanın ("hikayeni kim gördü listesi YOK")
+    kullanıcı isteğiyle genişletilmesi. story_views zaten her görüntülemede
+    upsert ediliyordu (api_user_stories); bu route SADECE okuyor, SADECE
+    hikaye sahibi görebiliyor (uygulama katmanında zorlanan sahiplik)."""
+
+    @staticmethod
+    def _cleanup(app, owner_id, story_id, *extra_user_ids):
+        with app.app_context():
+            sb = get_sb()
+            if story_id:
+                sb.table("story_views").delete().eq("story_id", story_id).execute()
+                sb.table("stories").delete().eq("id", story_id).execute()
+            for uid in (owner_id,) + extra_user_ids:
+                sb.table("api_tokens").delete().eq("user_id", uid).execute()
+
+    def test_owner_sees_viewers_most_recent_first(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_story_viewers_owner@example.com", password="TestPass123!")
+        viewer_a = test_user_factory(email="apiv1_story_viewers_a@example.com", password="TestPass123!")
+        viewer_b = test_user_factory(email="apiv1_story_viewers_b@example.com", password="TestPass123!")
+        owner_token = _api_token_for(app, owner["id"])
+        token_a = _api_token_for(app, viewer_a["id"])
+        token_b = _api_token_for(app, viewer_b["id"])
+
+        create_resp = client.post(
+            "/api/v1/stories",
+            data={"caption": "viewers testi"},
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        assert create_resp.status_code == 200
+        story_id = create_resp.get_json()["story_id"]
+
+        # viewer_a önce, viewer_b sonra görüntüler (api_user_stories GET'i
+        # story_views'e upsert eden yan etkiyi tetikler) — en yeni görüntüleyen
+        # (viewer_b) listede EN ÜSTTE olmalı.
+        resp_a = client.get(f"/api/v1/stories/user/{owner['id']}", headers={"Authorization": f"Bearer {token_a}"})
+        assert resp_a.status_code == 200
+        time.sleep(0.05)
+        resp_b = client.get(f"/api/v1/stories/user/{owner['id']}", headers={"Authorization": f"Bearer {token_b}"})
+        assert resp_b.status_code == 200
+
+        viewers_resp = client.get(
+            f"/api/v1/stories/{story_id}/viewers",
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        assert viewers_resp.status_code == 200
+        body = viewers_resp.get_json()
+        assert body["count"] == 2
+        usernames_in_order = [v["username"] for v in body["viewers"]]
+        assert usernames_in_order == [viewer_b["username"], viewer_a["username"]]
+        assert body["viewers"][0]["user_id"] == viewer_b["id"]
+        assert "viewed_at" in body["viewers"][0]
+
+        self._cleanup(app, owner["id"], story_id, viewer_a["id"], viewer_b["id"])
+
+    def test_non_owner_gets_403(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_story_viewers_403_owner@example.com", password="TestPass123!")
+        stranger = test_user_factory(email="apiv1_story_viewers_403_stranger@example.com", password="TestPass123!")
+        owner_token = _api_token_for(app, owner["id"])
+        stranger_token = _api_token_for(app, stranger["id"])
+
+        create_resp = client.post(
+            "/api/v1/stories",
+            data={"caption": "sahiplik testi"},
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        story_id = create_resp.get_json()["story_id"]
+
+        resp = client.get(
+            f"/api/v1/stories/{story_id}/viewers",
+            headers={"Authorization": f"Bearer {stranger_token}"},
+        )
+        assert resp.status_code == 403
+
+        self._cleanup(app, owner["id"], story_id, stranger["id"])
+
+    def test_nonexistent_story_gets_404(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_story_viewers_404@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+
+        resp = client.get(
+            "/api/v1/stories/00000000-0000-0000-0000-000000000000/viewers",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+        self._cleanup(app, user["id"], None)
+
+
+class TestApiV1StoryCaptionStyle:
+    """POST /api/v1/stories — `caption_style` (sql/migration_story_caption_style_and_stickers.sql).
+    null = mevcut varsayılan render (backend sadece taşır, gerçek render
+    client-side); "pill_light"/"pill_dark" DIŞINDAKİ her şey sessizce null'a
+    düşer (poll_scale parse fallback'iyle AYNI fail-open felsefesi)."""
+
+    @staticmethod
+    def _cleanup(app, user_id, story_id=None):
+        with app.app_context():
+            sb = get_sb()
+            if story_id:
+                sb.table("stories").delete().eq("id", story_id).execute()
+            sb.table("api_tokens").delete().eq("user_id", user_id).execute()
+
+    def test_valid_caption_style_round_trips(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_story_capstyle_ok@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/stories",
+            data={"caption": "hap arka plan testi", "caption_style": "pill_dark"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        assert story["caption_style"] == "pill_dark"
+
+        self._cleanup(app, user["id"], story_id)
+
+    def test_invalid_caption_style_falls_back_to_none(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_story_capstyle_invalid@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/stories",
+            data={"caption": "gecersiz stil testi", "caption_style": "neon"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        assert story["caption_style"] is None
+
+        self._cleanup(app, user["id"], story_id)
+
+    def test_omitted_caption_style_stays_none(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_story_capstyle_omitted@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/stories",
+            data={"caption": "stil belirtilmedi"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        assert story["caption_style"] is None
+
+        self._cleanup(app, user["id"], story_id)
+
+
+class TestApiV1StoryMentionHashtagStickers:
+    """POST /api/v1/stories — `overlay_elements` genelleştirilmiş şekli:
+    type="image"/"mention"/"hashtag". mention: var olmayan kullanıcı adı
+    sessizce atlanır, gerçek kullanıcı bildirim alır (kendine etiket HARİÇ).
+    hashtag: extract_hashtags() ile AYNI normalizasyon, var olması ZORUNLU
+    değil. Eski (type'sız, sadece url'li) elemanlar geriye dönük image
+    sayılmaya devam eder."""
+
+    @staticmethod
+    def _cleanup(app, user_id, story_id=None, *extra_user_ids):
+        with app.app_context():
+            sb = get_sb()
+            if story_id:
+                sb.table("notifications").delete().eq("type", "story_mention").execute()
+                sb.table("stories").delete().eq("id", story_id).execute()
+            for uid in (user_id,) + extra_user_ids:
+                sb.table("api_tokens").delete().eq("user_id", uid).execute()
+
+    def test_mention_element_round_trips_and_notifies(self, app, client, test_user_factory):
+        author = test_user_factory(email="apiv1_story_mention_author@example.com", password="TestPass123!")
+        mentioned = test_user_factory(email="apiv1_story_mention_target@example.com", password="TestPass123!")
+        author_token = _api_token_for(app, author["id"])
+        headers = {"Authorization": f"Bearer {author_token}"}
+
+        elements = [{
+            "type": "mention", "username": mentioned["username"],
+            "position_x": 0.4, "position_y": 0.6, "scale": 1.2,
+        }]
+        resp = client.post(
+            "/api/v1/stories",
+            data={"overlay_elements": json.dumps(elements)},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{author['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        stored = story["overlay_elements"]
+        assert len(stored) == 1
+        assert stored[0]["type"] == "mention"
+        assert stored[0]["username"] == mentioned["username"]
+        assert stored[0]["position_x"] == pytest.approx(0.4)
+        assert stored[0]["position_y"] == pytest.approx(0.6)
+        assert stored[0]["scale"] == pytest.approx(1.2)
+
+        with app.app_context():
+            sb = get_sb()
+            notif = sb.table("notifications").select("id, type, actor_id").eq(
+                "recipient_id", mentioned["id"]
+            ).eq("type", "story_mention").execute().data
+            assert notif, "story_mention bildirimi oluşmadı"
+            assert notif[0]["actor_id"] == author["id"]
+
+        self._cleanup(app, author["id"], story_id, mentioned["id"])
+
+    def test_mention_of_nonexistent_username_is_silently_dropped(self, app, client, test_user_factory):
+        author = test_user_factory(email="apiv1_story_mention_missing@example.com", password="TestPass123!")
+        token = _api_token_for(app, author["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        elements = [{
+            "type": "mention", "username": "boyle_bir_kullanici_yok_xyz123",
+            "position_x": 0.5, "position_y": 0.5, "scale": 1.0,
+        }]
+        resp = client.post(
+            "/api/v1/stories",
+            data={"caption": "yok olan kullanici testi", "overlay_elements": json.dumps(elements)},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{author['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        # caption dolu olduğu için empty_story'e düşmedi, ama overlay_elements
+        # boş listeye düşüp None olarak saklanmalı (tek eleman geçersizdi).
+        assert story["overlay_elements"] is None
+
+        self._cleanup(app, author["id"], story_id)
+
+    def test_self_mention_stored_but_no_notification(self, app, client, test_user_factory):
+        author = test_user_factory(email="apiv1_story_mention_self@example.com", password="TestPass123!")
+        token = _api_token_for(app, author["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        elements = [{
+            "type": "mention", "username": author["username"],
+            "position_x": 0.5, "position_y": 0.5, "scale": 1.0,
+        }]
+        resp = client.post(
+            "/api/v1/stories",
+            data={"overlay_elements": json.dumps(elements)},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{author['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        stored = story["overlay_elements"]
+        assert len(stored) == 1
+        assert stored[0]["type"] == "mention"
+        assert stored[0]["username"] == author["username"]
+
+        with app.app_context():
+            sb = get_sb()
+            notif = sb.table("notifications").select("id").eq(
+                "recipient_id", author["id"]
+            ).eq("type", "story_mention").execute().data
+            assert not notif, "kendine etiket bildirim ÜRETMEMELİ"
+
+        self._cleanup(app, author["id"], story_id)
+
+    def test_hashtag_element_round_trips_normalized(self, app, client, test_user_factory):
+        user = test_user_factory(email="apiv1_story_hashtag@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        elements = [{
+            "type": "hashtag", "tag": "#TatilZamanI",
+            "position_x": 0.3, "position_y": 0.7, "scale": 0.9,
+        }]
+        resp = client.post(
+            "/api/v1/stories",
+            data={"overlay_elements": json.dumps(elements)},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        stored = story["overlay_elements"]
+        assert len(stored) == 1
+        assert stored[0]["type"] == "hashtag"
+        # extract_hashtags() ile AYNI normalizasyon: küçük harf, '#' saklanmaz
+        assert stored[0]["tag"] == "tatilzamani"
+
+        self._cleanup(app, user["id"], story_id)
+
+    def test_mixed_image_mention_hashtag_elements_round_trip(self, app, client, test_user_factory):
+        author = test_user_factory(email="apiv1_story_mixed_author@example.com", password="TestPass123!")
+        mentioned = test_user_factory(email="apiv1_story_mixed_target@example.com", password="TestPass123!")
+        token = _api_token_for(app, author["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        elements = [
+            {"type": "image", "url": "https://media.klipy.co/sticker/mixed.gif",
+             "position_x": 0.2, "position_y": 0.2, "scale": 1.0},
+            {"type": "mention", "username": mentioned["username"],
+             "position_x": 0.5, "position_y": 0.5, "scale": 1.0},
+            {"type": "hashtag", "tag": "karisik", "position_x": 0.8, "position_y": 0.8, "scale": 1.0},
+        ]
+        resp = client.post(
+            "/api/v1/stories",
+            data={"overlay_elements": json.dumps(elements)},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{author['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        stored = story["overlay_elements"]
+        assert len(stored) == 3
+        types = [e["type"] for e in stored]
+        assert types == ["image", "mention", "hashtag"]
+        assert stored[0]["url"] == "https://media.klipy.co/sticker/mixed.gif"
+        assert stored[1]["username"] == mentioned["username"]
+        assert stored[2]["tag"] == "karisik"
+
+        self._cleanup(app, author["id"], story_id, mentioned["id"])
+
+    def test_legacy_image_element_without_type_key_still_works(self, app, client, test_user_factory):
+        """Geriye dönük uyumluluk: type YOK ama url VAR — image sayılmalı
+        (native client'in bu alanı henüz göndermediği eski istekler için)."""
+        user = test_user_factory(email="apiv1_story_legacy_image@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        elements = [{
+            "url": "https://media.klipy.co/sticker/legacy.gif",
+            "position_x": 0.5, "position_y": 0.5, "scale": 1.0,
+        }]
+        resp = client.post(
+            "/api/v1/stories",
+            data={"overlay_elements": json.dumps(elements)},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        stored = story["overlay_elements"]
+        assert len(stored) == 1
+        assert stored[0]["type"] == "image"
+        assert stored[0]["url"] == "https://media.klipy.co/sticker/legacy.gif"
+
+        self._cleanup(app, user["id"], story_id)
