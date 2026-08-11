@@ -4,6 +4,7 @@ Gerçek Supabase test kullanıcısıyla çalışır (mock yok, test_user_factory
 fixture'ı bkz. tests/conftest.py) — auth/token akışı güvenlik-kritik.
 """
 import hashlib
+import json
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -4260,11 +4261,12 @@ class TestApiV1MentionSearch:
         self._cleanup(app, [me["id"], mutual["id"], following["id"], stranger["id"]])
 
 
-class TestApiV1StoryOverlayImage:
-    """POST /api/v1/stories — overlay_image_url/_position_x/_y/_scale (GIF/etiket
-    sürükle-bırak, sql/migration_story_overlay_image.sql). caption_position_x/y
-    ile AYNI parse/clamp deseni, ama SADECE overlay_image_url doluysa aktif
-    olur (url yoksa dörtlü de null kalmalı — regresyon guard'ı aşağıda)."""
+class TestApiV1StoryOverlayElements:
+    """POST /api/v1/stories — overlay_elements (ÇOKLU GIF/etiket, JSON-encoded
+    string form alanı, sql/migration_story_overlay_elements.sql). Önceki tekli
+    overlay_image_* şeması bugün DÜZ DEĞİŞTİRİLDİ (canlı veri yoktu) — artık
+    tek bir jsonb dizi kolonu var, en fazla 3 eleman, caption_position_x/y
+    ile AYNI parse/clamp deseni her eleman için ayrı ayrı uygulanır."""
 
     @staticmethod
     def _cleanup(app, user_id, story_id=None):
@@ -4274,19 +4276,20 @@ class TestApiV1StoryOverlayImage:
                 sb.table("stories").delete().eq("id", story_id).execute()
             sb.table("api_tokens").delete().eq("user_id", user_id).execute()
 
-    def test_create_story_with_overlay_image_round_trips(self, app, client, test_user_factory):
+    def test_create_story_with_overlay_elements_round_trips(self, app, client, test_user_factory):
         user = test_user_factory(email="apiv1_story_overlay_ok@example.com", password="TestPass123!")
         token = _api_token_for(app, user["id"])
         headers = {"Authorization": f"Bearer {token}"}
 
+        elements = [
+            {"url": "https://media.klipy.co/sticker/deneme1.gif", "position_x": 0.25, "position_y": 0.8, "scale": 1.5},
+            {"url": "https://media.klipy.co/sticker/deneme2.gif", "position_x": 0.6, "position_y": 0.3, "scale": 0.7},
+        ]
         resp = client.post(
             "/api/v1/stories",
             data={
                 "caption": "overlay testi",
-                "overlay_image_url": "https://media.klipy.co/sticker/deneme.gif",
-                "overlay_image_position_x": "0.25",
-                "overlay_image_position_y": "0.8",
-                "overlay_image_scale": "1.5",
+                "overlay_elements": json.dumps(elements),
             },
             headers=headers,
         )
@@ -4301,23 +4304,33 @@ class TestApiV1StoryOverlayImage:
         matching = [s for s in stories if s["id"] == story_id]
         assert len(matching) == 1
         story = matching[0]
-        assert story["overlay_image_url"] == "https://media.klipy.co/sticker/deneme.gif"
-        assert story["overlay_image_position_x"] == pytest.approx(0.25)
-        assert story["overlay_image_position_y"] == pytest.approx(0.8)
-        assert story["overlay_image_scale"] == pytest.approx(1.5)
+        stored = story["overlay_elements"]
+        assert len(stored) == 2
+        assert stored[0]["url"] == "https://media.klipy.co/sticker/deneme1.gif"
+        assert stored[0]["position_x"] == pytest.approx(0.25)
+        assert stored[0]["position_y"] == pytest.approx(0.8)
+        assert stored[0]["scale"] == pytest.approx(1.5)
+        assert stored[1]["url"] == "https://media.klipy.co/sticker/deneme2.gif"
+        assert stored[1]["position_x"] == pytest.approx(0.6)
+        assert stored[1]["position_y"] == pytest.approx(0.3)
+        assert stored[1]["scale"] == pytest.approx(0.7)
 
         self._cleanup(app, user["id"], story_id)
 
-    def test_create_story_with_overlay_image_defaults_position_and_scale(self, app, client, test_user_factory):
-        """overlay_image_url dolu ama pozisyon/scale gönderilmemiş — poll_position/
-        caption_position'daki AYNI varsayılan-fallback deseni: 0.5/0.5/1.0."""
-        user = test_user_factory(email="apiv1_story_overlay_defaults@example.com", password="TestPass123!")
+    def test_create_story_overlay_elements_capped_at_three(self, app, client, test_user_factory):
+        """4. ve sonrası eleman sessizce kırpılır — upload_images max_count
+        emsaliyle AYNI 'sessiz sınırlama' deseni, istek ERROR ETMEZ."""
+        user = test_user_factory(email="apiv1_story_overlay_cap@example.com", password="TestPass123!")
         token = _api_token_for(app, user["id"])
         headers = {"Authorization": f"Bearer {token}"}
 
+        elements = [
+            {"url": f"https://media.klipy.co/sticker/cap{i}.gif", "position_x": 0.5, "position_y": 0.5, "scale": 1.0}
+            for i in range(5)
+        ]
         resp = client.post(
             "/api/v1/stories",
-            data={"overlay_image_url": "https://media.klipy.co/sticker/varsayilan.gif"},
+            data={"overlay_elements": json.dumps(elements)},
             headers=headers,
         )
         assert resp.status_code == 200
@@ -4325,15 +4338,19 @@ class TestApiV1StoryOverlayImage:
 
         fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
         story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
-        assert story["overlay_image_position_x"] == pytest.approx(0.5)
-        assert story["overlay_image_position_y"] == pytest.approx(0.5)
-        assert story["overlay_image_scale"] == pytest.approx(1.0)
+        stored = story["overlay_elements"]
+        assert len(stored) == 3
+        assert [e["url"] for e in stored] == [
+            "https://media.klipy.co/sticker/cap0.gif",
+            "https://media.klipy.co/sticker/cap1.gif",
+            "https://media.klipy.co/sticker/cap2.gif",
+        ]
 
         self._cleanup(app, user["id"], story_id)
 
-    def test_create_story_without_overlay_image_leaves_fields_null(self, app, client, test_user_factory):
-        """Regresyon guard'ı: overlay_image_url gönderilmezse dörtlü ZORLA
-        varsayılana düşmemeli, null kalmalı (caption_position'ın aksine)."""
+    def test_create_story_without_overlay_elements_leaves_column_null(self, app, client, test_user_factory):
+        """Regresyon guard'ı: overlay_elements gönderilmezse kolon null
+        kalmalı (boş liste DEĞİL — 'yokluk = render etme' kontratı)."""
         user = test_user_factory(email="apiv1_story_overlay_none@example.com", password="TestPass123!")
         token = _api_token_for(app, user["id"])
         headers = {"Authorization": f"Bearer {token}"}
@@ -4348,31 +4365,23 @@ class TestApiV1StoryOverlayImage:
 
         fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
         story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
-        assert story["overlay_image_url"] is None
-        assert story["overlay_image_position_x"] is None
-        assert story["overlay_image_position_y"] is None
-        assert story["overlay_image_scale"] is None
+        assert story["overlay_elements"] is None
         # Regresyon guard'ı: caption_position bu değişiklikten ETKİLENMEMELİ
         assert story["caption_position_x"] == pytest.approx(0.5)
         assert story["caption_position_y"] == pytest.approx(0.75)
 
         self._cleanup(app, user["id"], story_id)
 
-    def test_create_story_overlay_image_invalid_position_falls_back_to_default(self, app, client, test_user_factory):
-        """Aralık dışı/parse edilemeyen pozisyon+scale değerleri —
-        caption_position/poll_position'daki AYNI clamp-then-default davranışı."""
-        user = test_user_factory(email="apiv1_story_overlay_invalid@example.com", password="TestPass123!")
+    def test_create_story_overlay_elements_malformed_json_falls_back_to_none(self, app, client, test_user_factory):
+        """Bozuk JSON tüm isteği ERROR ETMEMELİ — dekoratif/kritik-olmayan
+        özellik, poll_scale parse fallback'iyle AYNI fail-open felsefesi."""
+        user = test_user_factory(email="apiv1_story_overlay_badjson@example.com", password="TestPass123!")
         token = _api_token_for(app, user["id"])
         headers = {"Authorization": f"Bearer {token}"}
 
         resp = client.post(
             "/api/v1/stories",
-            data={
-                "overlay_image_url": "https://media.klipy.co/sticker/gecersiz.gif",
-                "overlay_image_position_x": "5.0",  # aralık dışı (0..1)
-                "overlay_image_position_y": "not-a-float",  # parse edilemez
-                "overlay_image_scale": "99",  # aralık dışı (0.3..3)
-            },
+            data={"caption": "bozuk json testi", "overlay_elements": "{not valid json["},
             headers=headers,
         )
         assert resp.status_code == 200
@@ -4380,8 +4389,38 @@ class TestApiV1StoryOverlayImage:
 
         fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
         story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
-        assert story["overlay_image_position_x"] == pytest.approx(0.5)
-        assert story["overlay_image_position_y"] == pytest.approx(0.5)
-        assert story["overlay_image_scale"] == pytest.approx(1.0)
+        assert story["overlay_elements"] is None
+
+        self._cleanup(app, user["id"], story_id)
+
+    def test_create_story_overlay_elements_invalid_position_falls_back_to_default(self, app, client, test_user_factory):
+        """Aralık dışı/parse edilemeyen pozisyon+scale değerleri —
+        caption_position/poll_position'daki AYNI clamp-then-default
+        davranışı, tüm hikaye REDDEDİLMEZ sadece o eleman clamp edilir."""
+        user = test_user_factory(email="apiv1_story_overlay_invalid@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        elements = [{
+            "url": "https://media.klipy.co/sticker/gecersiz.gif",
+            "position_x": 5.0,  # aralık dışı (0..1)
+            "position_y": "not-a-float",  # parse edilemez
+            "scale": 99,  # aralık dışı (0.3..3)
+        }]
+        resp = client.post(
+            "/api/v1/stories",
+            data={"overlay_elements": json.dumps(elements)},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        story_id = resp.get_json()["story_id"]
+
+        fetch = client.get(f"/api/v1/stories/user/{user['id']}", headers=headers)
+        story = next(s for s in fetch.get_json()["stories"] if s["id"] == story_id)
+        stored = story["overlay_elements"]
+        assert len(stored) == 1
+        assert stored[0]["position_x"] == pytest.approx(0.5)
+        assert stored[0]["position_y"] == pytest.approx(0.5)
+        assert stored[0]["scale"] == pytest.approx(1.0)
 
         self._cleanup(app, user["id"], story_id)

@@ -14,6 +14,7 @@ tablo KULLANMAZ — web ile AYNI şekilde birer DM mesajı olarak
 `_get_or_create_conversation`/`_notify_conversation` (app/messaging/_common.py)
 ile kaydedilir.
 """
+import json
 import re
 from datetime import datetime, timezone
 
@@ -59,10 +60,10 @@ def api_create_story():
     `poll_option_1..4`, `poll_position_x/y`, `poll_scale`,
     `caption_position_x/y`, `background_color` (medya varsa yok sayılır),
     `visibility` (public/followers/close_friends, varsayılan public),
-    `overlay_image_url` (GIF/etiket görseli — zaten yüklenmiş bir URL,
+    `overlay_elements` (ÇOKLU GIF/etiket görseli — JSON-ENCODED STRING, dizi:
+    `[{"url":..., "position_x":..., "position_y":..., "scale":...}, ...]`;
     dosya YÜKLEMESİ değil, gif_url'deki (interactions.py) AYNI güven
-    seviyesiyle client'tan olduğu gibi kabul edilir) + varsa
-    `overlay_image_position_x/y`, `overlay_image_scale`."""
+    seviyesiyle client'tan olduğu gibi kabul edilir, en fazla 3 eleman)."""
     sb = get_sb()
     me = request.api_user["id"]
     caption = (request.form.get("caption") or "").strip()
@@ -116,40 +117,62 @@ def api_create_story():
     except ValueError:
         caption_position_y = 0.75
 
-    # Overlay görseli (GIF/etiket) — gif_url (interactions.py) ile AYNI güven
-    # seviyesi: düz metin URL, dosya yükleme yok, boş-değil dışında doğrulama
-    # yok. Pozisyon/scale SADECE url doluysa parse edilir — url yoksa dörtlü
-    # de null kalmalı (overlay'siz bir hikayeye zorla pozisyon dayatılmaz).
-    overlay_image_url = (request.form.get("overlay_image_url") or "").strip() or None
-    overlay_image_position_x = None
-    overlay_image_position_y = None
-    overlay_image_scale = None
-    if overlay_image_url:
-        overlay_image_position_x = 0.5
+    # Overlay görselleri (GIF/etiket, ÇOKLU) — tek `overlay_elements` alanı,
+    # JSON-encoded string olarak gelir (multipart form'da dizi/nesne taşımanın
+    # standart yolu). Dekoratif/kritik-olmayan bir özellik olduğu için
+    # bozuk JSON tüm isteği ERROR ETMEZ, poll_scale parse fallback'iyle AYNI
+    # fail-open felsefesi: sessizce boş listeye düşer. Her eleman ayrı ayrı
+    # doğrulanır (url boşsa o eleman ATLANIR, pozisyon/scale clamp edilir,
+    # caption_position/poll_position ile AYNI desen) ve en fazla 3 elemanla
+    # sınırlanır (upload_images max_count=4'teki "sessiz kırpma" emsaliyle
+    # aynı). Boş liste DEĞİL None saklanır — "yokluk = render etme" kontratı.
+    overlay_elements_raw = request.form.get("overlay_elements")
+    overlay_elements = []
+    if overlay_elements_raw:
         try:
-            overlay_image_position_x = float(request.form.get("overlay_image_position_x", "0.5"))
-            if not (0 <= overlay_image_position_x <= 1):
-                overlay_image_position_x = 0.5
-        except ValueError:
-            overlay_image_position_x = 0.5
+            parsed = json.loads(overlay_elements_raw)
+        except (ValueError, TypeError):
+            parsed = []
+        if isinstance(parsed, list):
+            for item in parsed:
+                if not isinstance(item, dict):
+                    continue
+                url = item.get("url")
+                if not isinstance(url, str) or not url.strip():
+                    continue
 
-        overlay_image_position_y = 0.5
-        try:
-            overlay_image_position_y = float(request.form.get("overlay_image_position_y", "0.5"))
-            if not (0 <= overlay_image_position_y <= 1):
-                overlay_image_position_y = 0.5
-        except ValueError:
-            overlay_image_position_y = 0.5
+                position_x = 0.5
+                try:
+                    position_x = float(item.get("position_x", 0.5))
+                    if not (0 <= position_x <= 1):
+                        position_x = 0.5
+                except (TypeError, ValueError):
+                    position_x = 0.5
 
-        overlay_image_scale = 1.0
-        try:
-            overlay_image_scale = float(request.form.get("overlay_image_scale", "1.0"))
-            if not (0.3 <= overlay_image_scale <= 3):
-                overlay_image_scale = 1.0
-        except ValueError:
-            overlay_image_scale = 1.0
+                position_y = 0.5
+                try:
+                    position_y = float(item.get("position_y", 0.5))
+                    if not (0 <= position_y <= 1):
+                        position_y = 0.5
+                except (TypeError, ValueError):
+                    position_y = 0.5
 
-    if not caption and not has_image and not has_video and not has_poll and not overlay_image_url:
+                scale = 1.0
+                try:
+                    scale = float(item.get("scale", 1.0))
+                    if not (0.3 <= scale <= 3):
+                        scale = 1.0
+                except (TypeError, ValueError):
+                    scale = 1.0
+
+                overlay_elements.append({
+                    "url": url.strip(), "position_x": position_x,
+                    "position_y": position_y, "scale": scale,
+                })
+                if len(overlay_elements) >= 3:
+                    break
+
+    if not caption and not has_image and not has_video and not has_poll and not overlay_elements:
         return jsonify(error="empty_story"), 400
 
     image_url = None
@@ -177,16 +200,15 @@ def api_create_story():
         "user_id": me, "image_url": image_url, "video_url": video_url, "caption": caption,
         "background_color": background_color, "visibility": visibility,
         "caption_position_x": caption_position_x, "caption_position_y": caption_position_y,
-        "overlay_image_url": overlay_image_url,
-        "overlay_image_position_x": overlay_image_position_x,
-        "overlay_image_position_y": overlay_image_position_y,
-        "overlay_image_scale": overlay_image_scale,
+        # Supabase python client jsonb kolonuna native list/dict kabul eder —
+        # burada string'e ÇEVRİLMEZ, JSON-encode SADECE gelen form alanında.
+        "overlay_elements": overlay_elements or None,
     }
     try:
         result = sb.table("stories").insert(story_data).execute()
     except Exception:
         try:
-            # overlay_image_* kolonları migration'sız ortamda yoksa (503
+            # overlay_elements kolonu migration'sız ortamda yoksa (503
             # değil) fallback: caption_position gibi eski kolonları da atıp
             # SADECE çekirdek alanlarla tekrar dene.
             story_data_legacy = {
@@ -227,8 +249,7 @@ def api_user_stories(user_id):
     try:
         rows = sb.table("stories").select(
             "id, user_id, image_url, video_url, caption, created_at, visibility, background_color, "
-            "caption_position_x, caption_position_y, overlay_image_url, "
-            "overlay_image_position_x, overlay_image_position_y, overlay_image_scale"
+            "caption_position_x, caption_position_y, overlay_elements"
         ).eq("user_id", user_id).gt("expires_at", now).order("created_at").execute().data
     except Exception:
         rows = []
