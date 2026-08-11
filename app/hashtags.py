@@ -10,11 +10,12 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from flask import Blueprint, render_template, request, session, jsonify, redirect, url_for
-from markupsafe import Markup, escape
+from markupsafe import Markup
 from .decorators import login_required
 from .supabase_client import get_sb, retry_on_connection_error
 from .notifications import notify
 from .visibility import close_friend_author_ids
+from .linkify_utils import apply_outside_anchors
 
 bp = Blueprint("hashtags", __name__)
 
@@ -86,21 +87,21 @@ def linkify_hashtags(content: str):
     (önce tümünü escape edip regex'i escape edilmiş metinde çalıştırmak)
     hatalıdır: `"` karakteri escape'te `&#34;` olur ve regex bunun içindeki
     "#34"ü sahte bir hashtag sanıp HTML'i bozar.
+
+    `content` ham metin de olabilir, `linkify_urls` çıktısı (zaten Markup, bir
+    `<a>` içerebilir) da olabilir — apply_outside_anchors bu durumda mevcut
+    `<a>` bloklarının İÇİNİ bir daha taramaz (ör. bir URL'nin sonundaki
+    `#fragment` yanlışlıkla hashtag linkine dönüşüp href'i bozmaz).
     """
     if not content:
         return ""
 
-    parts = []
-    last_end = 0
-    for m in HASHTAG_RE.finditer(content):
-        parts.append(escape(content[last_end:m.start()]))
+    def _replace(m):
         tag = m.group(1)
         url = url_for("hashtags.hashtag_posts", tag=tag.lower())
-        parts.append(Markup('<a href="{}" class="hashtag-link">#{}</a>').format(url, tag))
-        last_end = m.end()
-    parts.append(escape(content[last_end:]))
+        return Markup('<a href="{}" class="hashtag-link">#{}</a>').format(url, tag)
 
-    return Markup("").join(parts)
+    return apply_outside_anchors(content, HASHTAG_RE, _replace)
 
 
 @bp.route("/hashtag/<tag>")

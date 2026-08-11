@@ -40,7 +40,12 @@ const MANIFEST = {
   // (likes/polls/bookmarks/follow document-level delegation kullanıyor —
   // ilgili DOM elemanı olmayan sayfada sessizce hiçbir şey yapmaz, bu yüzden
   // TÜM bu sayfalarda güvenle aynı bundle kullanılabilir)
-  'post-interactions': ['likes.js', 'polls.js', 'bookmarks.js', 'follow.js', 'postMuteButton.js'],
+  // linkPreview.js burada: discover/feed/follow_list/hashtag/post_detail/
+  // profile/reels/search post içeriği gösteren HER sayfada aynı _post_card.html
+  // /_feed_posts.html partial'ı kullanılıyor (content-link linkleri hepsinde
+  // aynı şekilde çıkabilir) — follow_list.html post göstermez ama script
+  // orada da .content-link bulamayınca sessizce hiçbir şey yapmaz (no-op).
+  'post-interactions': ['likes.js', 'polls.js', 'bookmarks.js', 'follow.js', 'postMuteButton.js', 'linkPreview.js'],
 
   'feed-extra': ['postModal.js', 'stories.js', 'storyHighlights.js', 'infiniteScroll.js'],
   'profile-extra': ['collections.js', 'profileTabs.js', 'storyHighlights.js', 'stickers.js'],
@@ -50,7 +55,7 @@ const MANIFEST = {
   // (inbox.html + conversation.html ikisi de include ediyor, sıra: convo-list
   // ÖNCE, realtime SONRA) — modülerlik korunsun diye 2 ayrı bundle.
   'messages-convo-list': ['groupChat.js', 'groupAdmin.js', 'groupCall.js', 'msgMedia.js', 'messagesSearch.js'],
-  'messages-realtime': ['stickers.js', 'voiceWaveform.js', 'chat.js', 'messagesPanel.js'],
+  'messages-realtime': ['stickers.js', 'voiceWaveform.js', 'chat.js', 'messagesPanel.js', 'linkPreview.js'],
 
   // Reels: dikey kısa video akışı
   'reels': ['reels.js'],

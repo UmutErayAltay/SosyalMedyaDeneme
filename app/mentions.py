@@ -6,8 +6,9 @@ bildirim göndermek (keşfet/listeleme sayfası istenmedi, kapsam dışı).
 """
 import re
 from flask import url_for
-from markupsafe import Markup, escape
+from markupsafe import Markup
 from .notifications import notify
+from .linkify_utils import apply_outside_anchors
 
 # Kayıtta username formatı zorlanmıyor (bkz. auth.py) — gerçek kullanıcı adlarında
 # nokta görülüyor (ör. "umut.test2025"), bu yüzden sadece \w yetmez, nokta/tire de
@@ -117,29 +118,27 @@ def linkify_mentions(content, valid_usernames: dict | None = None):
     düzeltilir — kullanıcı raporu: "kullanıcı adını yazarken büyük küçük harf
     farkı olmasın, gönderirken otomatik düzeltsin".
 
-    `content` ham metin de olabilir, `linkify_hashtags` çıktısı (zaten Markup)
-    da olabilir — her iki durumda da güvenli: Markup dilimleri zaten güvenli
-    kabul edilir (escape() bunlarda no-op'tur), ham metin dilimleri normal
-    şekilde escape edilir. Sıralama mantığı linkify_hashtags ile aynıdır.
+    `content` ham metin de olabilir, `linkify_urls`/`linkify_hashtags`
+    çıktısı (zaten Markup, `<a>` blokları içerebilir) da olabilir — her iki
+    durumda da güvenli: Markup dilimleri zaten güvenli kabul edilir (escape()
+    bunlarda no-op'tur), ham metin dilimleri normal şekilde escape edilir. VE
+    artık mevcut `<a>` bloklarının İÇİNİ bir daha taramıyor (apply_outside_anchors)
+    — ör. bir URL'nin query string'inde geçen "@..." parçası yanlışlıkla
+    mention linkine dönüşüp href'i bozmaz.
     """
     if not content:
         return ""
     valid = valid_usernames or {}
 
-    parts = []
-    last_end = 0
-    for m in MENTION_RE.finditer(content):
+    def _replace(m):
         uname = m.group(1)
         real_uname = valid.get(uname.lower())
         if real_uname is None:
-            continue
-        parts.append(escape(content[last_end:m.start()]))
+            return None  # geçersiz kullanıcı adı — düz metin olarak kalsın
         url = url_for("routes.profile", username=real_uname)
-        parts.append(Markup('<a href="{}" class="mention-link">@{}</a>').format(url, real_uname))
-        last_end = m.end()
-    parts.append(escape(content[last_end:]))
+        return Markup('<a href="{}" class="mention-link">@{}</a>').format(url, real_uname)
 
-    return Markup("").join(parts)
+    return apply_outside_anchors(content, MENTION_RE, _replace)
 
 
 def get_valid_usernames(sb) -> dict:

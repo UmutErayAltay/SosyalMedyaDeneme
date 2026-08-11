@@ -52,6 +52,7 @@ konuya göre ayrıştırıldı):
 - `reposts.py`      — /posts/<id>/repost
 - `posts.py`        — /posts/<id>/edit|delete|archive|pin (post yönetimi)
 - `mentions.py`     — /mentions/search (@etiketleme otomatik tamamlama)
+- `link_preview.py` — /link-preview (URL için Open Graph önizleme, SSRF-korumalı)
 
 ÖNEMLİ: Bölünme SADECE dosya organizasyonu — endpoint isimleri (`api_v1.xxx`)
 ve URL'ler DEĞİŞMEDİ, çünkü hepsi hâlâ AYNI `bp` nesnesine route ekliyor
@@ -70,4 +71,5 @@ from . import (  # noqa: E402,F401
     auth, feed, profile, reels, messaging, interactions, settings,
     notifications, twofa, blocks, sessions, hashtags, polls, stickers,
     mutes, stories, bookmarks, gifs, push, reposts, reports, posts, mentions,
+    link_preview,
 )

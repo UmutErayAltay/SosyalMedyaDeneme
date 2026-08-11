@@ -267,7 +267,7 @@
                 <video src="{{ m.video_url }}" class="msg-video" controls preload="metadata"></video>
             {% endif %}
             {% if m.content %}
-                <p>{{ m.content|linkify_mentions(valid_usernames) }}</p>
+                <p>{{ m.content|linkify_urls|linkify_mentions(valid_usernames) }}</p>
             {% endif %}
             <span class="time">
                 {{ m.created_at|local_time('%H:%M') }}

@@ -45,25 +45,85 @@
     var currentValidUsernames = new Map(); // kucuk_harfli -> gercek_kullanici_adi
     var MENTION_RE_JS = /@([\p{L}\p{N}_.-]+)/gu;
 
-    function linkifyMentionsClient(text) {
-        if (!text || currentValidUsernames.size === 0) return escapeHtml(text || '');
+    // Sunucu tarafındaki apply_outside_anchors (app/linkify_utils.py) ile AYNI
+    // mantık: pattern'i SADECE mevcut <a>...</a> bloklarının DIŞINDA çalıştırır.
+    // Zincirleme (linkifyMentionsClient(linkifyUrlsClient(text))) sırasında
+    // linkifyUrlsClient'ın ürettiği <a href="..."> içindeki bir '@' (ör. query
+    // string'de e-posta) olmasa bile, bu olmadan mention regex'i href/görünen
+    // metnin İÇİNDE de eşleşip iç içe <a> üreterek HTML'i bozabilirdi.
+    var ANCHOR_RE_JS = /<a\b[^>]*>[\s\S]*?<\/a>/gi;
+
+    function applyOutsideAnchorsClient(text, pattern, replaceFn) {
+        if (!text) return '';
+        var result = '';
+        var pos = 0;
+        var anchorMatch;
+        ANCHOR_RE_JS.lastIndex = 0;
+        while ((anchorMatch = ANCHOR_RE_JS.exec(text)) !== null) {
+            result += linkifySegmentClient(text.slice(pos, anchorMatch.index), pattern, replaceFn);
+            result += anchorMatch[0];
+            pos = anchorMatch.index + anchorMatch[0].length;
+        }
+        result += linkifySegmentClient(text.slice(pos), pattern, replaceFn);
+        return result;
+    }
+
+    function linkifySegmentClient(segment, pattern, replaceFn) {
+        if (!segment) return '';
         var result = '';
         var lastIndex = 0;
         var match;
-        MENTION_RE_JS.lastIndex = 0;
-        while ((match = MENTION_RE_JS.exec(text)) !== null) {
+        pattern.lastIndex = 0;
+        while ((match = pattern.exec(segment)) !== null) {
+            var replacement = replaceFn(match);
+            if (replacement === null) continue;
+            result += escapeHtml(segment.slice(lastIndex, match.index));
+            result += replacement;
+            lastIndex = match.index + match[0].length;
+        }
+        result += escapeHtml(segment.slice(lastIndex));
+        return result;
+    }
+
+    // Sunucu render'ındaki linkify_urls (app/link_preview.py) filtresinin JS
+    // karşılığı — realtime/optimistic mesajlar Jinja'dan GEÇMEZ, bu yüzden
+    // http(s) linkler burada da tıklanabilir hale getirilmezse panel yenilenene
+    // kadar düz metin kalırdı. ZİNCİRDE URL ÖNCE, mention SONRA çalışmalı
+    // (server ile aynı sıra) — aksi halde URL içindeki '@' mention regex'ini
+    // yanlış tetikleyip URL'yi parçalayabilir.
+    var URL_RE_JS = /https?:\/\/[^\s<>"']+/g;
+    var URL_TRAILING_CHARS = ".,;:!?)]}'\"";
+
+    function stripTrailingPunctClient(url) {
+        var end = url.length;
+        while (end > 0 && URL_TRAILING_CHARS.indexOf(url.charAt(end - 1)) !== -1) end--;
+        return [url.slice(0, end), url.slice(end)];
+    }
+
+    function linkifyUrlsClient(text) {
+        if (!text) return '';
+        return applyOutsideAnchorsClient(text, URL_RE_JS, function (match) {
+            var parts = stripTrailingPunctClient(match[0]);
+            var url = parts[0];
+            var trailing = parts[1];
+            if (!url) return null;
+            var safeUrl = escapeHtml(url);
+            return '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer nofollow" class="content-link">' + safeUrl + '</a>' + escapeHtml(trailing);
+        });
+    }
+
+    function linkifyMentionsClient(text) {
+        if (!text) return '';
+        if (currentValidUsernames.size === 0) return escapeHtml(text);
+        return applyOutsideAnchorsClient(text, MENTION_RE_JS, function (match) {
             var uname = match[1];
             var realUname = currentValidUsernames.get(uname.toLowerCase());
-            if (realUname === undefined) continue;
-            result += escapeHtml(text.slice(lastIndex, match.index));
+            if (realUname === undefined) return null;
             // Büyük/küçük harf farkı olsa da gerçek kullanıcı adının kendi
             // harflerine otomatik düzeltilir (kullanıcı isteği) — sunucu
             // tarafındaki mentions.py:linkify_mentions ile aynı davranış.
-            result += '<a href="/u/' + encodeURIComponent(realUname) + '" class="mention-link">@' + escapeHtml(realUname) + '</a>';
-            lastIndex = match.index + match[0].length;
-        }
-        result += escapeHtml(text.slice(lastIndex));
-        return result;
+            return '<a href="/u/' + encodeURIComponent(realUname) + '" class="mention-link">@' + escapeHtml(realUname) + '</a>';
+        });
     }
 
     // Karşı taraftan Realtime ile gelen INSERT payload'ı ham satırdır (JOIN
@@ -162,7 +222,7 @@
             html += '<video src="' + escapeHtml(msg.video_url) + '" class="msg-video" controls preload="metadata"></video>';
         }
         if (msg.content) {
-            html += '<p>' + linkifyMentionsClient(msg.content) + '</p>';
+            html += '<p>' + linkifyMentionsClient(linkifyUrlsClient(msg.content)) + '</p>';
         }
         var time = formatLocalTime(msg.created_at);
         html += '<span class="time">' + time;
@@ -1385,7 +1445,7 @@
                         // Düzenleme formu AÇIKKEN gelen güncelleme (aynı sekmede
                         // ikinci bir istemci düzenlemiş olabilir) mevcut taslağı
                         // ezmesin diye form açıkken metin güncellenmez.
-                        if (editedP && !editForm) editedP.innerHTML = linkifyMentionsClient(msg.content);
+                        if (editedP && !editForm) editedP.innerHTML = linkifyMentionsClient(linkifyUrlsClient(msg.content));
                         if (msg.edited_at && el && !el.querySelector('.msg-edited-tag')) {
                             var timeElLive = el.querySelector('.time');
                             if (timeElLive) {
@@ -1542,7 +1602,7 @@
                 .then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); })
                 .then(function (result) {
                     if (!result.ok) throw new Error(result.data.error || 'Mesaj düzenlenemedi.');
-                    pEl.innerHTML = linkifyMentionsClient(result.data.content);
+                    pEl.innerHTML = linkifyMentionsClient(linkifyUrlsClient(result.data.content));
                     if (result.data.edited_at && !msgEl.querySelector('.msg-edited-tag')) {
                         var timeEl = msgEl.querySelector('.time');
                         if (timeEl) {

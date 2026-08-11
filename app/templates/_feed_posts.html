@@ -70,7 +70,7 @@
         {% endif %}
     </header>
     {% if p.repost_of %}<p class="repost-label muted">{{ icons.icon('repeat', size=12) }} yeniden paylaştı</p>{% endif %}
-    <p class="post-content">{{ p.content|linkify_hashtags|linkify_mentions(valid_usernames) }}</p>
+    <p class="post-content">{{ p.content|linkify_urls|linkify_hashtags|linkify_mentions(valid_usernames) }}</p>
     {{ pc.poll_widget(p) }}
 
     {# --- Çoklu görsel grid --- #}

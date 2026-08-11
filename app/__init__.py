@@ -292,6 +292,7 @@ def create_app() -> Flask:
     from .gifs import bp as gifs_bp
     from .stickers import bp as stickers_bp
     from .push import bp as push_bp
+    from .link_preview import bp as link_preview_bp, linkify_urls
     from .api_v1 import bp as api_v1_bp
 
     # Emoji reaksiyon ikonları şablonlarda {{ REACTIONS['love'] }} olarak kullanılabilir
@@ -300,6 +301,10 @@ def create_app() -> Flask:
     app.jinja_env.filters["linkify_hashtags"] = linkify_hashtags
     # @kullanıcı etiketlerini (sadece gerçekten var olan kullanıcı adlarını) linkler
     app.jinja_env.filters["linkify_mentions"] = linkify_mentions
+    # http(s) URL'leri tıklanabilir linke çevirir — zincirde EN BAŞTA çalışmalı
+    # (content|linkify_urls|linkify_hashtags|linkify_mentions(...)), bkz.
+    # app/link_preview.py::linkify_urls docstring'i
+    app.jinja_env.filters["linkify_urls"] = linkify_urls
     # Ham UTC timestamp'leri yerel saate (Europe/Istanbul) çevirir
     app.jinja_env.filters["local_time"] = local_time
     # Ham UTC timestamp'leri göreceli zamana (Türkçe) çevirir: az önce, N dakika önce, vs.
@@ -322,6 +327,7 @@ def create_app() -> Flask:
     app.register_blueprint(gifs_bp)
     app.register_blueprint(stickers_bp)
     app.register_blueprint(push_bp)
+    app.register_blueprint(link_preview_bp)
     # Faz 1 (native Android yol haritası): token tabanlı JSON REST API,
     # web mimarisinden tamamen izole (bkz. app/api_v1.py başlık dokümantasyonu)
     app.register_blueprint(api_v1_bp, url_prefix="/api/v1")

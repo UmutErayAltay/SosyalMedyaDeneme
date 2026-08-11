@@ -49,22 +49,81 @@
     })();
     var MENTION_RE_JS = /@([\p{L}\p{N}_.-]+)/gu;
 
-    function linkifyMentionsClient(text) {
-        if (!text || validUsernamesMap.size === 0) return escapeHtml(text || '');
+    // Sunucu tarafındaki apply_outside_anchors (app/linkify_utils.py) ile AYNI
+    // mantık: pattern'i SADECE mevcut <a>...</a> bloklarının DIŞINDA çalıştırır.
+    // Zincirleme (linkifyMentionsClient(linkifyUrlsClient(text))) sırasında bu
+    // olmadan mention regex'i linkifyUrlsClient'ın ürettiği href/görünen
+    // metnin İÇİNDE de eşleşip iç içe <a> üreterek HTML'i bozabilirdi.
+    var ANCHOR_RE_JS = /<a\b[^>]*>[\s\S]*?<\/a>/gi;
+
+    function applyOutsideAnchorsClient(text, pattern, replaceFn) {
+        if (!text) return '';
+        var result = '';
+        var pos = 0;
+        var anchorMatch;
+        ANCHOR_RE_JS.lastIndex = 0;
+        while ((anchorMatch = ANCHOR_RE_JS.exec(text)) !== null) {
+            result += linkifySegmentClient(text.slice(pos, anchorMatch.index), pattern, replaceFn);
+            result += anchorMatch[0];
+            pos = anchorMatch.index + anchorMatch[0].length;
+        }
+        result += linkifySegmentClient(text.slice(pos), pattern, replaceFn);
+        return result;
+    }
+
+    function linkifySegmentClient(segment, pattern, replaceFn) {
+        if (!segment) return '';
         var result = '';
         var lastIndex = 0;
         var match;
-        MENTION_RE_JS.lastIndex = 0;
-        while ((match = MENTION_RE_JS.exec(text)) !== null) {
-            var uname = match[1];
-            var realUname = validUsernamesMap.get(uname.toLowerCase());
-            if (realUname === undefined) continue;
-            result += escapeHtml(text.slice(lastIndex, match.index));
-            result += '<a href="/u/' + encodeURIComponent(realUname) + '" class="mention-link">@' + escapeHtml(realUname) + '</a>';
+        pattern.lastIndex = 0;
+        while ((match = pattern.exec(segment)) !== null) {
+            var replacement = replaceFn(match);
+            if (replacement === null) continue;
+            result += escapeHtml(segment.slice(lastIndex, match.index));
+            result += replacement;
             lastIndex = match.index + match[0].length;
         }
-        result += escapeHtml(text.slice(lastIndex));
+        result += escapeHtml(segment.slice(lastIndex));
         return result;
+    }
+
+    // Sunucu render'ındaki linkify_urls (app/link_preview.py) filtresinin JS
+    // karşılığı — AJAX ile eklenen yorum/yanıtlar Jinja'dan GEÇMEZ, bu yüzden
+    // http(s) linkler burada da tıklanabilir hale getirilmezse sayfa
+    // yenilenene kadar düz metin kalırdı. ZİNCİRDE URL ÖNCE, mention SONRA
+    // çalışmalı (server ile aynı sıra) — aksi halde URL içindeki '@' mention
+    // regex'ini yanlış tetikleyip URL'yi parçalayabilir.
+    var URL_RE_JS = /https?:\/\/[^\s<>"']+/g;
+    var URL_TRAILING_CHARS = ".,;:!?)]}'\"";
+
+    function stripTrailingPunctClient(url) {
+        var end = url.length;
+        while (end > 0 && URL_TRAILING_CHARS.indexOf(url.charAt(end - 1)) !== -1) end--;
+        return [url.slice(0, end), url.slice(end)];
+    }
+
+    function linkifyUrlsClient(text) {
+        if (!text) return '';
+        return applyOutsideAnchorsClient(text, URL_RE_JS, function (match) {
+            var parts = stripTrailingPunctClient(match[0]);
+            var url = parts[0];
+            var trailing = parts[1];
+            if (!url) return null;
+            var safeUrl = escapeHtml(url);
+            return '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer nofollow" class="content-link">' + safeUrl + '</a>' + escapeHtml(trailing);
+        });
+    }
+
+    function linkifyMentionsClient(text) {
+        if (!text) return '';
+        if (validUsernamesMap.size === 0) return escapeHtml(text);
+        return applyOutsideAnchorsClient(text, MENTION_RE_JS, function (match) {
+            var uname = match[1];
+            var realUname = validUsernamesMap.get(uname.toLowerCase());
+            if (realUname === undefined) return null;
+            return '<a href="/u/' + encodeURIComponent(realUname) + '" class="mention-link">@' + escapeHtml(realUname) + '</a>';
+        });
     }
 
     // --- Otomatik büyüyen textarea (chat.js #msg-input deseniyle aynı) ---
@@ -139,7 +198,7 @@
         return '<div class="comment-meta">' + avatarHtml +
             '<a href="/u/' + encodeURIComponent(username) + '" class="username">' + escapeHtml(username) + '</a>' +
             '<span class="time">şimdi</span></div>' +
-            '<p>' + linkifyMentionsClient(content) + '</p>';
+            '<p>' + linkifyMentionsClient(linkifyUrlsClient(content)) + '</p>';
     }
 
     // --- GIF Panel — Ana yorum formu ---

@@ -4790,3 +4790,197 @@ class TestApiV1StoryMentionHashtagStickers:
         assert stored[0]["url"] == "https://media.klipy.co/sticker/legacy.gif"
 
         self._cleanup(app, user["id"], story_id)
+
+
+class TestApiV1LinkPreview:
+    """Link preview endpoint testleri — SSRF reddi, auth, rate limit, mock fetch.
+
+    Native (API) route test'leri — Bearer token auth (`@api_login_required`).
+    Web route (`@login_required`) session-cookie auth kullandığından ve
+    `app/link_preview.py::get_or_fetch_preview()` zaten paylaşılı olduğundan,
+    burada native endpoint'in auth + ratelimit mekanizması + response shape'ı
+    test edilir. SSRF reddi testleri `get_or_fetch_preview`'ın kendisinde
+    çalışır, bu endpoint'e bağımlı olmaz."""
+
+    def test_link_preview_without_token_returns_401(self, client):
+        """Token yok → 401."""
+        resp = client.get("/api/v1/link-preview?url=https://example.com")
+        assert resp.status_code == 401
+        body = resp.get_json()
+        assert body.get("error") == "unauthorized"
+
+    def test_link_preview_with_invalid_token_returns_401(self, client):
+        """Hatalı token → 401."""
+        resp = client.get(
+            "/api/v1/link-preview?url=https://example.com",
+            headers={"Authorization": "Bearer invalid_token"}
+        )
+        assert resp.status_code == 401
+
+    def test_link_preview_invalid_url_returns_400(self, app, client, test_user_factory):
+        """Invalid URL formatı 400 döner."""
+        user = test_user_factory(
+            email="api_link_prev_invalid@example.com",
+            password="TestPass123!"
+        )
+        token = _api_token_for(app, user["id"])
+
+        # URL parametresi yok
+        resp = client.get(
+            "/api/v1/link-preview?url=",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp.status_code == 400
+
+        # Şema yok (http/https değil)
+        resp = client.get(
+            "/api/v1/link-preview?url=not-a-url",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp.status_code == 400
+
+        # javascript: (XSS denemesi)
+        resp = client.get(
+            "/api/v1/link-preview?url=javascript:alert(1)",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp.status_code == 400
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_link_preview_ssrf_localhost_rejected(self, app, client, test_user_factory):
+        """Localhost'a SSRF isteği reddedilmeli — fetch başarısız (ok=False)."""
+        user = test_user_factory(
+            email="api_link_prev_localhost@example.com",
+            password="TestPass123!"
+        )
+        token = _api_token_for(app, user["id"])
+
+        resp = client.get(
+            "/api/v1/link-preview?url=http://127.0.0.1/",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body.get("ok") is False  # fetch başarısız
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_link_preview_ssrf_metadata_endpoint_rejected(self, app, client, test_user_factory):
+        """AWS/GCP metadata endpoint (169.254.169.254) reddedilmeli."""
+        user = test_user_factory(
+            email="api_link_prev_metadata@example.com",
+            password="TestPass123!"
+        )
+        token = _api_token_for(app, user["id"])
+
+        resp = client.get(
+            "/api/v1/link-preview?url=http://169.254.169.254/",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body.get("ok") is False  # SSRF reddi
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_link_preview_rate_limited(self, app, client, test_user_factory):
+        """Rate limit: 30 istek / 60 saniye aşılınca 429."""
+        from unittest.mock import patch
+
+        user = test_user_factory(
+            email="api_link_prev_ratelimit@example.com",
+            password="TestPass123!"
+        )
+        token = _api_token_for(app, user["id"])
+
+        # Mock rate_limit.is_rate_limited — yan etki yok (fonksiyon return'ü test edilir)
+        with patch("app.api_v1.link_preview.is_rate_limited") as mock_rate_limit:
+            mock_rate_limit.side_effect = [False, False, True]
+
+            # İlk 2 istek pass
+            for _ in range(2):
+                resp = client.get(
+                    "/api/v1/link-preview?url=https://example.com",
+                    headers={"Authorization": f"Bearer {token}"}
+                )
+                assert resp.status_code == 200
+
+            # 3. istek rate limited
+            resp = client.get(
+                "/api/v1/link-preview?url=https://example.com",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            assert resp.status_code == 429
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_link_preview_success_with_mock_fetch(self, app, client, test_user_factory):
+        """Başarılı fetch (mock) — JSON response shape doğru mu?"""
+        from unittest.mock import patch
+
+        user = test_user_factory(
+            email="api_link_prev_success@example.com",
+            password="TestPass123!"
+        )
+        token = _api_token_for(app, user["id"])
+
+        mock_preview = {
+            "ok": True,
+            "url": "https://example.com/article",
+            "domain": "example.com",
+            "title": "Example Article",
+            "description": "A sample article",
+            "image": "https://example.com/image.jpg",
+            "site_name": "Example"
+        }
+
+        with patch("app.api_v1.link_preview.get_or_fetch_preview") as mock_fetch:
+            mock_fetch.return_value = mock_preview
+
+            resp = client.get(
+                "/api/v1/link-preview?url=https://example.com/article",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            assert resp.status_code == 200
+
+            body = resp.get_json()
+            assert body.get("ok") is True
+            assert body.get("url") == "https://example.com/article"
+            assert body.get("domain") == "example.com"
+            assert body.get("title") == "Example Article"
+            assert body.get("description") == "A sample article"
+            assert body.get("image") == "https://example.com/image.jpg"
+            assert body.get("site_name") == "Example"
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
+
+    def test_link_preview_fetch_failure_returns_ok_false(self, app, client, test_user_factory):
+        """Fetch başarısız olsa (ör. timeout, invalid HTML) `{"ok": False}` döner,
+        500/crash OLMAMALI (graceful degradation)."""
+        from unittest.mock import patch
+
+        user = test_user_factory(
+            email="api_link_prev_fetchfail@example.com",
+            password="TestPass123!"
+        )
+        token = _api_token_for(app, user["id"])
+
+        with patch("app.api_v1.link_preview.get_or_fetch_preview") as mock_fetch:
+            mock_fetch.return_value = {"ok": False}
+
+            resp = client.get(
+                "/api/v1/link-preview?url=https://example.com/notfound",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            assert resp.status_code == 200  # 500 DEĞIL
+            body = resp.get_json()
+            assert body.get("ok") is False
+
+        with app.app_context():
+            get_sb().table("api_tokens").delete().eq("user_id", user["id"]).execute()
