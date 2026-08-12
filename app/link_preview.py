@@ -347,6 +347,31 @@ def _extract_preview(final_url: str, html_text: str) -> dict:
     }
 
 
+# X'in giriş/JS gerektiren tweetler için (korumalı hesap, hassas içerik
+# uyarısı, bazı yeni/az bilinen hesaplar) döndürdüğü JS-gerektiren SPA
+# kabuğunun varsayılan <title>/og:title değerleri — GERÇEK bir tweet'in
+# title'ı HER ZAMAN "Ad Soyad (@kullanici) on X" formatındadır, asla bare
+# "X"/"Twitter"/"Post" değildir. Kullanıcı raporu: bu durumda description
+# hep boş dönüyor ama title+image (generic X logosu) dolu olduğu için eski
+# kod bunu "ok:true" sayıp neredeyse boş bir kart gösteriyordu — Twitterbot
+# UA'sıyla doğrulandı: X bu URL'ler için kendi resmi crawler'ına bile 404
+# veriyor, yani bu bizim tarafımızdan düzeltilebilecek bir şey DEĞİL, sadece
+# "önizleme yok" olarak ele alınmalı (Discord/Slack gibi diğer unfurler'lar
+# da aynı URL için zengin kart gösteremez).
+_TWITTER_PLACEHOLDER_TITLES = {"x", "twitter", "post"}
+
+
+def _is_unusable_preview(preview: dict) -> bool:
+    if not (preview["title"] or preview["description"] or preview["image"]):
+        return True
+    domain = (preview.get("domain") or "").lower()
+    if domain in ("twitter.com", "x.com", "mobile.twitter.com"):
+        title = (preview.get("title") or "").strip().lower()
+        if not preview.get("description") and title in _TWITTER_PLACEHOLDER_TITLES:
+            return True
+    return False
+
+
 def _normalize_url(url: str) -> str:
     """Cache anahtarı: scheme+host lowercase, sondaki `/` kırpılır — query
     string/fragment olduğu gibi bırakılır (basit tutmak tercih edildi, aşırı
@@ -449,7 +474,7 @@ def _get_or_fetch_preview_inner(url: str) -> dict:
 
     final_url, html_text = fetched
     preview = _extract_preview(final_url, html_text)
-    if not (preview["title"] or preview["description"] or preview["image"]):
+    if _is_unusable_preview(preview):
         _save_result(sb, normalized, url, None)  # kullanılabilir hiçbir alan yok — önizlemesiz say
         return {"ok": False}
 

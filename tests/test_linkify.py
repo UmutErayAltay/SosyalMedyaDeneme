@@ -8,7 +8,7 @@ test_client + session ile yapılır.
 import pytest
 from markupsafe import Markup
 
-from app.link_preview import linkify_urls
+from app.link_preview import linkify_urls, _is_unusable_preview
 from app.hashtags import linkify_hashtags
 from app.mentions import linkify_mentions
 
@@ -233,3 +233,69 @@ class TestLinkifyEmptyAndEdgeCases:
         result = linkify_urls(content)
         # Ya link olur ya olmaz ama crash OLMAMALI
         assert isinstance(result, (str, Markup))
+
+
+class TestLinkPreviewTwitterPlaceholderDetection:
+    """KRİTİK regresyon: X'in giriş/JS gerektiren tweetler (korumalı hesap,
+    hassas içerik, bazı yeni/az bilinen hesaplar) için döndürdüğü JS-gerektiren
+    SPA kabuğu — title="X"/"Twitter"/"Post", description YOK, image sadece
+    generic fallback logosu — eskiden "ok:true" sayılıp neredeyse boş bir kart
+    gösteriliyordu (kullanıcı raporu: "twitter gönderileri içeriği gözükmüyor,
+    kart çıkıyor ama boş"). Gerçek bir tweet linkiyle (x.com/Jqrxx/status/...)
+    Twitterbot UA'sının bile 404 aldığı doğrulanarak teşhis edildi — bu
+    bizim tarafımızdan "düzeltilebilecek" bir fetch hatası DEĞİL, X'in
+    içeriği hiç sunmadığı bir durum; doğru davranış kart HİÇ göstermemek."""
+
+    def test_twitter_generic_spa_shell_treated_as_unusable(self):
+        preview = {
+            "url": "https://x.com/someuser/status/123",
+            "domain": "x.com",
+            "title": "X",
+            "description": None,
+            "image": "https://abs.twimg.com/rweb/ssr/default/v2/og/image.png",
+            "site_name": "X (formerly Twitter)",
+        }
+        assert _is_unusable_preview(preview) is True
+
+    def test_twitter_legacy_placeholder_title_treated_as_unusable(self):
+        preview = {
+            "url": "https://twitter.com/someuser/status/123",
+            "domain": "twitter.com",
+            "title": "Twitter",
+            "description": "",
+            "image": None,
+            "site_name": None,
+        }
+        assert _is_unusable_preview(preview) is True
+
+    def test_twitter_real_tweet_with_description_stays_usable(self):
+        """Gerçek bir tweet'in description'ı varsa (jack/status/20 gibi
+        gerçek dünyada doğrulandı) placeholder sanılıp reddedilmemeli."""
+        preview = {
+            "url": "https://twitter.com/jack/status/20",
+            "domain": "twitter.com",
+            "title": "jack (@jack) on X",
+            "description": "just setting up my twttr",
+            "image": "https://pbs.twimg.com/profile_images/x.jpg",
+            "site_name": "X (formerly Twitter)",
+        }
+        assert _is_unusable_preview(preview) is False
+
+    def test_non_twitter_domain_with_bare_title_not_affected(self):
+        """Placeholder tespiti SADECE twitter.com/x.com'a özgü — başka bir
+        sitenin gerçekten title="X" olan (alakasız) bir sayfası yanlışlıkla
+        reddedilmemeli."""
+        preview = {
+            "url": "https://example.com/x",
+            "domain": "example.com",
+            "title": "X",
+            "description": None,
+            "image": "https://example.com/some-real-image.jpg",
+            "site_name": None,
+        }
+        assert _is_unusable_preview(preview) is False
+
+    def test_all_fields_empty_still_unusable(self):
+        """Mevcut davranış (placeholder tespitinden ÖNCE de vardı) korunuyor."""
+        preview = {"url": "https://example.com/", "domain": "example.com", "title": None, "description": None, "image": None, "site_name": None}
+        assert _is_unusable_preview(preview) is True
