@@ -13,6 +13,7 @@ kilitlenmesin.
 import ipaddress
 import re
 import socket
+import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -150,12 +151,43 @@ def _resolve_pinned_target(url: str):
     return hostname, port, infos
 
 
+# DNS-pinning: socket.getaddrinfo modül-seviyesi bir GLOBAL — thread-local
+# DEĞİL. waitress prod'da birden çok thread ile çalışıyor (bkz. serve.py);
+# önceki tasarım (`_pin_dns` her istekte `socket.getaddrinfo`'yu geçici
+# olarak DEĞİŞTİRİP finally'de GERİ ALIYORDU) thread-safe DEĞİLDİ: Thread
+# A context İÇİNDEYKEN Thread B kendi context'ine girip "orijinal" diye
+# Thread A'nın wrapper'ını yakalayabilir, çıkışta biri diğerinin patch'ini
+# geri yükleyebilir/kaybedebilir — sonuçta `socket.getaddrinfo` KALICI
+# olarak yanlış bir wrapper'da SIKIŞABİLİR veya stale bir pin başka bir
+# isteğin (Supabase client, gifs.py, messaging.py — AYNI process'teki TÜM
+# `socket` kullanan kod) DNS çözümlemesini sessizce etkileyebilir.
+#
+# Çözüm: patch SADECE MODÜL YÜKLENİRKEN BİR KEZ kurulur, asla geri alınmaz;
+# hangi thread'in hangi (host, port) için pin'i olduğu `threading.local()`
+# ile İZOLE tutulur — her thread kendi pin'ini görür, başka thread'i ASLA
+# etkilemez. Pin yoksa (varsayılan durum, `_dns_pin_local.pin is None`)
+# davranış gerçek `socket.getaddrinfo` ile birebir aynıdır.
+_dns_pin_local = threading.local()
+_real_getaddrinfo = socket.getaddrinfo  # gerçek fonksiyon BİR KEZ yakalanır, bir daha değişmez
+
+
+def _pinned_getaddrinfo(host, port, *args, **kwargs):
+    pin = getattr(_dns_pin_local, "pin", None)
+    if pin is not None and pin[0] == host and pin[1] == port:
+        return pin[2]
+    return _real_getaddrinfo(host, port, *args, **kwargs)
+
+
+socket.getaddrinfo = _pinned_getaddrinfo  # import anında, BİR KEZ — per-request restore YOK
+
+
 @contextmanager
 def _pin_dns(hostname: str, port: int, infos: list):
-    """TEK bir requests.get() çağrısı süresince `socket.getaddrinfo`'yu
-    SADECE (hostname, port) çifti için önceden doğrulanmış `infos` listesine
-    sabitler, diğer tüm hostname'ler için orijinal çözümlemeyi DOKUNMADAN
-    bırakır.
+    """Bu thread'in TEK bir requests.get() çağrısı süresince `socket.
+    getaddrinfo`'yu SADECE (hostname, port) çifti için önceden doğrulanmış
+    `infos` listesine sabitler — diğer thread'leri VE diğer hostname'leri
+    hiç etkilemez (bkz. modül seviyesindeki `_pinned_getaddrinfo`/
+    `threading.local()` açıklaması).
 
     DNS-rebinding TOCTOU'yu kapatır: `_resolve_pinned_target` ile
     `requests.get()` arasında hostname TEKRAR çözülürse (urllib3 kendi
@@ -164,22 +196,12 @@ def _pin_dns(hostname: str, port: int, infos: list):
     bu pencereyi kapatmak için gerçek bağlantı da SADECE doğrulama anında
     görülen adaylar arasından seçim yapar. Host header/TLS SNI hostname
     string'i olarak KALIR (sadece adres çözümlemesi sabitlenir), vhost/TLS
-    bozulmaz.
-
-    try/finally ile DAR KAPSAMLI: patch sadece bu blok içinde etkili, blok
-    bitince orijinal `socket.getaddrinfo` HER ZAMAN geri yüklenir."""
-    original_getaddrinfo = socket.getaddrinfo
-
-    def _pinned_getaddrinfo(host, p, *args, **kwargs):
-        if host == hostname and p == port:
-            return infos
-        return original_getaddrinfo(host, p, *args, **kwargs)
-
-    socket.getaddrinfo = _pinned_getaddrinfo
+    bozulmaz."""
+    _dns_pin_local.pin = (hostname, port, infos)
     try:
         yield
     finally:
-        socket.getaddrinfo = original_getaddrinfo
+        _dns_pin_local.pin = None
 
 
 def _fetch_html(url: str):
