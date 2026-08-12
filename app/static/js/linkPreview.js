@@ -45,7 +45,53 @@
         return link.closest('p') || link.parentElement;
     }
 
-    function buildCard(data) {
+    // --- YouTube tespiti -------------------------------------------------
+    // youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID (www./m.
+    // opsiyonel, watch?v= yanında başka query paramları olabilir). Backend
+    // zaten yönlendirmeleri (ör. youtu.be -> youtube.com/watch) takip edip
+    // `data.url`'yi final URL'e çeviriyor, ama garanti olmadığı için hem
+    // fetch sonucu hem de linkin ORİJİNAL href'i denenir.
+    var YT_ID_RE = /^[\w-]{11}$/;
+    function extractYouTubeId(url) {
+        if (!url) return null;
+        var parsed;
+        try {
+            parsed = new URL(url);
+        } catch (e) {
+            return null;
+        }
+        var host = parsed.hostname.toLowerCase().replace(/^(www|m)\./, '');
+        if (host === 'youtu.be') {
+            var short = parsed.pathname.replace(/^\//, '').split('/')[0];
+            return YT_ID_RE.test(short) ? short : null;
+        }
+        if (host === 'youtube.com') {
+            if (parsed.pathname === '/watch') {
+                var v = parsed.searchParams.get('v');
+                return v && YT_ID_RE.test(v) ? v : null;
+            }
+            var shortsMatch = parsed.pathname.match(/^\/shorts\/([\w-]{11})/);
+            if (shortsMatch) return shortsMatch[1];
+        }
+        return null;
+    }
+
+    // --- Twitter/X tespiti -------------------------------------------------
+    var TWEET_DOMAINS = ['twitter.com', 'x.com', 'mobile.twitter.com'];
+    function isTweetPreview(data) {
+        var domain = (data.domain || '').toLowerCase();
+        if (TWEET_DOMAINS.indexOf(domain) !== -1) return true;
+        var siteName = (data.site_name || '').toLowerCase();
+        return siteName.indexOf('twitter') !== -1 || siteName.indexOf('x (formerly twitter)') !== -1;
+    }
+
+    function stripTweetTitleSuffix(title) {
+        // Backend'den "Ad Soyad (@kullaniciadi) on X" formatında geliyor —
+        // sondaki " on X"/" on Twitter" gösterimde gereksiz, kırpılır.
+        return title.replace(/\s+on\s+(x|twitter)\s*$/i, '').trim();
+    }
+
+    function buildGenericCard(data) {
         var a = document.createElement('a');
         a.className = 'link-preview-card';
         a.href = data.url;
@@ -87,12 +133,112 @@
         return a;
     }
 
+    function buildYouTubeCard(data, videoId) {
+        var a = document.createElement('a');
+        a.className = 'link-preview-card link-preview-card--youtube';
+        a.href = data.url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer nofollow';
+
+        var media = document.createElement('div');
+        media.className = 'link-preview-yt-media';
+        media.setAttribute('data-yt-id', videoId);
+
+        var img = document.createElement('img');
+        img.className = 'link-preview-yt-thumb';
+        img.loading = 'lazy';
+        img.alt = '';
+        // YouTube'un herkese açık, kimlik doğrulama gerektirmeyen thumbnail
+        // CDN'i — ekstra fetch/CORS derdi yok.
+        img.src = 'https://img.youtube.com/vi/' + videoId + '/hqdefault.jpg';
+        media.appendChild(img);
+
+        var playBtn = document.createElement('button');
+        playBtn.type = 'button';
+        playBtn.className = 'link-preview-yt-play';
+        playBtn.setAttribute('aria-label', 'Videoyu oynat');
+        var playIcon = document.createElement('span');
+        playIcon.className = 'link-preview-yt-play-icon';
+        playIcon.setAttribute('aria-hidden', 'true');
+        playIcon.textContent = '▶'; // ▶ — statik karakter, SVG/font-icon gerekmiyor
+        playBtn.appendChild(playIcon);
+        media.appendChild(playBtn);
+
+        a.appendChild(media);
+
+        if (data.title) {
+            var body = document.createElement('div');
+            body.className = 'link-preview-card-body';
+            var title = document.createElement('div');
+            title.className = 'link-preview-card-title';
+            title.textContent = data.title;
+            body.appendChild(title);
+            var domain = document.createElement('div');
+            domain.className = 'link-preview-card-domain';
+            domain.textContent = 'YouTube';
+            body.appendChild(domain);
+            a.appendChild(body);
+        }
+        return a;
+    }
+
+    function buildTweetCard(data) {
+        var a = document.createElement('a');
+        a.className = 'link-preview-card link-preview-card--tweet';
+        a.href = data.url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer nofollow';
+
+        var body = document.createElement('div');
+        body.className = 'link-preview-card-body';
+
+        var header = document.createElement('div');
+        header.className = 'link-preview-tweet-header';
+        if (data.image) {
+            var avatar = document.createElement('img');
+            avatar.className = 'link-preview-tweet-avatar';
+            avatar.loading = 'lazy';
+            avatar.alt = '';
+            avatar.src = data.image;
+            header.appendChild(avatar);
+        }
+        if (data.title) {
+            var name = document.createElement('div');
+            name.className = 'link-preview-tweet-name';
+            name.textContent = stripTweetTitleSuffix(data.title);
+            header.appendChild(name);
+        }
+        body.appendChild(header);
+
+        if (data.description) {
+            var text = document.createElement('div');
+            text.className = 'link-preview-tweet-text';
+            text.textContent = data.description;
+            body.appendChild(text);
+        }
+
+        var tag = document.createElement('div');
+        tag.className = 'link-preview-card-domain';
+        tag.textContent = (data.domain || '').toLowerCase() === 'x.com' ? 'X' : 'Twitter';
+        body.appendChild(tag);
+
+        a.appendChild(body);
+        return a;
+    }
+
+    function buildCard(data, originalHref) {
+        var ytId = extractYouTubeId(data.url) || extractYouTubeId(originalHref);
+        if (ytId) return buildYouTubeCard(data, ytId);
+        if (isTweetPreview(data)) return buildTweetCard(data);
+        return buildGenericCard(data);
+    }
+
     function insertCard(link, data) {
         if (!link.isConnected) return; // link bu arada DOM'dan kaldırılmış olabilir (mesaj silindi/düzenlendi)
         var block = ownerBlockOf(link);
         if (!block || !block.parentElement) return;
         if (block.nextElementSibling && block.nextElementSibling.classList.contains('link-preview-card')) return; // zaten eklenmiş
-        block.parentElement.insertBefore(buildCard(data), block.nextSibling);
+        block.parentElement.insertBefore(buildCard(data, link.getAttribute('href')), block.nextSibling);
     }
 
     function fetchAndRenderPreview(link) {
@@ -150,4 +296,30 @@
         });
     });
     bodyObserver.observe(document.body, { childList: true, subtree: true });
+
+    // YouTube kartı "tıkla-oynat": thumbnail sonradan (infiniteScroll ile)
+    // eklenen kartlarda da çalışsın diye document-level delegation — kartlar
+    // dinamik oluşturulduğu için her birine ayrı ayrı listener eklemek yerine
+    // tek yerden. preventDefault, sarmalayan <a target="_blank">'in
+    // navigasyonunu da iptal eder (aynı event'in default action'ı).
+    document.addEventListener('click', function (e) {
+        var playBtn = e.target.closest('.link-preview-yt-play');
+        if (!playBtn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var media = playBtn.closest('.link-preview-yt-media');
+        if (!media) return;
+        var videoId = media.getAttribute('data-yt-id');
+        if (!videoId) return;
+        var iframe = document.createElement('iframe');
+        iframe.className = 'link-preview-yt-iframe';
+        // youtube-nocookie.com: privacy-enhanced mod, tıklamadan önce hiçbir
+        // YouTube isteği/çerezi gitmez.
+        iframe.src = 'https://www.youtube-nocookie.com/embed/' + videoId + '?autoplay=1';
+        iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture');
+        iframe.allowFullscreen = true;
+        iframe.setAttribute('frameborder', '0');
+        media.textContent = ''; // thumbnail+play butonunu kaldır
+        media.appendChild(iframe);
+    });
 })();
