@@ -26,8 +26,28 @@
     if (!('IntersectionObserver' in window)) return; // eski tarayıcı — önizleme olmadan devam, kritik değil
 
     var previewCache = new Map();   // url -> {ok, ...} (aynı sayfa oturumunda tekrar fetch etme)
-    var pendingFetches = new Set(); // url -> eş zamanlı ikinci fetch'i önlemek için
-    var processedBlocks = new WeakSet(); // her içerik bloğunda sadece İLK link işlenir
+    // url -> aynı URL için sonucu bekleyen <a> listesi. Set DEĞİL Map<url,
+    // link[]>: aynı URL'ye ait bir fetch DEVAM EDERKEN (chat.js'in
+    // formatSharedPosts()'u yüzünden — bkz. processedBlocks yorumu) o bloğun
+    // linki DEĞİŞİRSE, YENİ link de AYNI bekleyen listeye eklenir — fetch
+    // sonuçlandığında listedeki HER link için insertCard denenir (her biri
+    // kendi isConnected durumunu bağımsız kontrol eder, eskisi no-op olur,
+    // güncel/bağlı olan kartı alır). Eskiden ikinci link'in isteği sessizce
+    // ATLANIYORDU (pendingFetches.has(url) → return), fetch #1 SADECE artık
+    // disconnected olan ilk linke sonuç dönmeye çalışıp hep no-op oluyordu.
+    var pendingFetches = new Map();
+    // block (<p>) -> o blokta İZLENEN <a> — WeakSet DEĞİL WeakMap: chat.js'in
+    // formatSharedPosts() gibi bazı sayfa-yükleme-sonrası geçişleri (mesaj
+    // balonundaki \n karakterlerini <br>'ye çevirmek için) p.innerHTML'i
+    // TAMAMEN sıfırlıyor — İÇERİK aynı kalsa bile bu, DOM'da BAMBAŞKA bir
+    // <a class="content-link"> elemanı yaratıyor, ESKİ eleman disconnected
+    // oluyor. Sadece "bu blok işlendi mi" (WeakSet) kontrolü, aynı <p>'de
+    // YENİ (geçerli) linki "zaten işlendi" sanıp atlıyordu — kullanıcı
+    // raporu: "mesajlarda linklerin önizlemesi yok" (akışta ÇALIŞIYORDU,
+    // çünkü post kartları bu şekilde yeniden render edilmiyor). Çözüm: bloğu
+    // "işlenmiş" saymaya devam et AMA daha önce izlenen link artık DOM'dan
+    // kopmuşsa (isConnected === false) YENİDEN gözlemlemeye izin ver.
+    var processedBlocks = new WeakMap();
     var observedLinks = new WeakSet();   // aynı <a> iki kez gözlemlenmesin
 
     var io = new IntersectionObserver(function (entries) {
@@ -267,14 +287,21 @@
             if (cached && cached.ok) insertCard(link, cached);
             return;
         }
-        if (pendingFetches.has(url)) return;
-        pendingFetches.add(url);
+        if (pendingFetches.has(url)) {
+            pendingFetches.get(url).push(link); // aynı URL için fetch zaten sürüyor — bu link de sonucu bekleyen listeye eklenir
+            return;
+        }
+        pendingFetches.set(url, [link]);
 
         fetch('/link-preview?url=' + encodeURIComponent(url))
             .then(function (res) { return res.ok ? res.json() : { ok: false }; })
             .then(function (data) {
                 previewCache.set(url, data);
-                if (data && data.ok) insertCard(link, data);
+                if (data && data.ok) {
+                    (pendingFetches.get(url) || []).forEach(function (waitingLink) {
+                        insertCard(waitingLink, data);
+                    });
+                }
             })
             .catch(function () {
                 previewCache.set(url, { ok: false });
@@ -292,8 +319,14 @@
         links.forEach(function (link) {
             if (observedLinks.has(link)) return;
             var block = ownerBlockOf(link);
-            if (!block || processedBlocks.has(block)) return; // blok başına sadece İLK link
-            processedBlocks.add(block);
+            if (!block) return;
+            var trackedLink = processedBlocks.get(block);
+            // Blok daha önce işlendi VE o zamanki link hâlâ DOM'da bağlıysa
+            // atla (blok başına sadece İLK link) — trackedLink artık
+            // disconnected'sa (bkz. yukarıdaki yorum) bu YENİ linki işlemeye
+            // devam et.
+            if (trackedLink && trackedLink.isConnected) return;
+            processedBlocks.set(block, link);
             observedLinks.add(link);
             io.observe(link);
         });

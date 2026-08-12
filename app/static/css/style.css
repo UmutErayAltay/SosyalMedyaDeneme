@@ -1505,8 +1505,21 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     padding: 8px 12px; min-width: 0;
     display: flex; flex-direction: column; justify-content: center; gap: 2px;
 }
+/* Kart HER ZAMAN kendi opak --card-bg zeminine sahip (mesaj balonunun
+   içindeyken bile balonun rengini ÖRTER, bkz. .link-preview-card { overflow:
+   hidden; background: var(--card-bg); }) — bu yüzden içindeki metin rengi
+   .msg.mine'ın balon-zeminine-göre-ayarlı metin rengini MİRAS ALMAMALI
+   (color: inherit ile bu KAÇINILMAZ oluyordu, .msg.mine .link-preview-card
+   bir <p> KARDEŞİ olarak eklendiği için .msg.mine'ın kendi text-color'ını
+   miras alıyordu — koyu temada bu "koyu metin/koyu kart zemini" gibi
+   OKUNAKSIZ bir kombinasyona yol açıyordu; ÖNCEKİ .msg.mine override'ı
+   var(--bg) kullanarak bunu "düzeltmeye" çalışmıştı ama var(--bg) SAYFA
+   zemini demek — koyu temada KENDİSİ koyu, tam bu yüzden yanlıştı). Doğru
+   çözüm: kart metnini HER ZAMAN --text/--muted (kart zeminine göre ayarlı,
+   iki temada da doğru kontrast) ile SABİTLEMEK, .msg.mine'a göre AYRI bir
+   override YAZMAMAK — kart hangi bağlamda olursa olsun aynı görünür. */
 .link-preview-card-title {
-    font-weight: 600; font-size: 13px; line-height: 1.3;
+    font-weight: 600; font-size: 13px; line-height: 1.3; color: var(--text);
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .link-preview-card-desc {
@@ -1516,11 +1529,6 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 .link-preview-card-domain {
     font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 2px;
 }
-/* .msg.mine'ın arka planı var(--primary) — .shared-card-author'daki (yukarısı)
-   AYNI kontrast tuzağı: var(--muted) kendi gönderdiğim balonun zeminiyle
-   karışıp okunmaz olurdu; balonun kendi metin rengiyle (var(--bg)) ayrıştırılır. */
-.msg.mine .link-preview-card-desc,
-.msg.mine .link-preview-card-domain { color: var(--bg); opacity: 0.8; }
 
 /* YouTube varyantı (linkPreview.js buildYouTubeCard) — thumbnail üstünde
    tıkla-oynat butonu, tıklanınca butonun kendisi <iframe>'e dönüşür. Genel
@@ -1560,8 +1568,8 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 .link-preview-card--tweet .link-preview-card-body { padding: 10px 14px; gap: 6px; }
 .link-preview-tweet-header { display: flex; align-items: center; gap: 8px; }
 .link-preview-tweet-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-.link-preview-tweet-name { font-weight: 700; font-size: 13px; line-height: 1.3; }
-.link-preview-tweet-text { font-size: 15px; line-height: 1.4; white-space: pre-wrap; }
+.link-preview-tweet-name { font-weight: 700; font-size: 13px; line-height: 1.3; color: var(--text); }
+.link-preview-tweet-text { font-size: 15px; line-height: 1.4; white-space: pre-wrap; color: var(--text); }
 
 /* Foto/video tweet'i varyantı (buildTweetCard, data.image_is_media) —
    backend `image`'i gerçek medya karesi olarak işaretlediğinde 36px yuvarlak
