@@ -8,7 +8,7 @@ test_client + session ile yapılır.
 import pytest
 from markupsafe import Markup
 
-from app.link_preview import linkify_urls, _is_unusable_preview
+from app.link_preview import linkify_urls, _is_unusable_preview, _is_media_image
 from app.hashtags import linkify_hashtags
 from app.mentions import linkify_mentions
 
@@ -299,3 +299,39 @@ class TestLinkPreviewTwitterPlaceholderDetection:
         """Mevcut davranış (placeholder tespitinden ÖNCE de vardı) korunuyor."""
         preview = {"url": "https://example.com/", "domain": "example.com", "title": None, "description": None, "image": None, "site_name": None}
         assert _is_unusable_preview(preview) is True
+
+
+class TestLinkPreviewImageIsMedia:
+    """og:image bir tweet'in gerçek foto/video karesi mi, yoksa küçük profil
+    avatarı/statik asset mi? Kullanıcı raporu: foto/video tweet'lerinde
+    önizleme (image alanı GERÇEK 16:9 medya karesi olduğu halde) hiç
+    çıkmıyordu — kart kodu image'i HER ZAMAN 36px yuvarlak avatar sayıyordu.
+    Gerçek fetch'lerle doğrulanmış 3 URL şekli burada regresyon koruması."""
+
+    def test_profile_image_is_small(self):
+        assert _is_media_image("https://pbs.twimg.com/profile_images/123/abc_200x200.jpg") is False
+
+    def test_media_photo_is_media(self):
+        assert _is_media_image("https://pbs.twimg.com/media/Gxyz.jpg") is True
+
+    def test_video_thumbnail_different_host_is_media(self):
+        """Video karesi pbs.twimg.com ALTINDA DEĞİL — farklı host
+        (jf.x.com) — asıl regresyon koruması burada."""
+        assert _is_media_image("https://jf.x.com/images/media-preview/456") is True
+
+    def test_x_static_logo_is_small(self):
+        assert _is_media_image("https://abs.twimg.com/rweb/ssr/default/v2/og/image.png") is False
+
+    def test_none_and_empty_are_small(self):
+        assert _is_media_image(None) is False
+        assert _is_media_image("") is False
+
+    def test_unknown_shape_defaults_permissive_to_media(self):
+        """Bilinmeyen bir site/URL şekli — izin-verici varsayılan gereği
+        'medya' sayılır (avatar/statik olduğu KANITLANMAMIŞ her şey)."""
+        assert _is_media_image("https://example.com/some-real-image.jpg") is True
+
+    def test_host_check_is_urlparse_based_not_substring(self):
+        """abs.twimg.com KONTROLÜ ham substring DEĞİL, gerçek hostname
+        karşılaştırması — aksi halde bu URL yanlışlıkla 'küçük' sayılırdı."""
+        assert _is_media_image("https://example.com/abs.twimg.com-fake.jpg") is True

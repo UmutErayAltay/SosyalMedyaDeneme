@@ -336,15 +336,58 @@ def _extract_preview(final_url: str, html_text: str) -> dict:
     hostname = urlparse(final_url).hostname or ""
     domain = hostname[4:] if hostname.startswith("www.") else hostname
 
+    image = image or None
     return {
         "url": final_url,
         "domain": domain,
         # Aşırı uzun değerler DB/cache'e taşınmasın diye kırpılır (savunma amaçlı)
         "title": title[:300] or None,
         "description": description[:500] or None,
-        "image": image or None,
+        "image": image,
         "site_name": site_name or None,
+        "image_is_media": _is_media_image(image),
     }
+
+
+# X'in og:image'i tweet TÜRÜNE göre TAMAMEN farklı bir şey döndürür (gerçek
+# fetch'lerle doğrulandı, backend UA'sıyla):
+#   - metin tweet'i -> 200x200 profil avatarı (pbs.twimg.com/profile_images/...)
+#   - foto tweet'i  -> gerçek fotoğraf        (pbs.twimg.com/media/...)
+#   - video tweet'i -> 1200x675 video karesi  (jf.x.com/images/media-preview/...)
+# X bu UA'ya og:video/twitter:player/twitter:image HİÇ göndermiyor — yani
+# ekstra parse edilecek video alanı YOK, `image` zaten gereken her şeye sahip.
+# Alan adı üçünde de aynı olduğu için hem web (buildTweetCard) hem native
+# (TweetLinkPreviewCard) üçünü de 36px yuvarlak avatar olarak çiziyordu
+# (kullanıcı raporu: "video/foto tweetlerinde önizleme çıkmıyor").
+_SMALL_IMAGE_PATH_MARKERS = ("/profile_images/", "/profile_banners/")
+_STATIC_ASSET_HOSTS = {"abs.twimg.com"}  # X'in logo/varsayılan OG görselleri
+
+
+def _is_media_image(image_url) -> bool:
+    """og:image, 16:9 büyük medya alanında gösterilmeye değer bir MEDYA
+    karesi mi (True), yoksa küçük yuvarlak avatar olarak mı çizilmeli (False)?
+
+    BİLİNÇLİ olarak İZİN-VERİCİ varsayılan: elimizde X'in ürettiği sadece 3
+    somut URL şekli var ve X bu davranışı geçmişte DEĞİŞTİRDİ (bkz.
+    _TWITTER_PLACEHOLDER_TITLES). 4. bir şekil çıktığında "medya değil"
+    tarafında yanılmak BUGÜNKÜ BUG'ı sessizce geri getirir (foto/video tweet'i
+    yine minik yuvarlak avatar); "medya" tarafında yanılmak sadece bir avatarı
+    16:9 kutuda büyütür — çirkin ama bilgi kaybı YOK ve derhal fark edilir.
+    Bu yüzden: KANITLANMIŞ küçük-görsel kalıpları DIŞINDA her şey medya sayılır.
+
+    Not: host kontrolü urlparse ile yapılır, ham substring ile DEĞİL — aksi
+    halde "https://example.com/abs.twimg.com-x.jpg" gibi bir URL yanlışlıkla
+    eşleşirdi."""
+    if not image_url:
+        return False
+    try:
+        parsed = urlparse(image_url)
+    except ValueError:
+        return True  # parse edilemedi — izin-verici varsayılan
+    if (parsed.hostname or "").lower() in _STATIC_ASSET_HOSTS:
+        return False
+    path = (parsed.path or "").lower()
+    return not any(marker in path for marker in _SMALL_IMAGE_PATH_MARKERS)
 
 
 # X'in giriş/JS gerektiren tweetler için (korumalı hesap, hassas içerik
@@ -410,6 +453,7 @@ def _row_to_response(row: dict) -> dict:
         "description": row.get("description"),
         "image": row.get("image_url"),
         "site_name": row.get("site_name"),
+        "image_is_media": _is_media_image(row.get("image_url")),
     }
 
 
@@ -487,6 +531,7 @@ def _get_or_fetch_preview_inner(url: str) -> dict:
         "description": preview["description"],
         "image": preview["image"],
         "site_name": preview["site_name"],
+        "image_is_media": preview["image_is_media"],
     }
 
 

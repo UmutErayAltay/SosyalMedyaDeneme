@@ -189,12 +189,29 @@
         a.target = '_blank';
         a.rel = 'noopener noreferrer nofollow';
 
+        // Backend (app/link_preview.py::_is_media_image) karar verir: `image`
+        // gerçek bir foto/video karesi mi, yoksa küçük profil avatarı mı.
+        // Sınıflandırma native (LinkPreviewCard.kt) ile ORTAK — burada
+        // TEKRARLANMAZ. X, tweet videosunu oynatılabilir sunmadığı için
+        // (og:video/public embed API YOK) inline oynatma YOK: büyük önizleme
+        // karesi + karta tıklayınca tweet'i açma (mevcut target=_blank).
+        var hasMedia = !!(data.image && data.image_is_media);
+
+        if (hasMedia) {
+            var media = document.createElement('img');
+            media.className = 'link-preview-tweet-media';
+            media.loading = 'lazy';
+            media.alt = '';
+            media.src = data.image; // property ataması — attribute injection riski yok
+            a.appendChild(media);
+        }
+
         var body = document.createElement('div');
         body.className = 'link-preview-card-body';
 
         var header = document.createElement('div');
         header.className = 'link-preview-tweet-header';
-        if (data.image) {
+        if (data.image && !hasMedia) {
             var avatar = document.createElement('img');
             avatar.className = 'link-preview-tweet-avatar';
             avatar.loading = 'lazy';
