@@ -62,7 +62,14 @@ def api_login_required(view):
                 "token_hash", token_hash
             ).is_("revoked_at", "null").execute().data
         except Exception:
-            return jsonify(error="unauthorized"), 401
+            # Supabase'e GEÇİCİ erişim hatası — token'ın geçersiz olduğu
+            # anlamına GELMEZ. "unauthorized" dönersek native taraf
+            # (FeedViewModel.refresh/loadMore, result.code=="unauthorized")
+            # token'ı SİLİP kullanıcıyı login'e atıyor — geçici bir ağ/DB
+            # hatası yüzünden gerçek bir çıkış yaşanmaması için ayrı kod
+            # (kullanıcı raporu: "uygulamayı açtıkça çıkış yapıyor" — cold-start'taki
+            # ilk istek transient bağlantı hatasına diğerlerinden daha açık).
+            return jsonify(error="service_unavailable"), 503
         if not rows:
             return jsonify(error="unauthorized"), 401
         token_row = rows[0]
@@ -72,7 +79,7 @@ def api_login_required(view):
                 "id, email, username, avatar_url, is_admin"
             ).eq("id", token_row["user_id"]).execute().data
         except Exception:
-            prof = None
+            return jsonify(error="service_unavailable"), 503
         if not prof:
             return jsonify(error="unauthorized"), 401
         prof_data = prof[0]
