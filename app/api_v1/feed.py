@@ -14,6 +14,14 @@ from ..mutes import muted_user_ids
 from ..polls import attach_polls
 
 
+def _escape_like(value: str) -> str:
+    """PostgREST'in ilike()'ı ham değeri Postgres ILIKE desenine aktarıyor —
+    `%`/`_` kullanıcı girdisinde geçerse joker karakter olarak yorumlanıyordu
+    (ör. sadece "%" araması TÜM satırları döndürüyordu). `\\` önce escape
+    edilir (aksi halde sonraki escape'ler kendi kaçış karakterini bozar)."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 @bp.route("/feed")
 @api_login_required
 def feed():
@@ -287,7 +295,10 @@ def search():
     # type filtresine göre gereksiz sorgu atlanır (discovery.py search() ile aynı).
     users = []
     if search_type in ("all", "users"):
-        q_escaped = q.replace(",", "").replace(")", "")
+        # İki AYRI escape gerekiyor: PostgREST'in .or_() filtre sözdizimi
+        # (","/")" bloğu kırar, önceden de stripleniyordu) ve Postgres ILIKE
+        # joker karakterleri (%/_, şimdi eklendi — bkz. _escape_like).
+        q_escaped = _escape_like(q.replace(",", "").replace(")", ""))
         users = sb.table("profiles").select(
             "id, username, full_name, avatar_url, is_deactivated"
         ).or_(
@@ -299,7 +310,7 @@ def search():
     if search_type in ("all", "posts"):
         posts_query = sb.table("posts").select(
             "*, profiles!posts_user_id_fkey(username, avatar_url, is_deactivated), likes(count), comments(count)"
-        ).ilike("content", f"%{q}%").eq("is_draft", False).eq("is_archived", False)
+        ).ilike("content", f"%{_escape_like(q)}%").eq("is_draft", False).eq("is_archived", False)
         if date_from:
             posts_query = posts_query.gte("created_at", date_from)
         if date_to:
@@ -317,7 +328,7 @@ def search():
         try:
             tag_q = q[1:] if q.startswith("#") else q
             tag_rows = sb.table("hashtags").select("id, tag").ilike(
-                "tag", f"%{tag_q}%"
+                "tag", f"%{_escape_like(tag_q)}%"
             ).limit(20).execute().data
             if tag_rows:
                 tag_ids = [h["id"] for h in tag_rows]
