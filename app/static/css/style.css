@@ -983,7 +983,7 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 }
 .messages-sidebar {
     width: 300px; flex-shrink: 0;
-    overflow-y: auto; padding-right: 12px;
+    overflow-y: auto; overflow-x: hidden; padding-right: 12px;
     border-right: 1px solid var(--border);
 }
 .messages-sidebar h1 { font-size: 18px; margin: 0; }
@@ -1089,7 +1089,14 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 /* position:relative ŞART — .msg-react-picker absolute konumlanır; bu olmadan
    picker en yakın konumlanmış ataya (sayfa gövdesi) göre yerleşip sayfanın
    en altında beliriyordu (kullanıcı raporu). */
-.msg { position: relative; max-width: 70%; margin-bottom: 10px; padding: 8px 12px; border-radius: var(--radius); word-wrap: break-word; overflow-wrap: break-word; }
+/* overflow-wrap:break-word tek başına yetersiz kalıyordu: spec gereği
+   metnin min-content genişliğine (satır kırma FIRSATI olsa da) katkısını
+   'normal' gibi hesaplar, bu yüzden boşluksuz uzun bir URL/kelime balonun
+   %70 max-width'ini yine de zorlayabiliyordu (kullanıcı raporu: "bazı uzun
+   mesajlar alanın dışına çıkıyor"). overflow-wrap:anywhere böyle bir
+   metnin min-content hesabına da kırılabilir sayılarak katılır — kesin
+   çözüm. word-break:break-all eski tarayıcı yedeği olarak kalıyor. */
+.msg { position: relative; max-width: 70%; margin-bottom: 10px; padding: 8px 12px; border-radius: var(--radius); word-wrap: break-word; overflow-wrap: anywhere; word-break: break-word; }
 .msg p { font-size: 14px; }
 .msg .time { display: block; font-size: 11px; margin: 2px 0 0; }
 .msg.mine {
@@ -1662,6 +1669,15 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
 
 /* Inbox */
 .inbox-item { display: flex; align-items: center; gap: 12px; }
+/* İsim/önizleme sarmalayıcısı: flex item'ların varsayılan min-width:auto'su
+   (boşluksuz uzun kullanıcı adı/önizleme metni) .messages-sidebar'ı yatay
+   taşırıp istenmeyen yatay kaydırma çubuğuna yol açıyordu (kullanıcı raporu)
+   — min-width:0 flex item'ın içerik genişliğine göre büzülmesini engelleyen
+   varsayılanı kırar, ellipsis de metni görünür şekilde kırpar. */
+.inbox-item-info { min-width: 0; flex: 1; }
+.inbox-item-name, .inbox-item-info .preview {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .inbox-item .preview { margin-top: 2px; }
 /* Okunmamış sohbet: önizleme vurgulu + sağda nokta (sohbet açılınca
    messagesPanel.js class'ı ve noktayı kaldırır) */

@@ -39,9 +39,11 @@
                 <div class="avatar avatar-placeholder" aria-hidden="true"></div>
             {% endif %}
             {% if not c.is_group and c.is_online %}<span class="online-dot" title="Aktif" aria-label="Aktif"></span>{% endif %}
-            <div>
-                <strong>{{ c.name if c.is_group else (c.other_user.username if c.other_user else 'Bilinmeyen') }}{% if c.is_muted %} <span class="muted-indicator" aria-label="Sessize alındı">{{ icons.icon('bell-off', size=12) }}</span>{% endif %}</strong>
-                {% if c.is_group %}<span class="muted"> · {{ c.member_count }} kişi</span>{% endif %}
+            <div class="inbox-item-info">
+                <div class="inbox-item-name">
+                    <strong>{{ c.name if c.is_group else (c.other_user.username if c.other_user else 'Bilinmeyen') }}{% if c.is_muted %} <span class="muted-indicator" aria-label="Sessize alındı">{{ icons.icon('bell-off', size=12) }}</span>{% endif %}</strong>
+                    {% if c.is_group %}<span class="muted"> · {{ c.member_count }} kişi</span>{% endif %}
+                </div>
                 {% if c.last_message %}
                 <p class="muted preview">{{ c.last_message.content[:40] }}</p>
                 {% else %}
