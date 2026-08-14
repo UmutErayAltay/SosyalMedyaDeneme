@@ -986,6 +986,26 @@ body.navbar-hidden .post-detail-sidebar { top: 16px; }
     overflow-y: auto; overflow-x: hidden; padding-right: 12px;
     border-right: 1px solid var(--border);
 }
+/* Kaydırma çubuğu rengi: var(--border)/var(--muted) zaten [data-theme="dark"]
+   altında yeniden tanımlı (satır 137) — burada sabit renk YAZMIYORUZ, tema
+   token'larını kullanarak açık/koyu geçişte otomatik uyum sağlıyoruz.
+   .message-stream (mesaj paneli) ile aynı desen. */
+.messages-sidebar, .message-stream {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+.messages-sidebar::-webkit-scrollbar, .message-stream::-webkit-scrollbar {
+    width: 8px;
+}
+.messages-sidebar::-webkit-scrollbar-track, .message-stream::-webkit-scrollbar-track {
+    background: transparent;
+}
+.messages-sidebar::-webkit-scrollbar-thumb, .message-stream::-webkit-scrollbar-thumb {
+    background: var(--border); border-radius: var(--radius-full);
+}
+.messages-sidebar::-webkit-scrollbar-thumb:hover, .message-stream::-webkit-scrollbar-thumb:hover {
+    background: var(--muted);
+}
 .messages-sidebar h1 { font-size: 18px; margin: 0; }
 .messages-sidebar-header {
     display: flex; align-items: center; justify-content: space-between;
