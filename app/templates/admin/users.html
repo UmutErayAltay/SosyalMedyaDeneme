@@ -47,4 +47,16 @@
     <p class="muted center">Kullanıcı bulunamadı.</p>
     {% endfor %}
 </section>
+
+{% if page > 1 or has_next %}
+<nav class="admin-pagination" style="display:flex; gap:8px; justify-content:center; margin-top:16px;">
+    {% if page > 1 %}
+    <a class="btn btn-ghost small" href="{{ url_for('admin.users_list', q=q, page=page-1) }}">&laquo; Önceki</a>
+    {% endif %}
+    <span class="muted">Sayfa {{ page }}</span>
+    {% if has_next %}
+    <a class="btn btn-ghost small" href="{{ url_for('admin.users_list', q=q, page=page+1) }}">Sonraki &raquo;</a>
+    {% endif %}
+</nav>
+{% endif %}
 {% endblock %}

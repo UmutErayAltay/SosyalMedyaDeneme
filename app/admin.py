@@ -13,8 +13,15 @@ from datetime import datetime, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 from .decorators import login_required, admin_required
 from .supabase_client import get_sb, retry_on_connection_error
+from .routes._common import PAGE_SIZE
 
 bp = Blueprint("admin", __name__)
+
+
+def _escape_like(value: str) -> str:
+    """app/api_v1/feed.py::_escape_like ile AYNI gerekçe — burada da kullanıcı
+    araması doğrudan %value% deseni içine gömülüyordu."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _enrich_reports(sb, reports: list) -> list:
@@ -155,14 +162,28 @@ def delete_report_target(report_id):
 @admin_required
 @retry_on_connection_error
 def users_list():
+    """2026-08-14 (yayın öncesi denetim bulgusu) — ÖNCEDEN tüm profiller
+    sınırsız çekilip post/rapor sayıları Python'da hesaplanıyordu; küçük
+    grupla sorun değildi ama kullanıcı sayısı büyüdükçe darboğaz olurdu.
+    Artık feed.py'nin cursor+limit deseniyle AYNI: limit+1 çekilip fazla
+    satır has_next'i belirlemek için kullanılıp atılıyor (bkz. feed()
+    yorumu)."""
     sb = get_sb()
     q = request.args.get("q", "").strip()
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    offset = (page - 1) * PAGE_SIZE
+
     query = sb.table("profiles").select(
         "id, username, avatar_url, is_admin, is_banned, created_at"
     ).order("created_at", desc=True)
     if q:
-        query = query.ilike("username", f"%{q}%")
-    users = query.execute().data
+        query = query.ilike("username", f"%{_escape_like(q)}%")
+    rows = query.range(offset, offset + PAGE_SIZE).execute().data or []
+    has_next = len(rows) > PAGE_SIZE
+    users = rows[:PAGE_SIZE]
 
     user_ids = [u["id"] for u in users]
     post_counts: dict = {}
@@ -184,7 +205,10 @@ def users_list():
         u["post_count"] = post_counts.get(u["id"], 0)
         u["report_count"] = report_counts.get(u["id"], 0)
 
-    return render_template("admin/users.html", users=users, q=q, me=session.get("user"))
+    return render_template(
+        "admin/users.html", users=users, q=q, me=session.get("user"),
+        page=page, has_next=has_next,
+    )
 
 
 @bp.route("/users/<user_id>/toggle-admin", methods=["POST"])
