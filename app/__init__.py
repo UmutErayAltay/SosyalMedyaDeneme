@@ -223,16 +223,39 @@ def create_app() -> Flask:
     # erişilemezdi, bu yüzden sw.js gibi doğrudan app kökünde route edilir.
     @app.route("/.well-known/assetlinks.json")
     def assetlinks():
-        return jsonify([{
-            "relation": ["delegate_permission/common.handle_all_urls"],
-            "target": {
-                "namespace": "android_app",
-                "package_name": "com.umuterayaltay.sosyal",
-                "sha256_cert_fingerprints": [
-                    "11:50:D0:F6:4F:50:20:30:5D:F3:89:E3:C7:86:EF:9C:03:1E:63:65:77:09:52:18:02:6B:B6:09:2B:77:BB:9B"
-                ]
-            }
-        }])
+        # İkinci obje (2026-08-21): tam native Android uygulaması
+        # (com.umuterayaltay.sosyal.native, Sosyal-Medya-Mobil reposu) — App
+        # Links (deep linking) doğrulaması için AYNI dosyada TWA'nınkinin
+        # yanına eklendi (Digital Asset Links bir dosyada birden fazla
+        # statement/app'i destekler). Fingerprint şu an ~/.android/debug.keystore'a
+        # ait (uygulama henüz gerçek bir release anahtarıyla imzalanmıyor,
+        # bkz. native-app .context "gerçek signingConfigs'e geçiş" kapsam-dışı
+        # notu) — o anahtar değişirse (release imzasına geçilirse) burası da
+        # güncellenmeli, aksi halde App Links doğrulaması SESSİZCE bozulur
+        # (Chrome/Android sadece adres çubuklu bir tarayıcıya düşer, kırılma
+        # görünmez).
+        return jsonify([
+            {
+                "relation": ["delegate_permission/common.handle_all_urls"],
+                "target": {
+                    "namespace": "android_app",
+                    "package_name": "com.umuterayaltay.sosyal",
+                    "sha256_cert_fingerprints": [
+                        "11:50:D0:F6:4F:50:20:30:5D:F3:89:E3:C7:86:EF:9C:03:1E:63:65:77:09:52:18:02:6B:B6:09:2B:77:BB:9B"
+                    ]
+                }
+            },
+            {
+                "relation": ["delegate_permission/common.handle_all_urls"],
+                "target": {
+                    "namespace": "android_app",
+                    "package_name": "com.umuterayaltay.sosyal.native",
+                    "sha256_cert_fingerprints": [
+                        "55:9C:62:2D:1C:3F:24:1C:06:5C:5C:D2:38:65:29:22:11:FF:17:B9:83:87:B2:06:F7:35:CB:CC:AC:2F:91:E4"
+                    ]
+                }
+            },
+        ])
 
     # Navbar zil rozeti: her sayfada okunmamış bildirim sayısını enjekte eder.
     # Supabase geçici olarak erişilemezse rozet sessizce 0 gösterir — sayfa
