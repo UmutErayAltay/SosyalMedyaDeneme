@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Gizlilik Politikası ve Kullanım Koşulları{% endblock %}
+{% block description %}Sosyal'in gizlilik politikası ve kullanım koşulları — hangi verilerin toplandığı, nasıl kullanıldığı ve haklarınız.{% endblock %}
+{% block content %}
+<article class="legal-page">
+    <h1>Gizlilik Politikası ve Kullanım Koşulları</h1>
+    <p class="muted">Son güncelleme: 21 Ağustos 2026</p>
+
+    <p>Sosyal, bağımsız bir geliştirici (Umut Eray Altay) tarafından geliştirilen
+    ve işletilen bir sosyal medya uygulamasıdır (web sitesi ve Android
+    uygulaması). Bu sayfa, hangi verilerin toplandığını, nasıl kullanıldığını
+    ve haklarınızı açıklar.</p>
+
+    <h2>Toplanan Veriler</h2>
+    <ul>
+        <li><strong>Hesap bilgileri:</strong> e-posta adresi, kullanıcı adı, şifre
+            (Supabase Auth tarafından şifrelenmiş olarak saklanır, biz düz metin
+            şifreye erişemeyiz).</li>
+        <li><strong>Profil bilgileri:</strong> profil fotoğrafı, biyografi, isteğe
+            bağlı doldurduğunuz diğer profil alanları.</li>
+        <li><strong>İçerik:</strong> paylaştığınız gönderiler, yorumlar, hikayeler,
+            görseller/videolar, mesajlar ve tepkiler.</li>
+        <li><strong>Konum (isteğe bağlı):</strong> bir gönderiye konum eklerseniz
+            bu bilgi o gönderiyle birlikte saklanır — konum paylaşımı asla
+            zorunlu değildir.</li>
+        <li><strong>Bildirim belirteci (push token):</strong> mobil uygulamada
+            bildirim gönderebilmek için Firebase Cloud Messaging üzerinden bir
+            cihaz belirteci saklanır.</li>
+        <li><strong>Güvenlik/teknik veriler:</strong> IP adresi ve zaman damgaları
+            (kötüye kullanımı/hız sınırlamasını uygulamak için), oturum
+            bilgileri, çökme raporları (mobil uygulamada, Firebase Crashlytics
+            üzerinden — kişisel içerik İÇERMEZ, sadece teknik hata bilgisi).</li>
+    </ul>
+
+    <h2>Verileriniz Nasıl Kullanılır</h2>
+    <ul>
+        <li>Hizmeti sağlamak: hesabınızı oluşturmak, içeriğinizi göstermek,
+            takip/mesajlaşma/bildirim gibi temel özellikleri çalıştırmak.</li>
+        <li>Güvenlik: hesabınızı kötüye kullanıma (brute-force, spam, sahte hesap)
+            karşı korumak için hız sınırlama ve isteğe bağlı iki adımlı
+            doğrulama (2FA) sunulur.</li>
+        <li>Bildirim: açık bırakırsanız yeni takipçi/beğeni/yorum/mesaj gibi
+            olaylar için push bildirimi göndermek.</li>
+    </ul>
+    <p>Verileriniz reklam amaçlı satılmaz veya üçüncü taraflarla paylaşılmaz —
+    aşağıdaki alt yükleniciler dışında hiçbir üçüncü tarafla veri paylaşılmaz.</p>
+
+    <h2>Kullanılan Alt Yükleniciler (Alt İşleyiciler)</h2>
+    <ul>
+        <li><strong>Supabase</strong> — veritabanı, kimlik doğrulama, dosya
+            depolama (görsel/video) ve gerçek-zamanlı mesajlaşma altyapısı.</li>
+        <li><strong>Google Firebase</strong> — mobil uygulamada push bildirimleri
+            (Cloud Messaging) ve çökme raporlama (Crashlytics).</li>
+        <li><strong>Google Sign-In</strong> — tercih ederseniz Google hesabınızla
+            giriş yapma seçeneği (yalnızca e-posta/ad/profil fotoğrafı paylaşılır).</li>
+    </ul>
+
+    <h2>Çerezler</h2>
+    <p>Web sitesi, oturumunuzu açık tutmak için gerekli TEK bir oturum
+    çerezi kullanır. Reklam veya üçüncü-taraf takip çerezi KULLANILMAZ.</p>
+
+    <h2>Güvenlik</h2>
+    <p>Şifreleriniz Supabase Auth tarafından güvenli şekilde saklanır (biz
+    hiçbir zaman düz metin şifrenize erişemeyiz). İsteğe bağlı iki adımlı
+    doğrulama (2FA) sunulur. Hassas bazı belirteçler (native uygulamanın
+    Realtime oturum belirteçleri gibi) veritabanında şifrelenmiş olarak
+    saklanır.</p>
+
+    <h2>Haklarınız</h2>
+    <ul>
+        <li><strong>Hesabınızı deaktive etme:</strong> Ayarlar sayfasından
+            hesabınızı istediğiniz zaman deaktive edebilirsiniz — profiliniz
+            gizlenir ve tüm oturumlarınız kapatılır.</li>
+        <li><strong>Verilerinizin tamamen silinmesini isteme:</strong> hesap
+            deaktivasyonu verilerinizi otomatik olarak silmez. Verilerinizin
+            kalıcı olarak silinmesini isterseniz aşağıdaki e-posta adresinden
+            bizimle iletişime geçin — talebiniz makul bir süre içinde elle
+            işleme alınır.</li>
+        <li><strong>Erişim/düzeltme:</strong> profil bilgilerinizin çoğunu
+            Profili Düzenle sayfasından kendiniz güncelleyebilirsiniz.</li>
+    </ul>
+
+    <h2>Yaş Sınırı</h2>
+    <p>Sosyal, 13 yaşın altındaki kullanıcılara yönelik değildir ve onlardan
+    bilerek veri toplamaz.</p>
+
+    <h2>Kullanım Koşulları (Özet)</h2>
+    <ul>
+        <li>Hesabınızın güvenliğinden (şifrenizi gizli tutmak) siz sorumlusunuz.</li>
+        <li>Başkalarına taciz, nefret söylemi, yasa dışı içerik veya spam
+            paylaşmak yasaktır — ihlal eden içerikler kaldırılabilir ve hesaplar
+            askıya alınabilir.</li>
+        <li>Uygulama "olduğu gibi" sunulur; kesintisiz veya hatasız çalışacağı
+            garanti edilmez.</li>
+        <li>Bu koşullar zaman zaman güncellenebilir; önemli değişikliklerde
+            uygulama içinden bilgilendirme yapılmaya çalışılır.</li>
+    </ul>
+
+    <h2>İletişim</h2>
+    <p>Sorularınız veya veri silme talepleriniz için:
+    <a href="mailto:umut619umut1963@gmail.com">umut619umut1963@gmail.com</a></p>
+</article>
+{% endblock %}

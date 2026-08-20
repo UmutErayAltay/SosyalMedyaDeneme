@@ -124,6 +124,14 @@
         {% block content %}{% endblock %}
     </main>
 
+    {# --- Alt bilgi: Gizlilik Politikası/Kullanım Koşulları (2026-08-21,
+       yayın-öncesi denetimde eksik bulundu) — login OLMASA da her sayfada
+       görünür (login/register dahil), Play/App Store incelemesi veya
+       çıkış yapmış bir kullanıcı da erişebilsin diye. #}
+    <footer class="site-footer">
+        <a href="{{ url_for('routes.privacy') }}">Gizlilik Politikası ve Kullanım Koşulları</a>
+    </footer>
+
     {# --- YENİ EKLENEN KISIM: Post Gönderme (Share) Modalı --- #}
     <div class="modal-overlay" id="share-modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title" hidden>
         <div class="modal">
