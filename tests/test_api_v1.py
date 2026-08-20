@@ -2169,6 +2169,152 @@ class TestApiV1CreatePost:
             sb.table("posts").delete().eq("id", post_id).execute()
 
 
+class TestApiV1Drafts:
+    """api_v1/interactions.py'nin taslak desteği (api_create_post'taki `action`
+    alanı) + api_list_drafts()/api_publish_draft() — routes/posts.py'nin
+    drafts_list()/publish_draft()'inin JSON mirror'ı (2026-08-21)."""
+
+    def test_create_post_with_action_draft_is_hidden_and_skips_hashtag_sync(
+        self, app, client, test_user_factory
+    ):
+        user = test_user_factory(email="apiv1_draft_create@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/api/v1/posts",
+            data={"content": "api_v1 taslak testi #apiv1drafttest", "action": "draft"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        post = resp.get_json()["post"]
+        assert post["is_draft"] is True
+        post_id = post["id"]
+
+        # create_post()'daki AYNI kural: taslakken hashtag senkronu ERTELENİR.
+        with app.app_context():
+            sb = get_sb()
+            linked = sb.table("post_hashtags").select("hashtag_id").eq("post_id", post_id).execute().data
+        assert linked == []
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("posts").delete().eq("id", post_id).execute()
+
+    def test_list_drafts_only_returns_own_drafts_not_published_posts(
+        self, app, client, test_user_factory
+    ):
+        user = test_user_factory(email="apiv1_draft_list@example.com", password="TestPass123!")
+        other = test_user_factory(email="apiv1_draft_list_other@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        other_token = _api_token_for(app, other["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        draft_resp = client.post(
+            "/api/v1/posts",
+            data={"content": "benim taslağım", "action": "draft"},
+            headers=headers,
+        )
+        draft_id = draft_resp.get_json()["post"]["id"]
+        published_resp = client.post(
+            "/api/v1/posts", data={"content": "yayınlanmış postum"}, headers=headers,
+        )
+        published_id = published_resp.get_json()["post"]["id"]
+        other_draft_resp = client.post(
+            "/api/v1/posts",
+            data={"content": "başkasının taslağı", "action": "draft"},
+            headers={"Authorization": f"Bearer {other_token}"},
+        )
+        other_draft_id = other_draft_resp.get_json()["post"]["id"]
+
+        resp = client.get("/api/v1/drafts", headers=headers)
+        assert resp.status_code == 200
+        ids = [d["id"] for d in resp.get_json()["drafts"]]
+        assert draft_id in ids
+        assert published_id not in ids
+        assert other_draft_id not in ids
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("api_tokens").delete().eq("user_id", other["id"]).execute()
+            sb.table("posts").delete().eq("id", draft_id).execute()
+            sb.table("posts").delete().eq("id", published_id).execute()
+            sb.table("posts").delete().eq("id", other_draft_id).execute()
+            sb.table("post_hashtags").delete().eq("post_id", published_id).execute()
+
+    def test_publish_draft_makes_it_visible_and_syncs_hashtags(
+        self, app, client, test_user_factory
+    ):
+        user = test_user_factory(email="apiv1_draft_publish@example.com", password="TestPass123!")
+        token = _api_token_for(app, user["id"])
+        headers = {"Authorization": f"Bearer {token}"}
+
+        draft_resp = client.post(
+            "/api/v1/posts",
+            data={"content": "yayınlanacak taslak #apiv1draftpublishtest", "action": "draft"},
+            headers=headers,
+        )
+        draft_id = draft_resp.get_json()["post"]["id"]
+
+        resp = client.post(f"/api/v1/drafts/{draft_id}/publish", headers=headers)
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
+        with app.app_context():
+            sb = get_sb()
+            post = sb.table("posts").select("is_draft").eq("id", draft_id).execute().data[0]
+            linked = sb.table("post_hashtags").select("hashtag_id").eq("post_id", draft_id).execute().data
+        assert post["is_draft"] is False
+        # publish_draft()'daki AYNI kural: yayınlanınca hashtag senkronu TAM O ANDA çalışır.
+        assert len(linked) >= 1
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", user["id"]).execute()
+            sb.table("post_hashtags").delete().eq("post_id", draft_id).execute()
+            sb.table("posts").delete().eq("id", draft_id).execute()
+
+    def test_publish_draft_owned_by_someone_else_returns_404(self, app, client, test_user_factory):
+        owner = test_user_factory(email="apiv1_draft_pub_owner@example.com", password="TestPass123!")
+        attacker = test_user_factory(email="apiv1_draft_pub_attacker@example.com", password="TestPass123!")
+        owner_token = _api_token_for(app, owner["id"])
+        attacker_token = _api_token_for(app, attacker["id"])
+
+        draft_resp = client.post(
+            "/api/v1/posts",
+            data={"content": "sahibinin taslağı", "action": "draft"},
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        draft_id = draft_resp.get_json()["post"]["id"]
+
+        resp = client.post(
+            f"/api/v1/drafts/{draft_id}/publish",
+            headers={"Authorization": f"Bearer {attacker_token}"},
+        )
+        assert resp.status_code == 404
+
+        with app.app_context():
+            sb = get_sb()
+            post = sb.table("posts").select("is_draft").eq("id", draft_id).execute().data[0]
+        assert post["is_draft"] is True  # başkasının denemesi hiçbir şeyi değiştirmemiş olmalı
+
+        with app.app_context():
+            sb = get_sb()
+            sb.table("api_tokens").delete().eq("user_id", owner["id"]).execute()
+            sb.table("api_tokens").delete().eq("user_id", attacker["id"]).execute()
+            sb.table("posts").delete().eq("id", draft_id).execute()
+
+    def test_list_drafts_without_token_returns_401(self, client):
+        resp = client.get("/api/v1/drafts")
+        assert resp.status_code == 401
+
+    def test_publish_draft_without_token_returns_401(self, client):
+        resp = client.post("/api/v1/drafts/does-not-matter/publish")
+        assert resp.status_code == 401
+
+
 class TestApiV1ProfileEdit:
     """profile.py profile_edit()'in POST dalının JSON API karşılığı.
 

@@ -274,8 +274,11 @@ def api_add_comment(post_id):
 # app/routes/posts.py create_post()'un BİLİNÇLİ bir alt kümesi: metin + çoklu
 # görsel (max 4) + TEK video/reel + görünürlük + GIF (Faz 5 Dalga 3B; çoklu
 # görsel desteği sonradan eklendi — create_post()'daki `images` alanıyla
-# BİREBİR aynı yol, upload_images() paylaşılıyor). KAPSAM DIŞI (hâlâ
-# dokunulmadı): taslak/planlama, konum.
+# BİREBİR aynı yol, upload_images() paylaşılıyor) + taslak (2026-08-21, bkz.
+# `action` alanı). KAPSAM DIŞI (hâlâ dokunulmadı): post PLANLAMA
+# (`scheduled_at` — native'de tarih/saat seçici bileşeni yok, web'in
+# scheduled-publish mekanizması da `feed()` route'una gömülü fırsatçı bir
+# kontrol, ayrı bir endpoint değil ki mirror'lansın) ve konum.
 
 @bp.route("/posts", methods=["POST"])
 @api_login_required
@@ -336,6 +339,10 @@ def api_create_post():
     if is_reel and not has_video:
         return jsonify(error="reel_requires_video"), 400
 
+    # create_post()'daki (posts.py:360-362) AYNI kural — sadece "draft" kabul
+    # edilir, "schedule" BİLEREK yok (bkz. yukarıdaki KAPSAM DIŞI yorumu).
+    is_draft = request.form.get("action", "") == "draft"
+
     # Site politikası (2026-08-08): web create_post() ile AYNI karar —
     # varsayılan artık "followers", native de elle "public" seçilmedikçe
     # gizli/takipçiye özel paylaşır.
@@ -371,7 +378,7 @@ def api_create_post():
         insert_data["image_url"] = image_urls[0]
 
     try:
-        full_data = {**insert_data, "visibility": visibility, "is_draft": False}
+        full_data = {**insert_data, "visibility": visibility, "is_draft": is_draft}
         if video_url:
             full_data["video_url"] = video_url
         if is_reel:
@@ -384,15 +391,17 @@ def api_create_post():
     if not post_id:
         return jsonify(error="create_failed"), 500
 
-    # create_post()'daki AYNI yayın-sonrası işler — sadece BAŞARIYLA
-    # yayınlanan (taslak olmayan) bir post için (bu endpoint hiç taslak
-    # üretmiyor, HER ZAMAN yayınlanır).
-    invalidate(f"sidebar:{me}")
-    if content:
-        sync_post_hashtags(sb, post_id, content)
-        invalidate("trending:")
-        notify_mentions(sb, actor_id=me, content=content, post_id=post_id)
-        notify_hashtag_followers(sb, actor_id=me, post_id=post_id, tags=extract_hashtags(content))
+    # create_post()'daki (posts.py:410-421) AYNI kural — yayın-sonrası işler
+    # (hashtag sync/mention+hashtag-takipçi bildirimi/sidebar cache) SADECE
+    # taslak DEĞİLSE çalışır; anket oluşturma ise taslakta da çalışır (taslak
+    # düzenlenip yayınlanınca anket zaten hazır olsun diye).
+    if not is_draft:
+        invalidate(f"sidebar:{me}")
+        if content:
+            sync_post_hashtags(sb, post_id, content)
+            invalidate("trending:")
+            notify_mentions(sb, actor_id=me, content=content, post_id=post_id)
+            notify_hashtag_followers(sb, actor_id=me, post_id=post_id, tags=extract_hashtags(content))
     if has_poll:
         create_poll(sb, poll_options, post_id=post_id)
 
@@ -404,6 +413,59 @@ def api_create_post():
     attach_polls(sb, [post], me)
 
     return jsonify(post=post)
+
+
+# ----------------------- TASLAKLAR (2026-08-21, native Android) -----------------------
+# app/routes/posts.py drafts_list()/publish_draft()'in JSON mirror'ı — SADECE
+# taslak (planlanmış post KAPSAM DIŞI, bkz. api_create_post() yorumu).
+
+@bp.route("/drafts")
+@api_login_required
+def api_list_drafts():
+    """Kendi taslaklarımın listesi — drafts_list() ile AYNI sorgu, feed()'in
+    post şekliyle (embedded count + metrics) döner ki native taraf mevcut
+    Post modelini reuse edebilsin."""
+    sb = get_sb()
+    me = request.api_user["id"]
+
+    drafts = sb.table("posts").select(
+        "*, profiles!posts_user_id_fkey(username, avatar_url), likes(count), comments(count)"
+    ).eq("user_id", me).eq("is_draft", True).order("created_at", desc=True).execute().data
+
+    _attach_post_metrics(sb, drafts, me)
+    attach_polls(sb, drafts, me)
+
+    return jsonify(drafts=drafts)
+
+
+@bp.route("/drafts/<post_id>/publish", methods=["POST"])
+@api_login_required
+def api_publish_draft(post_id):
+    """Taslağı yayınlar — publish_draft() ile AYNI: sahiplik kontrolü, is_draft
+    kapatılır, TAM O ANDA hashtag senkronu + mention/hashtag-takipçi bildirimi
+    tetiklenir (create_post() sırasında taslak olduğu için ERTELENMİŞTİ).
+    Sahiplik uyuşmazlığında 403 DEĞİL 404 — api_delete_comment()'teki AYNI
+    proje kararı (403 postun VARLIĞINI sızdırır, enumeration'a açar)."""
+    sb = get_sb()
+    me = request.api_user["id"]
+
+    post = sb.table("posts").select("*").eq("id", post_id).execute().data
+    if not post or post[0]["user_id"] != me:
+        return jsonify(error="not_found"), 404
+    post = post[0]
+
+    try:
+        sb.table("posts").update({"is_draft": False, "scheduled_at": None}).eq("id", post_id).execute()
+    except Exception:
+        sb.table("posts").update({"is_draft": False}).eq("id", post_id).execute()
+    invalidate(f"sidebar:{me}")
+    if post.get("content"):
+        sync_post_hashtags(sb, post_id, post["content"])
+        invalidate("trending:")
+        notify_mentions(sb, actor_id=me, content=post["content"], post_id=post_id)
+        notify_hashtag_followers(sb, actor_id=me, post_id=post_id, tags=extract_hashtags(post["content"]))
+
+    return jsonify(ok=True)
 
 
 # ----------------------- YORUM MUTASYONLARI (Faz 5, native Android) -----------------------
